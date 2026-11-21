@@ -5,6 +5,7 @@
 const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 const { detectHardwareAndDrivers } = require('./src/backend/hardware');
 const { getCatalogWithStatusAsync } = require('./src/backend/catalog');
@@ -360,6 +361,98 @@ ipcMain.handle('xh:import-profile', async () => {
   } catch (err) {
     return { ok: false, error: `Archivo JSON inválido: ${err.message}` };
   }
+});
+
+// ---------- Auto-actualizador vía GitHub Releases (Xanssj/XHANNIZER0)
+ipcMain.handle('xh:check-app-update', async () => {
+  const currentVersion = app.getVersion();
+  return new Promise((resolve) => {
+    const req = https.get(
+      'https://api.github.com/repos/Xanssj/XHANNIZER0/releases/latest',
+      { headers: { 'User-Agent': 'XHANNIZER0/2.0 (Xhanni Studios)', Accept: 'application/vnd.github+json' }, timeout: 5000 },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve({ ok: false, currentVersion, hasUpdate: false });
+          return;
+        }
+        let raw = '';
+        res.on('data', (c) => { raw += c; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(raw);
+            const latestTag = String(data.tag_name || '').replace(/^v/i, '');
+            const hasUpdate = Boolean(latestTag && latestTag !== currentVersion);
+            resolve({
+              ok: true,
+              currentVersion,
+              latestVersion: latestTag || currentVersion,
+              hasUpdate,
+              url: data.html_url || 'https://github.com/Xanssj/XHANNIZER0/releases',
+            });
+          } catch {
+            resolve({ ok: false, currentVersion, hasUpdate: false });
+          }
+        });
+      }
+    );
+    req.on('error', () => resolve({ ok: false, currentVersion, hasUpdate: false }));
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, currentVersion, hasUpdate: false }); });
+  });
+});
+
+// ---------- Eliminar un respaldo antiguo (estrictamente limitado a BACKUP_ROOT)
+ipcMain.handle('xh:delete-backup', async (_event, backupId) => {
+  if (!backupId || /[\\/:*?"<>|]/.test(String(backupId))) {
+    return { ok: false, error: 'ID de respaldo inválido.' };
+  }
+  const target = path.resolve(BACKUP_ROOT, String(backupId));
+  const rootResolved = path.resolve(BACKUP_ROOT);
+  if (!target.startsWith(rootResolved + path.sep)) {
+    return { ok: false, error: 'Ruta de respaldo no autorizada.' };
+  }
+  try {
+    fs.rmSync(target, { recursive: true, force: true });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// ---------- Crear Kit USB Post-Formateo (script offline + manifiesto)
+ipcMain.handle('xh:create-usb-kit', async (_event, payload) => {
+  const destBase = payload?.destDir;
+  const wingetIds = Array.isArray(payload?.wingetIds) ? payload.wingetIds.filter(Boolean) : [];
+  if (!destBase) return { ok: false, error: 'Selecciona una carpeta o unidad USB de destino.' };
+
+  const kitDir = path.join(destBase, 'XHANNIZER0_USB_Kit');
+  fs.mkdirSync(kitDir, { recursive: true });
+
+  const list = wingetIds.length
+    ? wingetIds
+    : ['Brave.Brave', '7zip.7zip', 'Microsoft.VCRedist.2015+.x64', 'REALiX.HWiNFO', 'Valve.Steam'];
+
+  const psContent = [
+    '# XHANNIZER0 — Kit Post-Formateo USB (Xhanni Studios)',
+    '# Ejecuta este script en PowerShell tras formatear Windows para instalar tu seleccion en lote.',
+    '$packages = @(',
+    ...list.map((id) => `  '${String(id).replace(/'/g, '')}'`),
+    ')',
+    'foreach ($pkg in $packages) {',
+    '  Write-Host "Instalando $pkg..." -ForegroundColor Cyan',
+    '  winget install --id $pkg --exact --silent --accept-package-agreements --accept-source-agreements',
+    '}',
+    'Write-Host "Kit XHANNIZER0 completado." -ForegroundColor Green',
+    'Pause',
+  ].join('\r\n');
+
+  fs.writeFileSync(path.join(kitDir, 'instalar-kit-xhannizer0.ps1'), psContent, 'utf8');
+  fs.writeFileSync(
+    path.join(kitDir, 'kit-manifest.json'),
+    JSON.stringify({ app: 'XHANNIZER0', studio: 'Xhanni Studios', createdAt: new Date().toISOString(), packages: list }, null, 2),
+    'utf8'
+  );
+  return { ok: true, kitDir, count: list.length };
 });
 
 app.on('second-instance', () => {

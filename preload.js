@@ -73,4 +73,9 @@ contextBridge.exposeInMainWorld('xhApi', {
   runUpgrade: (payload) => ipcRenderer.invoke('xh:run-upgrade', payload),
   scanNetwork: () => ipcRenderer.invoke('xh:scan-network'),
   applyNetwork: (payload) => ipcRenderer.invoke('xh:apply-network', payload),
+
+  // Auto-actualizador, Gestión de Respaldos y Kit USB
+  checkAppUpdate: () => ipcRenderer.invoke('xh:check-app-update'),
+  deleteBackup: (backupId) => ipcRenderer.invoke('xh:delete-backup', backupId),
+  createUsbKit: (payload) => ipcRenderer.invoke('xh:create-usb-kit', payload),
 });

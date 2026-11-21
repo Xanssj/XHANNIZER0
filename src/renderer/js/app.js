@@ -1499,6 +1499,42 @@
     renderDisks();
   }
 
+  function renderBackupsHistory(backups) {
+    const listEl = $('#backups-history-list');
+    if (!listEl) return;
+    const list = Array.isArray(backups) ? backups : [];
+    if (!list.length) {
+      listEl.innerHTML = `<article class="driver-card"><p class="section-subtitle">Aún no hay copias de seguridad guardadas en este equipo.</p></article>`;
+      return;
+    }
+    listEl.innerHTML = list
+      .map(
+        (b) => `
+      <article class="driver-card">
+        <div class="driver-top">
+          <div class="driver-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <div class="driver-main" style="grid-column: span 2;">
+            <div class="driver-title-row">
+              <span class="driver-category">${esc(b.scope)}</span>
+              <span class="pill-badge is-ok">${esc(String(b.createdAt || '').slice(0, 16).replace('T', ' '))}</span>
+            </div>
+            <div class="driver-name">${esc(b.label || b.id)}</div>
+            <div class="driver-meta">
+              <span>${esc(b.restorePointNote || b.backupDir)}</span>
+            </div>
+          </div>
+          <div class="driver-actions">
+            <button type="button" class="btn-action-small" data-open-backup-dir="${esc(b.backupDir)}">Abrir</button>
+            <button type="button" class="btn-action-small is-ghost" data-delete-backup="${esc(b.id)}">Eliminar</button>
+          </div>
+        </div>
+      </article>`
+      )
+      .join('');
+  }
+
   function renderDisks() {
     const disks = state.disksData?.disks || [];
     $('#disk-grid').innerHTML = disks
@@ -1541,6 +1577,7 @@
         </div>
       </article>`
     ).join('');
+    renderBackupsHistory(state.disksData?.backups || []);
   }
 
   // =========================================================================
@@ -1936,6 +1973,20 @@
 
     $('#btn-refresh-disks').addEventListener('click', () => loadDisks());
     $('#btn-open-backups-main').addEventListener('click', () => api.openPath());
+    $('#btn-create-usb-kit').addEventListener('click', async () => {
+      const pick = await api.pickFolder();
+      if (pick.canceled || !pick.path) return;
+      const selectedWinget = Array.from(state.selected.keys())
+        .map((id) => state.catalog.find((c) => c.id === id)?.wingetId)
+        .filter(Boolean);
+      const res = await api.createUsbKit({ destDir: pick.path, wingetIds: selectedWinget });
+      if (res?.ok) {
+        showToast(`Kit USB creado en ${res.kitDir} (${res.count} paquetes).`);
+        api.openPath(res.kitDir);
+      } else {
+        showToast(res?.error || 'No se pudo crear el Kit USB.');
+      }
+    });
 
     // Actualizador Global y Limpieza/Red
     $('#btn-upgrades-scan').addEventListener('click', () => loadUpgrades(true));
@@ -2037,6 +2088,22 @@
     document.addEventListener('click', async (e) => {
       const btn = e.target.closest('button');
       if (!btn) return;
+
+      // Abrir o eliminar respaldo desde el Historial de Respaldos
+      if (btn.dataset.openBackupDir) {
+        await api.openPath(btn.dataset.openBackupDir);
+        return;
+      }
+      if (btn.dataset.deleteBackup) {
+        const res = await api.deleteBackup(btn.dataset.deleteBackup);
+        if (res?.ok) {
+          showToast('Respaldo eliminado.');
+          await Promise.all([loadDisks(), refreshBackupCount()]);
+        } else {
+          showToast(res?.error || 'No se pudo eliminar el respaldo.');
+        }
+        return;
+      }
 
       // Saltar a sección desde el Checklist Post-Formateo
       if (btn.dataset.jumpTab) {
@@ -2264,6 +2331,181 @@
   }
 
   // =========================================================================
+  // Buscador Global Spotlight (Ctrl + K) + Auto-actualizador GitHub
+  // =========================================================================
+  const spotlightBackdrop = $('#xh-spotlight-backdrop');
+  const spotlightBox = $('#xh-spotlight-box');
+  const spotlightInput = $('#spotlight-input');
+  const spotlightResults = $('#spotlight-results');
+  let spotlightOpen = false;
+  let spotlightActiveIndex = 0;
+  let spotlightMatches = [];
+
+  const spotlightSpring = window.XhSpring.createSpring({
+    value: 0,
+    dampingRatio: 1.0,
+    response: 0.25,
+    onUpdate(v) {
+      const scale = 0.95 + v * 0.05;
+      const y = (1 - v) * -14;
+      spotlightBox.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+      spotlightBox.style.opacity = String(Math.max(0, Math.min(1, v)));
+    },
+  });
+
+  function openSpotlight() {
+    spotlightOpen = true;
+    spotlightBackdrop.classList.add('is-open');
+    spotlightBackdrop.setAttribute('aria-hidden', 'false');
+    spotlightSpring.setTarget(1);
+    spotlightInput.value = '';
+    updateSpotlightResults('');
+    setTimeout(() => spotlightInput.focus(), 20);
+  }
+
+  function closeSpotlight() {
+    spotlightOpen = false;
+    spotlightBackdrop.classList.remove('is-open');
+    spotlightBackdrop.setAttribute('aria-hidden', 'true');
+    spotlightSpring.setTarget(0);
+  }
+
+  function buildSpotlightIndex() {
+    const entries = [];
+    for (const item of state.catalog) {
+      entries.push({
+        title: item.name,
+        sub: `${item.vendor} · ${item.section} ${item.installed ? '· Instalado' : ''}`,
+        badge: item.installed ? 'Abrir / Ver' : 'Instalar',
+        run: () => {
+          activateTab(item.section);
+          if (item.installed && item.installedPath) api.openApp(item.installedPath);
+          else toggleAppSelection(item.id, true);
+        },
+      });
+    }
+    for (const emu of state.emulators) {
+      entries.push({
+        title: emu.name,
+        sub: `Emulador · ${emu.platformLabel} · github.com/${emu.githubRepo}`,
+        badge: 'GitHub',
+        run: () => {
+          activateTab('emuladores');
+          toggleEmulatorSelection(emu.id, true);
+        },
+      });
+    }
+    for (const drv of state.hardware?.drivers || []) {
+      entries.push({
+        title: drv.name,
+        sub: `Driver · ${drv.categoryLabel} · ${drv.sourceName}`,
+        badge: 'Drivers',
+        run: () => activateTab('drivers'),
+      });
+    }
+    const quickTabs = [
+      ['Drivers', 'drivers'],
+      ['Herramientas', 'herramientas'],
+      ['Launchers', 'launchers'],
+      ['Navegadores', 'navegadores'],
+      ['Compresores y Utilidades', 'utilidades'],
+      ['Programadores', 'dev'],
+      ['Emuladores (GitHub)', 'emuladores'],
+      ['Microsoft Store', 'store'],
+      ['Presets (Experimental)', 'presets'],
+      ['Auditoría de Windows', 'windows-audit'],
+      ['Gestor de Inicio Windows', 'startup'],
+      ['Actualizador Global', 'upgrades'],
+      ['Limpieza y Red / DNS', 'cleaner-net'],
+      ['Carpetas y Discos', 'discos'],
+    ];
+    for (const [label, tab] of quickTabs) {
+      entries.push({ title: label, sub: 'Ir a sección', badge: 'Sección', run: () => activateTab(tab) });
+    }
+    return entries;
+  }
+
+  function updateSpotlightResults(query) {
+    const q = String(query || '').trim().toLowerCase();
+    const all = buildSpotlightIndex();
+    spotlightMatches = (q
+      ? all.filter((e) => e.title.toLowerCase().includes(q) || e.sub.toLowerCase().includes(q))
+      : all.slice(0, 10)
+    ).slice(0, 12);
+    spotlightActiveIndex = 0;
+
+    if (!spotlightMatches.length) {
+      spotlightResults.innerHTML = `<div style="padding:14px;color:var(--label-2);font-size:13px;">Sin resultados para «${esc(q)}».</div>`;
+      return;
+    }
+
+    spotlightResults.innerHTML = spotlightMatches
+      .map(
+        (m, idx) => `
+      <button type="button" class="spotlight-item ${idx === 0 ? 'is-active' : ''}" data-spot-idx="${idx}">
+        <div class="spotlight-item-copy">
+          <strong>${esc(m.title)}</strong>
+          <small>${esc(m.sub)}</small>
+        </div>
+        <span class="pill-badge is-neutral">${esc(m.badge)}</span>
+      </button>`
+      )
+      .join('');
+  }
+
+  function initSpotlight() {
+    $('#btn-open-spotlight').addEventListener('click', openSpotlight);
+    spotlightBackdrop.addEventListener('click', (e) => {
+      if (e.target === spotlightBackdrop) closeSpotlight();
+    });
+    spotlightInput.addEventListener('input', () => updateSpotlightResults(spotlightInput.value));
+    spotlightResults.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-spot-idx]');
+      if (!btn) return;
+      const item = spotlightMatches[Number(btn.dataset.spotIdx)];
+      closeSpotlight();
+      if (item) item.run();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (spotlightOpen) closeSpotlight();
+        else openSpotlight();
+        return;
+      }
+      if (!spotlightOpen) return;
+      if (e.key === 'Escape') {
+        closeSpotlight();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        spotlightActiveIndex = Math.min(spotlightMatches.length - 1, spotlightActiveIndex + 1);
+        $$('.spotlight-item', spotlightResults).forEach((el, i) => el.classList.toggle('is-active', i === spotlightActiveIndex));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        spotlightActiveIndex = Math.max(0, spotlightActiveIndex - 1);
+        $$('.spotlight-item', spotlightResults).forEach((el, i) => el.classList.toggle('is-active', i === spotlightActiveIndex));
+      } else if (e.key === 'Enter' && spotlightMatches[spotlightActiveIndex]) {
+        e.preventDefault();
+        const item = spotlightMatches[spotlightActiveIndex];
+        closeSpotlight();
+        item.run();
+      }
+    });
+  }
+
+  async function checkAppUpdateSilently() {
+    try {
+      const upd = await api.checkAppUpdate();
+      if (upd?.hasUpdate) {
+        showToast(`Nueva versión de XHANNIZER0 disponible (v${upd.latestVersion}) en GitHub.`);
+      }
+    } catch {
+      // Silencioso si no hay conexión
+    }
+  }
+
+  // =========================================================================
   // Arranque inicial
   // =========================================================================
   async function boot() {
@@ -2271,9 +2513,11 @@
     initNavigation();
     initBackupModal();
     initDriverConfirmModal();
+    initSpotlight();
     initEvents();
-    await Promise.all([scanHardware(false), loadCatalog(), refreshBackupCount(), loadStartupApps(false)]);
+    await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
     renderPostFormatChecklist();
+    checkAppUpdateSilently();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

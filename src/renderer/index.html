@@ -69,6 +69,11 @@
         <small>Xhanni Studios</small>
       </div>
 
+      <button type="button" class="side-spotlight-btn" id="btn-open-spotlight" title="Buscar en toda la app (Ctrl + K)">
+        <span>Buscar rápido…</span>
+        <span class="spotlight-kbd">Ctrl K</span>
+      </button>
+
       <div>
         <div class="side-group-label">Post-formateo</div>
         <ul class="owner-sidebar-menu" id="sidebar-nav">
@@ -583,6 +588,18 @@
         <div class="disk-grid" id="disk-grid"></div>
 
         <div class="catalog-grid" id="disk-actions-grid"></div>
+
+        <!-- Visor e Historial de Respaldos -->
+        <div class="section-header" style="margin-top:8px;">
+          <div class="section-header-copy">
+            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">Historial de Copias de Seguridad</h2>
+            <p class="section-subtitle">Respaldos verificados almacenados en <code>XhanniBackups\XHANNIZER0</code>.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-create-usb-kit">Crear Kit USB Post-Formateo</button>
+          </div>
+        </div>
+        <div class="driver-list" id="backups-history-list"></div>
       </section>
     </main>
   </div>
@@ -707,6 +724,18 @@
       <div class="backup-sheet-actions">
         <button type="button" class="btn-secondary" id="btn-drv-confirm-cancel">Cancelar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Buscador Global tipo Spotlight (Ctrl + K) -->
+  <div id="xh-spotlight-backdrop" role="dialog" aria-modal="true" aria-label="Búsqueda global Spotlight" aria-hidden="true">
+    <div class="spotlight-box" id="xh-spotlight-box">
+      <div class="spotlight-input-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" id="spotlight-input" placeholder="Buscar apps, emuladores, drivers o ajustes de Windows…" autocomplete="off">
+        <span class="spotlight-kbd">ESC</span>
+      </div>
+      <div class="spotlight-results" id="spotlight-results"></div>
     </div>
   </div>
 
