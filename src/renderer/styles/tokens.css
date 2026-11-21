@@ -1,0 +1,197 @@
+/* =========================================================================
+   tokens.css — Sistema de diseño Apple Glass + Xhanni Studios (Dark & Light)
+   Superficies translúcidas sobre el material acrílico de Windows 11,
+   bordes especulares sutiles y contraste accesible >= 4.5:1 en ambos modos.
+   ========================================================================= */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Superficies Glass Oscuro sobre acrílico Windows 11 */
+  --bg: rgba(8, 8, 10, 0.68);
+  --bg-alt: rgba(16, 16, 18, 0.72);
+  --card: rgba(28, 28, 32, 0.58);
+  --card-2: rgba(44, 44, 48, 0.64);
+  --card-hover: rgba(38, 38, 44, 0.7);
+  --card-selected: rgba(24, 38, 58, 0.72);
+  --fill: rgba(120, 120, 130, 0.22);
+  --fill-hover: rgba(130, 130, 142, 0.34);
+  --sep: rgba(255, 255, 255, 0.11);
+  --sep-strong: rgba(255, 255, 255, 0.24);
+  --hairline-light: rgba(255, 255, 255, 0.14);
+  --material: rgba(26, 26, 30, 0.76);
+  --glass-chrome: rgba(28, 28, 32, 0.66);
+  --glass-pop: rgba(26, 26, 30, 0.86);
+  --scrim: rgba(0, 0, 0, 0.56);
+
+  /* Chrome translúcido */
+  --xh-side-w: 244px;
+  --xh-bar-h: 52px;
+  --xh-side-tint: rgba(24, 24, 28, 0.44);
+  --xh-bar-tint: rgba(10, 10, 12, 0.58);
+  --xh-light-off: rgba(255, 255, 255, 0.18);
+
+  /* Texto */
+  --label: #f5f5f7;
+  --label-2: #a8a8b0;
+  --label-3: #8e8e96;
+  --link: #2997ff;
+
+  /* Acento y estados semánticos */
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-press: #006edb;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(41, 151, 255, 0.18);
+
+  --green: #30d158;
+  --green-soft: rgba(48, 209, 88, 0.18);
+  --orange: #ff9f0a;
+  --orange-soft: rgba(255, 159, 10, 0.18);
+  --red: #ff453a;
+  --red-soft: rgba(255, 69, 58, 0.18);
+  --purple: #bf5af2;
+  --purple-soft: rgba(191, 90, 242, 0.18);
+
+  /* Sombras de capas flotantes */
+  --shadow-card: inset 0 0.5px 0 rgba(255, 255, 255, 0.11), 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 4px 18px rgba(0, 0, 0, 0.22);
+  --shadow-float: inset 0 0.5px 0 rgba(255, 255, 255, 0.16), 0 18px 48px rgba(0, 0, 0, 0.58), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+
+  /* Radios */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r: 14px;
+  --r-lg: 20px;
+  --pill: 980px;
+
+  /* Tipografía del sistema con optical sizing */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", "Inter", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* Curvas */
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ==================== MODO CLARO (Apple Glass Light) ==================== */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: rgba(242, 242, 247, 0.76);
+  --bg-alt: rgba(255, 255, 255, 0.78);
+  --card: rgba(255, 255, 255, 0.72);
+  --card-2: rgba(235, 235, 242, 0.75);
+  --card-hover: rgba(255, 255, 255, 0.88);
+  --card-selected: rgba(230, 242, 255, 0.88);
+  --fill: rgba(118, 118, 128, 0.12);
+  --fill-hover: rgba(118, 118, 128, 0.2);
+  --sep: rgba(60, 60, 67, 0.14);
+  --sep-strong: rgba(60, 60, 67, 0.28);
+  --hairline-light: rgba(255, 255, 255, 0.7);
+  --material: rgba(251, 251, 253, 0.82);
+  --glass-chrome: rgba(255, 255, 255, 0.76);
+  --glass-pop: rgba(255, 255, 255, 0.92);
+  --scrim: rgba(0, 0, 0, 0.3);
+
+  --xh-side-tint: rgba(238, 238, 244, 0.56);
+  --xh-bar-tint: rgba(245, 245, 248, 0.72);
+  --xh-light-off: rgba(0, 0, 0, 0.16);
+
+  --label: #1d1d1f;
+  --label-2: #5b5b60;
+  --label-3: #7c7c82;
+  --link: #0066cc;
+
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-soft: rgba(0, 113, 227, 0.12);
+  --green: #1d8a3a;
+  --green-soft: rgba(52, 199, 89, 0.15);
+  --orange: #b54d00;
+  --orange-soft: rgba(255, 149, 0, 0.16);
+  --red: #d70015;
+  --red-soft: rgba(255, 59, 48, 0.13);
+  --purple: #8944ab;
+  --purple-soft: rgba(175, 82, 222, 0.14);
+
+  --shadow-card: inset 0 0.5px 0 rgba(255, 255, 255, 0.9), 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.05);
+  --shadow-float: 0 16px 42px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: transparent;
+  color: var(--label);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.47;
+  letter-spacing: 0;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+}
+
+button, .pressable {
+  font-family: inherit;
+  cursor: default;
+  transition: transform 100ms ease-out, background-color 140ms var(--ease), color 140ms var(--ease), opacity 140ms var(--ease);
+}
+
+button:active:not(:disabled),
+.pressable:active {
+  transform: scale(0.97);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+@media (prefers-contrast: more) {
+  :root[data-theme="dark"] {
+    --label-2: #d1d1d6;
+    --sep: rgba(255, 255, 255, 0.34);
+    --card: #161618;
+    --xh-side-tint: #111113;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme="dark"] {
+    --bg: #000000;
+    --card: #1c1c1e;
+    --xh-side-tint: #141416;
+    --xh-bar-tint: #000000;
+    --glass-chrome: #1c1c1e;
+    --glass-pop: #1c1c1e;
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --xh-side-tint: #ececf0;
+    --xh-bar-tint: #ffffff;
+    --glass-chrome: #ffffff;
+    --glass-pop: #ffffff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

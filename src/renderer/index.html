@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>XHANNIZER0 — Xhanni Studios</title>
+  <link rel="stylesheet" href="styles/tokens.css">
+  <link rel="stylesheet" href="styles/chrome.css">
+  <link rel="stylesheet" href="styles/app.css">
+</head>
+<body>
+  <!-- Franja superior arrastrable con scroll-edge blur (estilo Xhanni Consola / macOS) -->
+  <div id="xh-titlebar" aria-hidden="true"></div>
+
+  <!-- Semáforo macOS arriba a la izquierda -->
+  <div id="xh-lights" role="group" aria-label="Controles de ventana">
+    <button type="button" class="xh-light xh-close" data-win="close" title="Cerrar" aria-label="Cerrar" tabindex="-1">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.6 3.6l4.8 4.8M8.4 3.6L3.6 8.4"/></svg>
+    </button>
+    <button type="button" class="xh-light xh-minimize" data-win="minimize" title="Minimizar" aria-label="Minimizar" tabindex="-1">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 6h6"/></svg>
+    </button>
+    <button type="button" class="xh-light xh-zoom" data-win="zoom" title="Ampliar" aria-label="Ampliar" tabindex="-1">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path class="fill" d="M3.4 8.6V4.9l3.7 3.7zM8.6 3.4v3.7L4.9 3.4z"/></svg>
+    </button>
+  </div>
+
+  <!-- Píldora flotante + Idioma + Tema + Botón Descargas/Auditoría arriba a la derecha -->
+  <div id="xh-status-wrap" data-level="ready">
+    <button type="button" class="xh-chrome-icon-btn" id="xh-lang-btn" title="Cambiar idioma (ES / EN)">
+      <span id="xh-lang-label">ES</span>
+    </button>
+    <button type="button" class="xh-chrome-icon-btn" id="xh-theme-btn" title="Cambiar modo oscuro / claro" aria-label="Cambiar tema">
+      <svg id="xh-theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-17.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+    <button type="button" class="xh-downloads-btn" id="xh-downloads-btn" aria-expanded="false" aria-controls="xh-audit-drawer" title="Auditoría de descargas y procedencia">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span data-i18n="downloads">Descargas</span>
+      <span class="xh-downloads-badge" id="xh-downloads-count" hidden>0</span>
+    </button>
+    <button type="button" class="xh-svc-pill" id="xh-status-btn" aria-expanded="false" aria-controls="xh-status-pop">
+      <span class="xh-svc-dot"></span>
+      <span id="xh-status-label">Sistema listo</span>
+    </button>
+    <div class="xh-svc-pop" id="xh-status-pop" role="dialog" aria-label="Estado del sistema y respaldos" hidden>
+      <div class="xh-svc-pop-head">
+        <strong>Estado de XHANNIZER0</strong>
+        <span id="xh-winget-badge">Verificando…</span>
+      </div>
+      <ul class="xh-svc-list" id="xh-status-list">
+        <li><span class="xh-svc-dot"></span><span>Escaneo de hardware</span><small id="pop-hw-state">Listo</small></li>
+        <li><span class="xh-svc-dot"></span><span>Apps instaladas</span><small id="pop-installed-count">Escaneando…</small></li>
+        <li><span class="xh-svc-dot"></span><span>Copias de seguridad</span><small id="pop-backup-count">0 guardadas</small></li>
+        <li><span class="xh-svc-dot"></span><span>Cola de instalación</span><small id="pop-queue-state">Inactiva</small></li>
+      </ul>
+      <div class="xh-svc-actions">
+        <button type="button" class="xh-svc-btn" id="btn-open-backups">Ver respaldos</button>
+        <button type="button" class="xh-svc-btn is-primary" id="btn-pop-rescan">Reescanear PC</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shell principal (idéntico al patrón de Xhanni Consola) -->
+  <div class="console">
+    <aside class="console-side" aria-label="Navegación principal">
+      <div class="wordmark">
+        <strong>XHANNIZER0</strong>
+        <small>Xhanni Studios</small>
+      </div>
+
+      <div>
+        <div class="side-group-label">Post-formateo</div>
+        <ul class="owner-sidebar-menu" id="sidebar-nav">
+          <li class="owner-menu-item is-active">
+            <button type="button" data-tab="drivers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+              <span>Drivers</span>
+              <em class="ov2-tab-badge" id="badge-drivers" hidden>0</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="herramientas">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.8-.7-.7-2.8z"/></svg>
+              <span>Herramientas</span>
+              <em class="ov2-tab-badge is-accent" id="badge-herramientas">5</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="launchers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4M8 10v4M15 11h.01M18 13h.01"/></svg>
+              <span>Launchers</span>
+              <em class="ov2-tab-badge is-accent" id="badge-launchers">5</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="navegadores">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+              <span>Navegadores</span>
+              <em class="ov2-tab-badge is-accent" id="badge-navegadores">4</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="utilidades">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+              <span>Compresores</span>
+              <em class="ov2-tab-badge is-accent" id="badge-utilidades">6</em>
+            </button>
+          </li>
+          <li class="owner-menu-sep" role="presentation"></li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="dev">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>Programadores</span>
+              <em class="ov2-tab-badge is-accent" id="badge-dev">18</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="emuladores">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 10v4M6 12h4M15 11h.01M18 13h.01"/></svg>
+              <span>Emuladores</span>
+              <em class="ov2-tab-badge is-accent" id="badge-emuladores">18</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="store">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              <span>Microsoft Store</span>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="presets">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span>Presets</span>
+              <em class="ov2-tab-badge" style="background: var(--purple-soft); color: var(--purple);">Exp</em>
+            </button>
+          </li>
+          <li class="owner-menu-sep" role="presentation"></li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="windows-audit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>Auditoría Windows</span>
+              <em class="ov2-tab-badge" id="badge-winaudit" hidden>0</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="startup">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              <span data-i18n="nav_startup">Inicio Windows</span>
+              <em class="ov2-tab-badge is-accent" id="badge-startup" hidden>0</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="upgrades">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+              <span>Actualizaciones</span>
+              <em class="ov2-tab-badge is-accent" id="badge-upgrades" hidden>0</em>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="cleaner-net">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+              <span>Limpieza y Red</span>
+            </button>
+          </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="discos">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+              <span>Carpetas y Discos</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <div class="console-side-foot">
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="xh-svc-btn" id="btn-export-profile" title="Guardar perfil en JSON" data-i18n="export_profile">Exportar</button>
+          <button type="button" class="xh-svc-btn" id="btn-import-profile" title="Cargar perfil desde JSON" data-i18n="import_profile">Importar</button>
+        </div>
+        <div class="owner-status-pill" id="side-safety-pill">
+          <span class="status-dot"></span>
+          <span>Respaldo obligatorio activo</span>
+        </div>
+        <div class="owner-profile">
+          <div class="owner-avatar" aria-hidden="true">X0</div>
+          <div class="owner-profile-details">
+            <strong id="side-pc-name">Detectando PC…</strong>
+            <span id="side-os-name">Windows · Xhanni Studios</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Workspace principal -->
+    <main class="owner-content">
+      <!-- ==================== SECCIÓN 1: DRIVERS (PRINCIPAL) ==================== -->
+      <section class="owner-tab-panel is-active" id="tab-drivers">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Drivers</h1>
+            <p class="section-subtitle">Detección directa de hardware y comparación con canales oficiales del fabricante, sin bloatware ni instaladores ocultos.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-rescan-hw">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+              <span>Reescanear hardware</span>
+            </button>
+            <button type="button" class="btn-primary" id="btn-select-drivers">
+              <span>Seleccionar recomendados</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Checklist Post-Formateo (0% -> 100%) -->
+        <article class="checklist-card" id="postformat-checklist">
+          <div class="checklist-head">
+            <strong>Checklist Post-Formateo</strong>
+            <span class="checklist-pct" id="checklist-pct">0% listo</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-bar" id="checklist-bar" style="width:0%"></div>
+          </div>
+          <div class="checklist-steps" id="checklist-steps"></div>
+        </article>
+
+        <div class="owner-metrics-grid" id="hw-metrics">
+          <article class="owner-metric-card">
+            <span>Procesador</span>
+            <strong id="m-cpu">Escaneando…</strong>
+            <p id="m-cpu-sub">Consultando WMI / CIM</p>
+          </article>
+          <article class="owner-metric-card">
+            <span>Memoria y Sistema</span>
+            <strong id="m-ram">-- GB</strong>
+            <p id="m-os-sub">Windows</p>
+          </article>
+          <article class="owner-metric-card tone-accent">
+            <span>Actualizaciones oficiales</span>
+            <strong id="m-updates">0</strong>
+            <p>Comparado con fabricantes</p>
+          </article>
+          <article class="owner-metric-card tone-warn">
+            <span>Avisos de estabilidad</span>
+            <strong id="m-advisories">0</strong>
+            <p>GPU, Placa Madre y Audio</p>
+          </article>
+        </div>
+
+        <div class="toolbar-row">
+          <div class="owner-filter-chips" id="driver-filters">
+            <button type="button" class="owner-filter-chip is-active" data-filter="all">Todos</button>
+            <button type="button" class="owner-filter-chip" data-filter="advisory">Con aviso</button>
+            <button type="button" class="owner-filter-chip" data-filter="updates">Con actualización</button>
+          </div>
+          <span class="section-subtitle" id="hw-scan-meta">Buscando componentes…</span>
+        </div>
+
+        <div class="driver-list" id="driver-list"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 2: HERRAMIENTAS ==================== -->
+      <section class="owner-tab-panel" id="tab-herramientas">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Herramientas</h1>
+            <p class="section-subtitle">Utilidades técnicas esenciales para validar temperaturas, frecuencias, GPU y mantener Windows limpio.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" data-select-section="herramientas">Seleccionar todas</button>
+          </div>
+        </header>
+        <div class="toolbar-row">
+          <div class="owner-filter-chips" data-install-filter="herramientas">
+            <button type="button" class="owner-filter-chip is-active" data-state-filter="all">Todas</button>
+            <button type="button" class="owner-filter-chip" data-state-filter="installed">Instaladas</button>
+            <button type="button" class="owner-filter-chip" data-state-filter="missing">Por instalar</button>
+          </div>
+          <div class="search-input-wrapper">
+            <input type="search" placeholder="Filtrar herramientas…" data-search-section="herramientas" aria-label="Filtrar herramientas">
+          </div>
+        </div>
+        <div class="catalog-grid" id="grid-herramientas"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 3: LAUNCHERS / GAMING ==================== -->
+      <section class="owner-tab-panel" id="tab-launchers">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Launchers y Gaming</h1>
+            <p class="section-subtitle">Tus plataformas de juegos listas para instalar en lote o abrir directamente si ya están presentes.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" data-select-section="launchers">Seleccionar faltantes</button>
+          </div>
+        </header>
+        <div class="toolbar-row">
+          <div class="owner-filter-chips" data-install-filter="launchers">
+            <button type="button" class="owner-filter-chip is-active" data-state-filter="all">Todos</button>
+            <button type="button" class="owner-filter-chip" data-state-filter="installed">Instalados</button>
+            <button type="button" class="owner-filter-chip" data-state-filter="missing">Por instalar</button>
+          </div>
+          <div class="search-input-wrapper">
+            <input type="search" placeholder="Filtrar launchers…" data-search-section="launchers" aria-label="Filtrar launchers">
+          </div>
+        </div>
+        <div class="catalog-grid" id="grid-launchers"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 4: NAVEGADORES ==================== -->
+      <section class="owner-tab-panel" id="tab-navegadores">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Navegadores</h1>
+            <p class="section-subtitle">Instalación directa o múltiple desde fuentes oficiales. Brave destaca por velocidad y privacidad sin extras.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" data-select-section="navegadores">Seleccionar faltantes</button>
+          </div>
+        </header>
+        <div class="catalog-grid" id="grid-navegadores"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 5: COMPRESORES / UTILIDADES ==================== -->
+      <section class="owner-tab-panel" id="tab-utilidades">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Compresores y Utilidades</h1>
+            <p class="section-subtitle">Imprescindibles tras una instalación limpia de Windows: archivadores, runtimes oficiales y herramientas ligeras.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" data-select-section="utilidades">Seleccionar faltantes</button>
+          </div>
+        </header>
+        <div class="toolbar-row">
+          <div class="owner-filter-chips" data-install-filter="utilidades">
+            <button type="button" class="owner-filter-chip is-active" data-state-filter="all">Todas</button>
+            <button type="button" class="owner-filter-chip" data-state-filter="installed">Instaladas</button>
+            <button type="button" class="owner-filter-chip" data-state-filter="missing">Por instalar</button>
+          </div>
+          <div class="search-input-wrapper">
+            <input type="search" placeholder="Filtrar utilidades…" data-search-section="utilidades" aria-label="Filtrar utilidades">
+          </div>
+        </div>
+        <div class="catalog-grid" id="grid-utilidades"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 6: PROGRAMADORES / DEV ==================== -->
+      <section class="owner-tab-panel" id="tab-dev">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Programadores</h1>
+            <p class="section-subtitle">Espacio dedicado para desarrollo: editores, IA para programar (en la nube y local en GPU), codeo en vivo, APIs, organización y runtimes.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" data-select-section="dev">Seleccionar faltantes</button>
+          </div>
+        </header>
+        <div class="toolbar-row">
+          <div class="owner-filter-chips" id="dev-filters">
+            <button type="button" class="owner-filter-chip is-active" data-dev-filter="all">Todos</button>
+            <button type="button" class="owner-filter-chip" data-dev-filter="ai">IA para programar</button>
+            <button type="button" class="owner-filter-chip" data-dev-filter="ide">IDEs y Editores</button>
+            <button type="button" class="owner-filter-chip" data-dev-filter="collab">Codeo en vivo / APIs</button>
+            <button type="button" class="owner-filter-chip" data-dev-filter="org">Organización</button>
+            <button type="button" class="owner-filter-chip" data-dev-filter="runtime">Runtimes / Git</button>
+          </div>
+          <div class="search-input-wrapper">
+            <input type="search" placeholder="Filtrar apps dev…" data-search-section="dev" aria-label="Filtrar apps para programadores">
+          </div>
+        </div>
+        <div class="catalog-grid" id="grid-dev"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 6B: EMULADORES (GITHUB) ==================== -->
+      <section class="owner-tab-panel" id="tab-emuladores">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <h1 class="console-title">Emuladores</h1>
+              <span class="pill-badge is-recommended">GitHub Releases</span>
+            </div>
+            <p class="section-subtitle">Emuladores open-source descargados directamente desde sus repositorios oficiales de GitHub, siempre en su versión más reciente para Windows.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-emu-check-gh">Verificar versiones en GitHub</button>
+          </div>
+        </header>
+        <div class="toolbar-row">
+          <div class="owner-filter-chips" id="emu-filters">
+            <button type="button" class="owner-filter-chip is-active" data-emu-filter="all">Todos</button>
+            <button type="button" class="owner-filter-chip" data-emu-filter="multi">Multi-sistema</button>
+            <button type="button" class="owner-filter-chip" data-emu-filter="playstation">PlayStation</button>
+            <button type="button" class="owner-filter-chip" data-emu-filter="nintendo">Nintendo</button>
+            <button type="button" class="owner-filter-chip" data-emu-filter="xbox">Xbox</button>
+            <button type="button" class="owner-filter-chip" data-emu-filter="retro">Retro / Arcade</button>
+          </div>
+          <div class="search-input-wrapper">
+            <input type="search" placeholder="Filtrar emuladores…" id="emu-search-input" aria-label="Filtrar emuladores">
+          </div>
+        </div>
+        <div class="catalog-grid" id="grid-emuladores"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 7: MICROSOFT STORE ==================== -->
+      <section class="owner-tab-panel" id="tab-store">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Microsoft Store</h1>
+            <p class="section-subtitle">Busca e instala Spotify, WhatsApp, Netflix o cualquier aplicación oficial disponible en Microsoft Store sin abrir mil ventanas.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-store-featured">Ver destacados</button>
+          </div>
+        </header>
+        <form class="store-search-bar" id="store-search-form">
+          <div class="search-input-wrapper">
+            <input type="search" id="store-search-input" placeholder="Buscar en Microsoft Store (ej. Spotify, WhatsApp, Netflix, Telegram, iCloud…)" aria-label="Buscar en Microsoft Store">
+          </div>
+          <button type="submit" class="btn-primary" id="btn-store-search">Buscar en Store</button>
+        </form>
+        <div class="section-subtitle" id="store-status-meta">Mostrando aplicaciones populares de Microsoft Store.</div>
+        <div class="catalog-grid" id="grid-store"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 8: PRESETS (EXPERIMENTAL) ==================== -->
+      <section class="owner-tab-panel" id="tab-presets">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <h1 class="console-title">Presets Post-Formateo</h1>
+              <span class="pill-badge is-purple">Experimental</span>
+            </div>
+            <p class="section-subtitle">Perfiles inteligentes que analizan tu CPU, GPU, VRAM y RAM reales para instalar y optimizar tu equipo sin cometer errores de compatibilidad.</p>
+          </div>
+        </header>
+        <div class="safety-banner" id="preset-hw-summary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <div>
+            <strong>Hardware analizado:</strong> <span id="preset-hw-text">Detectando componentes del PC…</span>
+          </div>
+        </div>
+        <div class="preset-grid" id="preset-grid"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 8B: AUDITORÍA WINDOWS ==================== -->
+      <section class="owner-tab-panel" id="tab-windows-audit">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Auditoría de Windows</h1>
+            <p class="section-subtitle">Analiza tu sistema actual y detecta configuraciones recomendadas de rendimiento, precisión, privacidad y pantalla que aún no tienes activadas.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-winaudit-rescan">Reanalizar Windows</button>
+            <button type="button" class="btn-primary" id="btn-winaudit-apply-all">Aplicar recomendadas</button>
+          </div>
+        </header>
+        <div class="owner-metrics-grid">
+          <article class="owner-metric-card tone-warn">
+            <span>Recomendaciones pendientes</span>
+            <strong id="wa-pending">0</strong>
+            <p>Ajustes sugeridos sin activar</p>
+          </article>
+          <article class="owner-metric-card tone-ok">
+            <span>Configuraciones óptimas</span>
+            <strong id="wa-optimal">0</strong>
+            <p>Ya activas en tu Windows</p>
+          </article>
+          <article class="owner-metric-card">
+            <span>Apps al inicio (Usuario)</span>
+            <strong id="wa-startup">0</strong>
+            <p>Entradas en HKCU\\Run</p>
+          </article>
+        </div>
+        <div class="driver-list" id="winaudit-list"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 8C: GESTOR DE INICIO WINDOWS ==================== -->
+      <section class="owner-tab-panel" id="tab-startup">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title" data-i18n="startup_title">Gestor de Inicio de Windows</h1>
+            <p class="section-subtitle" data-i18n="startup_sub">Controla qué programas arrancan con tu PC. Desactivar apps innecesarias acelera el inicio tras formatear (100% reversible).</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-startup-refresh" data-i18n="refresh">Actualizar lista</button>
+          </div>
+        </header>
+        <div class="driver-list" id="startup-list"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 8D: ACTUALIZADOR GLOBAL ==================== -->
+      <section class="owner-tab-panel" id="tab-upgrades">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Actualizador Global</h1>
+            <p class="section-subtitle">Detecta cualquier aplicación desactualizada en tu PC vía WinGet oficial y actualízala sin abrir instaladores manuales.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-upgrades-scan">Buscar actualizaciones</button>
+            <button type="button" class="btn-primary" id="btn-upgrades-all">Actualizar todo</button>
+          </div>
+        </header>
+        <div class="section-subtitle" id="upgrades-meta">Presiona «Buscar actualizaciones» para analizar todas las apps de tu PC.</div>
+        <div class="driver-list" id="upgrades-list"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 8E: LIMPIEZA DE BLOATWARE Y RED/DNS ==================== -->
+      <section class="owner-tab-panel" id="tab-cleaner-net">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Limpieza y Red</h1>
+            <p class="section-subtitle">Optimiza tus DNS con 1 clic y elimina bloatware preinstalado de Windows de forma segura y reversible.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-cleanernet-refresh">Actualizar diagnóstico</button>
+          </div>
+        </header>
+
+        <div class="owner-metrics-grid">
+          <article class="owner-metric-card">
+            <span>Adaptador activo</span>
+            <strong id="net-adapter">Analizando…</strong>
+            <p id="net-speed">--</p>
+          </article>
+          <article class="owner-metric-card tone-accent">
+            <span>DNS actual</span>
+            <strong id="net-dns">--</strong>
+            <p id="net-dns-ips">Consultando red</p>
+          </article>
+          <article class="owner-metric-card tone-ok">
+            <span>Ping Cloudflare (1.1.1.1)</span>
+            <strong id="net-ping-cf">--</strong>
+            <p>Latencia DNS rápida</p>
+          </article>
+          <article class="owner-metric-card">
+            <span>Ping Google (8.8.8.8)</span>
+            <strong id="net-ping-gg">--</strong>
+            <p>Latencia alternativa</p>
+          </article>
+        </div>
+
+        <div class="toolbar-row">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn-action-small is-primary" data-net-action="dns-cloudflare">Usar Cloudflare (1.1.1.1)</button>
+            <button type="button" class="btn-action-small" data-net-action="dns-google">Usar Google (8.8.8.8)</button>
+            <button type="button" class="btn-action-small" data-net-action="dns-dhcp">Restaurar Automático</button>
+            <button type="button" class="btn-action-small is-safe" data-net-action="flush-dns">Vaciar caché DNS</button>
+          </div>
+        </div>
+
+        <div class="section-header" style="margin-top:8px;">
+          <div class="section-header-copy">
+            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">Limpiador de Bloatware de Windows</h2>
+            <p class="section-subtitle">Solo apps preinstaladas reversibles desde Microsoft Store. Nunca toca componentes críticos del sistema.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-primary" id="btn-bloat-remove-all">Eliminar bloatware detectado</button>
+          </div>
+        </div>
+        <div class="catalog-grid" id="bloatware-grid"></div>
+      </section>
+
+      <!-- ==================== SECCIÓN 9: CARPETAS Y DISCOS ==================== -->
+      <section class="owner-tab-panel" id="tab-discos">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Carpetas y Discos</h1>
+            <p class="section-subtitle">Configuración y ordenamiento limpio de unidades y carpetas tras formatear el equipo.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-refresh-disks">Actualizar discos</button>
+            <button type="button" class="btn-secondary" id="btn-open-backups-main">Abrir carpeta de respaldos</button>
+          </div>
+        </header>
+
+        <div class="safety-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          <div>
+            <strong>Protección obligatoria activa:</strong> cualquier acción que edite carpetas, reordene discos o instale drivers solicitará confirmar y crear una <strong>copia de seguridad previa</strong> antes de avanzar.
+          </div>
+        </div>
+
+        <div class="disk-grid" id="disk-grid"></div>
+
+        <div class="catalog-grid" id="disk-actions-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Floating Batch Dock (animado con spring physics) -->
+  <div id="xh-batch-dock" role="region" aria-label="Instalación por lote">
+    <div class="batch-summary">
+      <span class="batch-count-pill" id="batch-count">0</span>
+      <div>
+        <div id="batch-title">Seleccionados</div>
+        <div class="batch-breakdown" id="batch-breakdown">0 elementos</div>
+      </div>
+    </div>
+    <button type="button" class="btn-action-small is-ghost" id="btn-batch-clear">Limpiar</button>
+    <button type="button" class="btn-primary" id="btn-batch-install">Instalar selección</button>
+  </div>
+
+  <!-- Modal Obligatorio de Copia de Seguridad (Apple Sheet) -->
+  <div id="xh-backup-backdrop" role="dialog" aria-modal="true" aria-labelledby="backup-sheet-title" aria-hidden="true">
+    <div class="backup-sheet" id="xh-backup-sheet">
+      <div class="backup-sheet-head">
+        <div class="backup-shield" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+        </div>
+        <div>
+          <h2 id="backup-sheet-title">Copia de seguridad requerida</h2>
+          <p id="backup-sheet-desc">Antes de instalar drivers o modificar/reordenar carpetas y discos, XHANNIZER0 exige generar una copia de seguridad por seguridad.</p>
+        </div>
+      </div>
+
+      <div class="backup-target-box">
+        <span>Acción solicitada</span>
+        <strong id="backup-target-label">--</strong>
+        <div id="backup-target-detail" style="color: var(--label-2);"></div>
+      </div>
+
+      <label class="backup-checkbox-card" id="backup-check-card">
+        <span class="xh-check">
+          <input type="checkbox" id="backup-required-checkbox">
+        </span>
+        <span>
+          <strong>Crear copia de seguridad antes de avanzar (Obligatorio)</strong>
+          <small>Se guardará un respaldo verificado de drivers / estructura de carpetas en tu carpeta segura <code>XhanniBackups\XHANNIZER0</code> antes de ejecutar el cambio.</small>
+        </span>
+      </label>
+
+      <div class="backup-progress-box" id="backup-progress-box" hidden>
+        <div class="item-progress-head">
+          <span class="item-progress-detail" id="backup-progress-step">Preparando respaldo…</span>
+          <span class="item-progress-pct" id="backup-progress-pct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-bar" id="backup-progress-bar"></div>
+        </div>
+      </div>
+
+      <div class="backup-sheet-actions">
+        <button type="button" class="btn-secondary" id="btn-backup-cancel">Cancelar</button>
+        <button type="button" class="btn-primary" id="btn-backup-confirm" disabled>Hacer copia de seguridad y continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel derecho deslizante: Auditoría de Descargas y Procedencia -->
+  <aside id="xh-audit-drawer" aria-label="Auditoría de descargas y procedencia" aria-hidden="true">
+    <div class="audit-drawer-head">
+      <div>
+        <h3>Auditoría de Descargas</h3>
+        <p class="audit-drawer-sub">Procedencia verificada y progreso en vivo</p>
+      </div>
+      <button type="button" class="btn-action-small is-ghost" id="btn-audit-close">Cerrar</button>
+    </div>
+    <div class="audit-drawer-list" id="xh-audit-list">
+      <div class="audit-entry">
+        <strong>Sin descargas recientes</strong>
+        <span class="audit-origin-url">Cuando instales apps, drivers o emuladores verás aquí su canal oficial, URL/ID exacto y progreso en tiempo real.</span>
+      </div>
+    </div>
+    <div class="audit-drawer-foot">
+      <button type="button" class="xh-svc-btn" id="btn-audit-clear">Limpiar historial</button>
+      <button type="button" class="xh-svc-btn is-primary" id="btn-audit-open-backups">Ver respaldos</button>
+    </div>
+  </aside>
+
+  <!-- Modal de Confirmación con 2 Opciones para Drivers (XHANNIZER0 vs App Oficial) -->
+  <div id="xh-driver-confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="drv-confirm-title" aria-hidden="true">
+    <div class="backup-sheet" id="xh-driver-confirm-sheet">
+      <div class="backup-sheet-head">
+        <div class="backup-shield" style="background: var(--accent-soft); color: var(--link);" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </div>
+        <div>
+          <h2 id="drv-confirm-title">¿Estás seguro de realizar esta instalación?</h2>
+          <p id="drv-confirm-desc">Elige si deseas instalar el controlador directamente desde XHANNIZER0 o mediante la aplicación oficial del fabricante.</p>
+        </div>
+      </div>
+
+      <div class="backup-target-box">
+        <span>Componente seleccionado</span>
+        <strong id="drv-confirm-target">--</strong>
+        <div id="drv-confirm-note" style="color: var(--label-2);"></div>
+      </div>
+
+      <div class="driver-choice-grid">
+        <button type="button" class="driver-choice-card" id="btn-drv-choice-app">
+          <div>
+            <strong>1. Instalar a través de XHANNIZER0</strong>
+            <small>Descarga e instalación automática dentro de la app sin abrir el navegador.</small>
+          </div>
+          <span class="pill-badge is-recommended">Automático</span>
+        </button>
+
+        <button type="button" class="driver-choice-card" id="btn-drv-choice-official">
+          <div>
+            <strong id="drv-choice-official-title">2. Actualizar con la app oficial del fabricante</strong>
+            <small id="drv-choice-official-sub">Abre la aplicación oficial detectada en tu equipo.</small>
+          </div>
+          <span class="pill-badge is-ok" id="drv-choice-official-badge">Detectada</span>
+        </button>
+      </div>
+
+      <div class="backup-sheet-actions">
+        <button type="button" class="btn-secondary" id="btn-drv-confirm-cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast de confirmación sutil -->
+  <div id="xh-toast" role="status" aria-live="polite"></div>
+
+  <script src="js/spring.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

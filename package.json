@@ -1,0 +1,57 @@
+{
+  "name": "xhannizer0",
+  "productName": "XHANNIZER0",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Utilidad post-formateo de Windows limpia y minimalista — Xhanni Studios",
+  "author": "Xhanni Studios",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:nsis": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable",
+    "dist:all": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "45.3.4",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "studio.xhanni.xhannizer0",
+    "productName": "XHANNIZER0",
+    "copyright": "Copyright © 2026 Xhanni Studios",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**/*",
+      "src/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "XHANNIZER0"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Portable.${ext}"
+    }
+  }
+}
