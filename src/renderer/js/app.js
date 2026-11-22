@@ -44,6 +44,12 @@
     pcCheck: null,
     migFolders: null,
     migration: null,
+    cleanup: null,
+    bench: null,
+    pilot: null, // { status, startedAt, backupId, steps:[{id,enabled,status,note}], appIds, cleanupIds }
+    pilotCode: null,
+    pilotDraft: null,
+    pilotSettingIds: [],
     theme: localStorage.getItem('xh_theme') || 'dark',
     lang: localStorage.getItem('xh_lang') || 'es',
     pendingDriverConfirm: null,
@@ -354,6 +360,7 @@
         const t = btn.dataset.tab;
         if (span && dict.tabs[t]) span.textContent = dict.tabs[t];
       });
+      if (window.XhI18n) window.XhI18n.apply(state.lang);
     };
     applyLanguage(state.lang);
     $('#xh-lang-btn').addEventListener('click', () => {
@@ -515,6 +522,8 @@
     if (target === 'pc-check' && !state.pcCheck) loadPcCheck();
     if (target === 'migracion' && !state.migFolders) loadMigrationFolders();
     if (target === 'mantenimiento') loadMaintenance();
+    if (target === 'piloto') renderPilot();
+    if (target === 'rendimiento') loadBenchmark();
   }
 
   function initNavigation() {
@@ -1712,6 +1721,7 @@
     $('#backup-target-detail').textContent = detail || '';
     checkInput.checked = false;
     checkInput.disabled = false;
+    $('#backup-rp-checkbox').checked = false;
     checkCard.classList.remove('is-checked');
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Hacer copia de seguridad y continuar';
@@ -1786,6 +1796,11 @@
           throw new Error(backupRes?.error || 'No se pudo completar la copia de seguridad.');
         }
         await refreshBackupCount();
+        if ($('#backup-rp-checkbox').checked) {
+          confirmBtn.textContent = 'Creando punto de restauración…';
+          const rp = await api.createRestorePoint();
+          showToast(rp?.ok ? rp.message : rp?.error || 'No se pudo crear el punto de restauración.');
+        }
         const callback = action.onConfirmed;
         closeBackupModal();
         showToast(`Respaldo verificado: ${backupRes.id}`);
@@ -1817,8 +1832,9 @@
     renderStoreGrid();
     updateStatusPill();
 
+    let res = null;
     try {
-      const res = await api.installBatch({ tasks, backupId });
+      res = await api.installBatch({ tasks, backupId });
       if (!res?.ok) {
         showToast(res?.error || 'No se pudo iniciar la instalación.');
       } else {
@@ -1836,6 +1852,7 @@
       state.installing = false;
       updateStatusPill();
     }
+    return res;
   }
 
   function requestInstallTasks(tasks) {
@@ -2578,6 +2595,7 @@
       state.pcCheck = res;
       renderPcCheck();
       renderPostFormatChecklist();
+      loadBiosGuide(false);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Analizar de nuevo';
@@ -2851,6 +2869,7 @@
   const ACTION_NAMES = {
     install: 'Instalación', 'windows-setting': 'Ajuste de Windows', preset: 'Preset', startup: 'Inicio de Windows', bloatware: 'Bloatware',
     network: 'Red / DNS', disk: 'Carpetas y discos', restore: 'Deshacer cambios', repair: 'Reparación de Windows', 'scheduled-update': 'Actualización programada',
+    cleanup: 'Limpieza', 'restore-point': 'Punto de restauración', autopilot: 'Piloto automático', bios: 'BIOS', stability: 'Prueba de estabilidad', report: 'Informe técnico',
   };
 
   function renderRepairGrid() {
@@ -2901,6 +2920,7 @@
     const describe = (e) => {
       if (Array.isArray(e.items)) return e.items.map((i) => `${i.name || i.id}${i.ok ? '' : ' (falló)'}`).join(', ');
       if (e.action === 'restore') return `${e.total} cambio(s) deshechos${e.failed ? `, ${e.failed} con problemas` : ''}`;
+      if (e.action === 'cleanup') return `${formatBytes(e.freedBytes)} liberados`;
       return e.label || e.kind || '';
     };
     $('#actionlog-list').innerHTML = items.length
@@ -3001,6 +3021,683 @@
   }
 
   // =========================================================================
+  // Errores inesperados: se registran y se ofrece exportar el diagnóstico
+  // =========================================================================
+  let lastErrorBarAt = 0;
+  function showErrorBar(message) {
+    if (Date.now() - lastErrorBarAt < 8000) return;
+    lastErrorBarAt = Date.now();
+    $('#xh-error-bar')?.remove();
+    const bar = document.createElement('div');
+    bar.id = 'xh-error-bar';
+    bar.className = 'xh-error-bar';
+    bar.setAttribute('role', 'alert');
+    bar.innerHTML = `<span>Algo falló: ${esc(String(message || 'error inesperado').slice(0, 160))}</span>
+      <button type="button" class="btn-action-small is-primary" data-error-diag>Exportar diagnóstico</button>
+      <button type="button" class="btn-action-small is-ghost" data-error-close>Cerrar</button>`;
+    document.body.appendChild(bar);
+    setTimeout(() => bar.remove(), 20000);
+  }
+
+  function reportUiError(err) {
+    const message = err?.message || String(err || 'Error desconocido');
+    api.reportError({ message, stack: err?.stack || '' });
+    showErrorBar(message);
+  }
+  window.addEventListener('error', (e) => {
+    if (e.error || e.message) reportUiError(e.error || e.message);
+  });
+  window.addEventListener('unhandledrejection', (e) => reportUiError(e.reason));
+
+  // =========================================================================
+  // Asistente de BIOS
+  // =========================================================================
+  async function loadBiosGuide(all) {
+    const res = await api.biosGuide({ all });
+    const list = $('#bios-guide');
+    if (!res?.ok || !list) return;
+    $('#bios-sub').textContent = `Guía para ${res.brand}${res.board ? ` (${res.board})` : ''}. Para entrar: ${res.keys}. ${res.note}`;
+    if (!res.sections.length) {
+      list.innerHTML = `<article class="driver-card"><p class="section-subtitle">${all ? 'No hay guías disponibles.' : 'El chequeo no encontró nada que cambiar en la BIOS. Si quieres revisar igual, toca «Ver todas las guías».'}</p></article>`;
+      return;
+    }
+    list.innerHTML = res.sections
+      .map(
+        (s) => `
+      <article class="driver-card">
+        <div class="driver-name" style="font-size:15px;">${esc(s.title)}</div>
+        <div class="bios-path">${s.path.map((p) => `<span>${esc(p)}</span>`).join('<i>›</i>')}</div>
+      </article>`
+      )
+      .join('') + `<p class="section-subtitle">${esc(res.disclaimer)}</p>`;
+  }
+
+  // =========================================================================
+  // Limpieza post-formateo
+  // =========================================================================
+  async function loadCleanup() {
+    const btn = $('#btn-cleanup-scan');
+    btn.disabled = true;
+    btn.textContent = 'Analizando…';
+    $('#cleanup-list').innerHTML = `<article class="driver-card"><p class="section-subtitle">Midiendo carpetas… Windows.old puede tardar un poco.</p></article>`;
+    try {
+      const res = await api.cleanupScan();
+      state.cleanup = (res?.items || []).map((i) => ({ ...i, checked: i.defaultOn }));
+      renderCleanup();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Analizar de nuevo';
+    }
+  }
+
+  function renderCleanup() {
+    const items = state.cleanup || [];
+    $('#cleanup-list').innerHTML = items
+      .map(
+        (it, i) => `
+      <article class="driver-card">
+        <label class="mig-check-row">
+          <input type="checkbox" data-cleanup="${i}" ${it.checked ? 'checked' : ''}>
+          <span class="driver-main">
+            <span class="driver-name" style="font-size:14px;">${esc(it.name)}
+              ${it.bytes !== null ? `<span class="pill-badge ${it.bytes > 1024 ** 3 ? 'is-warn' : 'is-neutral'}">${it.approximate ? '≈ ' : ''}${formatBytes(it.bytes)}</span>` : ''}
+              ${it.elevated ? '<span class="pill-badge is-neutral">Admin</span>' : ''}</span>
+            <span class="driver-meta"><span>${esc(it.detail)}</span></span>
+          </span>
+        </label>
+      </article>`
+      )
+      .join('');
+    $('#btn-cleanup-run').disabled = !items.some((i) => i.checked);
+  }
+
+  async function runCleanupSelection(ids) {
+    const res = await api.cleanupRun({ ids });
+    if (res?.canceled) return res;
+    $('#cleanup-progress-box').hidden = true;
+    if (!res?.ok) {
+      showToast(res?.error || 'No se pudo limpiar.');
+      return res;
+    }
+    showToast(`Limpieza terminada: ${formatBytes(res.freedBytes)} liberados.${res.notes?.length ? ` ${res.notes.join(' ')}` : ''}`);
+    return res;
+  }
+
+  // =========================================================================
+  // Antes y después
+  // =========================================================================
+  function benchHeadline(cmp) {
+    const by = Object.fromEntries(cmp.map((m) => [m.key, m]));
+    const parts = [];
+    if (by.bootMs?.improved && by.bootMs.changePct <= -5) parts.push(`arranca ${Math.abs(by.bootMs.changePct)}% más rápido`);
+    if (by.ramUsedMb?.improved) {
+      const gb = Math.round((by.ramUsedMb.before - by.ramUsedMb.after) * 10) / 10;
+      if (gb >= 0.1) parts.push(`usa ${gb} GB menos de RAM`);
+    }
+    if (by.processes?.improved) parts.push(`tiene ${by.processes.before - by.processes.after} procesos menos`);
+    if (by.diskFreeGb?.improved && by.diskFreeGb.after - by.diskFreeGb.before >= 1) parts.push(`ganó ${Math.round(by.diskFreeGb.after - by.diskFreeGb.before)} GB de espacio`);
+    if (!parts.length) return 'Sin cambios importantes por ahora.';
+    const last = parts.pop();
+    return `Tu PC ${parts.length ? `${parts.join(', ')} y ${last}` : last}.`;
+  }
+
+  async function loadBenchmark() {
+    state.bench = await api.benchmarkGet();
+    renderBenchmark();
+  }
+
+  function renderBenchmark() {
+    const b = state.bench;
+    const card = $('#bench-card');
+    if (!b?.baseline) {
+      card.innerHTML = '<p class="section-subtitle">Todavía no hay mediciones. Empieza con «Medir “Antes”».</p>';
+      $('#btn-bench-share').disabled = true;
+      return;
+    }
+    const fmtDate = (iso) => new Date(iso).toLocaleString();
+    if (!b.comparison?.length) {
+      const s = b.baseline;
+      card.innerHTML = `
+        <div class="bench-headline">Medición «Antes» guardada</div>
+        <p class="section-subtitle">${esc(fmtDate(s.takenAt))}. Optimiza tu PC y luego toca «Medir “Después”».</p>
+        <div class="bench-grid">
+          <div class="bench-metric"><span>RAM usada en reposo</span><strong>${(s.ramUsedMb / 1024).toFixed(1)} GB</strong></div>
+          <div class="bench-metric"><span>Procesos</span><strong>${esc(s.processes)}</strong></div>
+          <div class="bench-metric"><span>Programas al inicio</span><strong>${esc(s.startupEnabled ?? '—')}</strong></div>
+          <div class="bench-metric"><span>Arranque</span><strong>${s.bootMs ? `${(s.bootMs / 1000).toFixed(1)} s` : 'No disponible'}</strong></div>
+        </div>`;
+      $('#btn-bench-share').disabled = true;
+      return;
+    }
+    card.innerHTML = `
+      <div class="bench-headline">${esc(benchHeadline(b.comparison))}</div>
+      <p class="section-subtitle">Antes: ${esc(fmtDate(b.baseline.takenAt))} · Después: ${esc(fmtDate(b.latest.takenAt))} · XHANNIZER0</p>
+      <div class="bench-grid">
+        ${b.comparison
+          .map(
+            (m) => `
+          <div class="bench-metric">
+            <span>${esc(m.label)}</span>
+            <strong>${esc(m.before)} → ${esc(m.after)} ${esc(m.unit)}</strong>
+            <em class="${m.same ? '' : m.improved ? 'is-good' : 'is-bad'}">${m.same ? 'Igual' : `${m.changePct > 0 ? '+' : ''}${m.changePct}%`}</em>
+          </div>`
+          )
+          .join('')}
+      </div>
+      ${b.comparison.some((m) => m.key === 'bootMs') ? '' : '<p class="section-subtitle" style="margin-top:8px;">El tiempo de arranque solo aparece si Windows lo registró (requiere haber reiniciado al menos una vez).</p>'}`;
+    $('#btn-bench-share').disabled = false;
+  }
+
+  async function takeBenchmark(asBaseline) {
+    const btn = asBaseline ? $('#btn-bench-baseline') : $('#btn-bench-after');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Midiendo…';
+    try {
+      const res = await api.benchmarkTake({ asBaseline });
+      if (!res?.ok) {
+        showToast(res?.error || 'No se pudo medir.');
+        return res;
+      }
+      state.bench = res;
+      renderBenchmark();
+      return res;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
+
+  // =========================================================================
+  // Prueba de estabilidad
+  // =========================================================================
+  async function runStability() {
+    $('#btn-stab-run').disabled = true;
+    $('#btn-stab-stop').hidden = false;
+    $('#stab-progress-box').hidden = false;
+    $('#stab-result').innerHTML = '';
+    try {
+      const res = await api.stabilityRun({ minutes: Number($('#stab-min').value), memoryPercent: 60 });
+      if (!res?.ok) {
+        showToast(res?.error || 'No se pudo iniciar la prueba.');
+        return;
+      }
+      $('#stab-result').innerHTML = `
+        <article class="driver-card">
+          <div class="driver-top">
+            <div class="driver-icon ${res.stable ? '' : 'is-warn'}">${res.stable ? ICON_OK : ICON_WARN}</div>
+            <div class="driver-main" style="grid-column: span 2;">
+              <div class="driver-title-row">
+                <span class="pill-badge ${res.stable ? 'is-ok' : 'is-warn'}">${res.stable ? 'Estable' : 'Inestable'}</span>
+                <span class="pill-badge is-neutral">${esc(res.testedGb)} GB · ${esc(res.threads)} hilos · ${esc(res.minutes)} min</span>
+              </div>
+              <div class="driver-name" style="font-size:15px;">${esc(res.verdict)}</div>
+              <div class="driver-meta"><span>Errores de memoria: ${esc(res.errors)} · Errores de hardware de Windows (WHEA): ${esc(res.wheaErrors)} · ${esc(res.gbVerified)} GB verificados</span>
+              <span>Para temperaturas usa HWiNFO (en Herramientas) mientras corre la prueba.</span></div>
+            </div>
+          </div>
+        </article>`;
+    } finally {
+      $('#btn-stab-run').disabled = false;
+      $('#btn-stab-stop').hidden = true;
+      $('#stab-progress-box').hidden = true;
+    }
+  }
+
+  // =========================================================================
+  // Perfiles con código
+  // =========================================================================
+  async function ensureWinAudit() {
+    if (!state.winAudit) await loadWindowsAudit(false);
+    return state.winAudit?.items || [];
+  }
+
+  async function generateProfileCode() {
+    const settings = await ensureWinAudit();
+    const appIds = Array.from(new Set([
+      ...Array.from(state.selected.values()).filter((s) => s.type === 'app').map((s) => s.id),
+      ...state.catalog.filter((c) => c.installed).map((c) => c.id),
+    ]));
+    const settingIds = settings.filter((s) => s.isOptimal && s.id !== 'win-refresh-rate').map((s) => s.id);
+    const res = await api.profileCodeEncode({ name: $('#side-pc-name')?.textContent || '', appIds, settingIds });
+    if (!res?.ok) {
+      showToast(res?.error || 'No se pudo generar el código.');
+      return;
+    }
+    $('#code-output').value = res.code;
+    showToast(`Código copiado: ${res.apps} apps y ${res.settings} ajustes.`);
+  }
+
+  async function decodeCode(code) {
+    const res = await api.profileCodeDecode(code);
+    if (!res?.ok) showToast(res?.error || 'Código inválido.');
+    return res?.ok ? res : null;
+  }
+
+  async function importProfileCode() {
+    const data = await decodeCode($('#code-input').value);
+    if (!data) return;
+    let queued = 0;
+    for (const id of data.appIds) {
+      const item = state.catalog.find((c) => c.id === id);
+      if (item && !item.installed && !state.selected.has(id)) {
+        toggleAppSelection(id, true);
+        queued += 1;
+      }
+    }
+    const items = await ensureWinAudit();
+    const pending = data.settingIds.map((id) => items.find((i) => i.id === id)).filter((i) => i && !i.isOptimal);
+    showToast(`Código${data.name ? ` de ${data.name}` : ''}: ${queued} apps agregadas a tu selección${pending.length ? `, ${pending.length} ajustes por aplicar` : ''}.`);
+    if (pending.length) {
+      ensureVerifiedBackup({
+        scope: 'windows-config',
+        label: `Aplicar ${pending.length} ajustes del código de perfil`,
+        detail: pending.map((p) => p.name).join(' · '),
+        items: pending.map((p) => p.name),
+        onConfirmed: async (backupRes) => {
+          for (const p of pending) await api.applyWindowsSetting({ settingId: p.id, backupId: backupRes.id });
+          await loadWindowsAudit(false);
+          showToast(`${pending.length} ajustes del perfil aplicados.`);
+        },
+      });
+    }
+  }
+
+  // =========================================================================
+  // Piloto automático
+  // =========================================================================
+  const PILOT_STEPS = [
+    { id: 'baseline', title: 'Medir «Antes»', desc: 'Guarda cómo está el PC ahora para mostrarte la mejora al final.', on: true },
+    { id: 'backup', title: 'Respaldo verificado', desc: 'Obligatorio: permite deshacer cada cambio desde Carpetas y Discos.', on: true, locked: true },
+    { id: 'restore-point', title: 'Punto de restauración de Windows', desc: 'Red de seguridad extra de Windows.', on: true },
+    { id: 'drivers', title: 'Drivers con actualización', desc: 'Instala la versión recomendada de cada componente que la necesite.', on: true },
+    { id: 'runtimes', title: 'Runtimes esenciales', desc: 'Visual C++, DirectX, .NET Desktop y XNA que falten (los piden muchos juegos).', on: true },
+    { id: 'apps', title: 'Tus apps', desc: '', on: true },
+    { id: 'settings', title: 'Ajustes recomendados de Windows', desc: 'Los mismos de «Aplicar recomendadas» en la Auditoría de Windows.', on: true },
+    { id: 'win11', title: 'Quitar anuncios de Windows 11', desc: 'Anuncios del Inicio, Bing en la búsqueda, widgets, Recall y más.', on: false },
+    { id: 'cleanup', title: 'Limpieza post-formateo', desc: 'Temporales, caché de Windows Update y de la GPU. Windows.old no se toca.', on: true },
+    { id: 'pccheck', title: 'Chequeo de PC final', desc: 'Revisa XMP/EXPO, Resizable BAR, Secure Boot y dispositivos sin driver.', on: true },
+    { id: 'after', title: 'Medir «Después»', desc: 'Compara con la medición inicial en Rendimiento e informe.', on: true },
+  ];
+  const PILOT_CLEANUP = ['user-temp', 'shader-cache', 'win-temp', 'wu-cache'];
+  const PILOT_STATUS = {
+    pending: ['is-neutral', 'Pendiente'],
+    running: ['is-warn', 'En curso…'],
+    done: ['is-ok', 'Listo'],
+    skipped: ['is-neutral', 'Omitido'],
+    failed: ['is-warn', 'Con problemas'],
+  };
+  let pilotBusy = false;
+  let pilotStopRequested = false;
+
+  function pilotAppIds() {
+    if (state.pilotCode?.appIds?.length) return state.pilotCode.appIds;
+    return Array.from(state.selected.values()).filter((s) => s.type === 'app').map((s) => s.id);
+  }
+
+  function renderPilot() {
+    const run = state.pilot;
+    const appCount = run ? run.appIds.length : pilotAppIds().length;
+    $('#pilot-apps-info').textContent = state.pilotCode
+      ? `Código cargado${state.pilotCode.name ? ` (${state.pilotCode.name})` : ''}: ${state.pilotCode.appIds.length} apps y ${state.pilotCode.settingIds.length} ajustes.`
+      : appCount
+        ? `${appCount} apps de tu selección actual. También puedes pegar un código de perfil.`
+        : 'No elegiste apps: márcalas en el catálogo o pega un código de perfil (XHZ1-…).';
+    $('#pilot-steps').innerHTML = PILOT_STEPS.map((s) => {
+      const st = run?.steps.find((x) => x.id === s.id);
+      const enabled = run ? st?.enabled : state.pilotDraft?.[s.id] ?? s.on;
+      const [cls, label] = PILOT_STATUS[st?.status || 'pending'];
+      const desc = s.id === 'apps' ? `${appCount} apps del catálogo que todavía no tienes instaladas.` : s.desc;
+      return `
+      <article class="driver-card">
+        <div class="driver-top">
+          <label class="mig-check-row" style="grid-column: span 2;">
+            <input type="checkbox" data-pilot-step="${s.id}" ${enabled ? 'checked' : ''} ${s.locked || run ? 'disabled' : ''}>
+            <span class="driver-main">
+              <span class="driver-name" style="font-size:14px;">${esc(s.title)}</span>
+              <span class="driver-meta"><span>${esc(st?.note || desc)}</span></span>
+            </span>
+          </label>
+          <div class="driver-actions pilot-step-status">${run && enabled ? `<span class="pill-badge ${cls}">${label}</span>` : ''}</div>
+        </div>
+      </article>`;
+    }).join('');
+    const active = run && ['running', 'awaiting-reboot'].includes(run.status);
+    $('#btn-pilot-start').textContent = !run ? 'Iniciar piloto automático' : active ? 'Continuar' : 'Empezar de nuevo';
+    $('#btn-pilot-start').disabled = pilotBusy;
+    $('#btn-pilot-stop').hidden = !pilotBusy;
+    $('#pilot-reboot-box').hidden = !(run?.status === 'awaiting-reboot' && !pilotBusy);
+    const doneSteps = run ? run.steps.filter((x) => x.enabled && ['done', 'skipped', 'failed'].includes(x.status)).length : 0;
+    const total = run ? run.steps.filter((x) => x.enabled).length : 0;
+    if (run) {
+      $('#pilot-progress-box').hidden = false;
+      const pct = total ? Math.round((doneSteps / total) * 100) : 0;
+      $('#pilot-progress-pct').textContent = `${pct}%`;
+      $('#pilot-progress-bar').style.width = `${pct}%`;
+      if (!pilotBusy) {
+        $('#pilot-progress-step').textContent = run.status === 'done'
+          ? '¡Listo! Mira el resultado en «Rendimiento e informe».'
+          : run.status === 'awaiting-reboot' ? 'Esperando reinicio.' : run.status === 'stopped' ? 'Detenido.' : 'Quedó a medias: toca «Continuar».';
+      }
+    }
+  }
+
+  function setPilotStep(id, status, note = '') {
+    const st = state.pilot.steps.find((s) => s.id === id);
+    if (!st) return;
+    st.status = status;
+    if (note) st.note = note;
+    if (status === 'running') $('#pilot-progress-step').textContent = `${PILOT_STEPS.find((s) => s.id === id)?.title}…`;
+    api.autopilotSave(state.pilot);
+    renderPilot();
+  }
+
+  async function startPilot() {
+    if (pilotBusy) return;
+    const run = state.pilot;
+    if (run && ['running', 'awaiting-reboot'].includes(run.status)) {
+      await continuePilot();
+      return;
+    }
+    const enabled = Object.fromEntries(PILOT_STEPS.map((s) => [s.id, s.locked ? true : Boolean($(`[data-pilot-step="${s.id}"]`)?.checked)]));
+    const titles = PILOT_STEPS.filter((s) => enabled[s.id]).map((s) => s.title);
+    ensureVerifiedBackup({
+      scope: 'drivers',
+      label: 'Piloto automático post-formateo',
+      detail: titles.join(' · '),
+      items: titles,
+      forceNew: true,
+      onConfirmed: async (backupRes) => {
+        state.pilot = {
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          backupId: backupRes.id,
+          steps: PILOT_STEPS.map((s) => ({ id: s.id, enabled: enabled[s.id], status: s.id === 'backup' ? 'done' : 'pending', note: s.id === 'backup' ? `Respaldo ${backupRes.id}` : '' })),
+          appIds: pilotAppIds(),
+          cleanupIds: PILOT_CLEANUP,
+        };
+        state.pilotSettingIds = state.pilotCode?.settingIds || [];
+        await api.autopilotSave(state.pilot);
+        await runPilotSteps();
+      },
+    });
+  }
+
+  async function continuePilot() {
+    await refreshBackupCount();
+    if (state.recentBackup?.id) {
+      state.pilot.backupId = state.recentBackup.id;
+      state.pilot.status = 'running';
+      await runPilotSteps();
+      return;
+    }
+    ensureVerifiedBackup({
+      scope: 'drivers',
+      label: 'Continuar el piloto automático',
+      detail: 'El respaldo anterior venció (dura 24 horas): se crea uno nuevo antes de seguir.',
+      items: [],
+      forceNew: true,
+      onConfirmed: async (backupRes) => {
+        state.pilot.backupId = backupRes.id;
+        state.pilot.status = 'running';
+        await runPilotSteps();
+      },
+    });
+  }
+
+  async function runPilotStep(id) {
+    const bid = state.pilot.backupId;
+    if (id === 'baseline' || id === 'after') {
+      const res = await api.benchmarkTake({ asBaseline: id === 'baseline' });
+      state.bench = res;
+      return res?.ok ? { status: 'done' } : { status: 'failed', note: res?.error || 'No se pudo medir.' };
+    }
+    if (id === 'restore-point') {
+      const res = await api.createRestorePoint();
+      return res?.ok ? { status: 'done' } : { status: 'failed', note: res?.error };
+    }
+    if (id === 'drivers') {
+      if (!state.hardware) await scanHardware(false);
+      const drivers = (state.hardware?.drivers || []).filter((d) => d.needsUpdate && !state.omittedDrivers.has(d.id));
+      if (!drivers.length) return { status: 'skipped', note: 'Todos los drivers ya estaban al día.' };
+      const tasks = drivers.map((d) => ({
+        id: d.id,
+        type: 'driver',
+        name: `${d.categoryLabel}: ${d.name}`,
+        driverBranch: d.advisory?.recommendation === 'safe' ? 'safe' : 'latest',
+        officialUrl: d.officialUrl,
+        safeUrl: d.safeUrl,
+        wingetId: d.wingetId || null,
+      }));
+      const res = await executeInstallTasks(tasks, bid);
+      const ok = (res?.results || []).filter((r) => r?.ok).length;
+      if (!res?.ok) return { status: 'failed', note: res?.error || 'No se pudieron instalar los drivers.' };
+      return { status: ok === tasks.length ? 'done' : 'failed', note: `${ok} de ${tasks.length} drivers instalados.`, reboot: ok > 0 };
+    }
+    if (id === 'runtimes' || id === 'apps') {
+      const items = id === 'runtimes'
+        ? state.catalog.filter((c) => /^(vcredist|directx|dotnet-desktop|xna)/.test(c.id))
+        : state.pilot.appIds.map((aid) => state.catalog.find((c) => c.id === aid)).filter(Boolean);
+      const missing = items.filter((c) => !c.installed);
+      if (!missing.length) return { status: 'skipped', note: items.length ? 'Ya estaban todos instalados.' : 'No había apps elegidas.' };
+      const res = await executeInstallTasks(missing.map((c) => ({ id: c.id, type: 'app', name: c.name, officialUrl: c.officialUrl })), bid);
+      const ok = (res?.results || []).filter((r) => r?.ok).length;
+      if (!res?.ok) return { status: 'failed', note: res?.error || 'No se pudo instalar.' };
+      return { status: ok === missing.length ? 'done' : 'failed', note: `${ok} de ${missing.length} instalados.` };
+    }
+    if (id === 'settings' || id === 'win11') {
+      state.winAudit = null;
+      const items = await ensureWinAudit();
+      const fromCode = new Set(state.pilotSettingIds || []);
+      const pending = items.filter((i) => !i.isOptimal && (id === 'win11'
+        ? i.group === 'win11'
+        : i.group !== 'win11' && ((!i.optional && i.id !== 'win-refresh-rate' && i.id !== 'win-hags') || fromCode.has(i.id))));
+      if (!pending.length) return { status: 'skipped', note: 'Ya estaban aplicados.' };
+      let ok = 0;
+      for (const p of pending) {
+        const r = await api.applyWindowsSetting({ settingId: p.id, backupId: bid });
+        if (r?.ok !== false) ok += 1;
+      }
+      if (id === 'win11') await api.restartExplorer();
+      await loadWindowsAudit(false);
+      return { status: ok === pending.length ? 'done' : 'failed', note: `${ok} de ${pending.length} ajustes aplicados.` };
+    }
+    if (id === 'cleanup') {
+      const res = await runCleanupSelection(state.pilot.cleanupIds);
+      if (res?.canceled) return { status: 'skipped', note: 'Cancelaste la limpieza.' };
+      return res?.ok ? { status: 'done', note: `${formatBytes(res.freedBytes)} liberados.` } : { status: 'failed', note: res?.error };
+    }
+    if (id === 'pccheck') {
+      await loadPcCheck();
+      const warn = state.pcCheck?.warnCount || 0;
+      return { status: 'done', note: warn ? `${warn} cosas para revisar: mira Chequeo de PC y el Asistente de BIOS.` : 'Todo correcto.' };
+    }
+    return { status: 'skipped' };
+  }
+
+  async function runPilotSteps() {
+    if (pilotBusy) return;
+    pilotBusy = true;
+    pilotStopRequested = false;
+    activateTab('piloto');
+    renderPilot();
+    try {
+      for (const step of state.pilot.steps) {
+        if (!step.enabled || ['done', 'skipped'].includes(step.status)) continue;
+        if (pilotStopRequested) {
+          state.pilot.status = 'stopped';
+          break;
+        }
+        setPilotStep(step.id, 'running');
+        let result;
+        try {
+          result = await runPilotStep(step.id);
+        } catch (err) {
+          result = { status: 'failed', note: err?.message || 'Error inesperado.' };
+        }
+        setPilotStep(step.id, result.status, result.note || '');
+        if (result.reboot) {
+          state.pilot.status = 'awaiting-reboot';
+          break;
+        }
+      }
+      if (state.pilot.status === 'running') {
+        state.pilot.status = 'done';
+        showToast('Piloto automático terminado.');
+        if (state.pilot.steps.find((s) => s.id === 'after')?.status === 'done') loadBenchmark();
+      }
+    } finally {
+      pilotBusy = false;
+      await api.autopilotSave(state.pilot);
+      renderPilot();
+    }
+  }
+
+  async function resumePilotIfNeeded() {
+    const res = await api.autopilotGet();
+    const saved = res?.state;
+    if (!saved || !['running', 'awaiting-reboot'].includes(saved.status)) return;
+    state.pilot = saved;
+    activateTab('piloto');
+    renderPilot();
+    if (res.resumed) {
+      showToast('Volviste del reinicio: el piloto automático sigue donde quedó.');
+      await continuePilot();
+    } else {
+      showToast('El piloto automático quedó a medias: toca «Continuar» para seguir.');
+    }
+  }
+
+  function initExtraFeatures() {
+    api.onAppError((info) => showErrorBar(info?.message));
+
+    $('#btn-bios-all').addEventListener('click', () => loadBiosGuide(true));
+    $('#btn-reboot-bios').addEventListener('click', async () => {
+      const res = await api.rebootToBios();
+      if (!res?.canceled) showToast(res?.ok ? res.message : res?.error || 'No se pudo reiniciar a la BIOS.');
+    });
+
+    $('#btn-cleanup-scan').addEventListener('click', loadCleanup);
+    $('#cleanup-list').addEventListener('change', (e) => {
+      const i = e.target.dataset.cleanup;
+      if (i === undefined) return;
+      state.cleanup[Number(i)].checked = e.target.checked;
+      renderCleanup();
+    });
+    $('#btn-cleanup-run').addEventListener('click', async () => {
+      const ids = (state.cleanup || []).filter((c) => c.checked).map((c) => c.id);
+      const btn = $('#btn-cleanup-run');
+      btn.disabled = true;
+      const res = await runCleanupSelection(ids);
+      btn.disabled = false;
+      if (res?.ok) {
+        loadCleanup();
+        loadActionLog();
+      }
+    });
+    api.onCleanupProgress((p) => {
+      $('#cleanup-progress-box').hidden = p.percent >= 100;
+      $('#cleanup-progress-step').textContent = p.step || '';
+      $('#cleanup-progress-pct').textContent = `${Math.round(p.percent || 0)}%`;
+      $('#cleanup-progress-bar').style.width = `${Math.round(p.percent || 0)}%`;
+      if (state.pilot && pilotBusy) $('#pilot-progress-step').textContent = p.step || '';
+    });
+
+    $('#btn-restore-point').addEventListener('click', async () => {
+      const btn = $('#btn-restore-point');
+      btn.disabled = true;
+      const res = await api.createRestorePoint();
+      btn.disabled = false;
+      showToast(res?.ok ? res.message : res?.error || 'No se pudo crear el punto de restauración.');
+      loadActionLog();
+    });
+
+    $('#btn-bench-baseline').addEventListener('click', () => takeBenchmark(true));
+    $('#btn-bench-after').addEventListener('click', () => takeBenchmark(false));
+    $('#btn-bench-share').addEventListener('click', async () => {
+      const r = $('#bench-card').getBoundingClientRect();
+      const res = await api.benchmarkShare({ x: r.left - 8, y: r.top - 8, width: r.width + 16, height: r.height + 16 });
+      if (res?.ok) showToast(`Imagen guardada en ${res.path}`);
+    });
+
+    $('#btn-stab-run').addEventListener('click', runStability);
+    $('#btn-stab-stop').addEventListener('click', () => api.stabilityStop());
+    api.onStabilityProgress((p) => {
+      $('#stab-progress-step').textContent = `${p.step || ''}${p.errors ? ` · ${p.errors} errores` : ''}`;
+      $('#stab-progress-pct').textContent = `${Math.round(p.percent || 0)}%`;
+      $('#stab-progress-bar').style.width = `${Math.round(p.percent || 0)}%`;
+    });
+
+    $('#btn-report-pdf').addEventListener('click', async () => {
+      const sinceSel = $('#rep-since').value;
+      const since = sinceSel === 'all' ? null : new Date(Date.now() - (sinceSel === 'week' ? 7 : 1) * 86400000).toISOString();
+      if (!state.pcCheck) {
+        showToast('Analizando el PC para el informe…');
+        await loadPcCheck();
+      }
+      const res = await api.reportPdf({
+        client: $('#rep-client').value,
+        technician: $('#rep-tech').value,
+        business: $('#rep-business').value,
+        notes: $('#rep-notes').value,
+        since,
+      });
+      if (res?.canceled) return;
+      if (res?.ok) {
+        showToast(`Informe guardado en ${res.path}`);
+        api.openPath(res.path);
+      } else showToast(res?.error || 'No se pudo crear el informe.');
+    });
+
+    $('#btn-code-generate').addEventListener('click', generateProfileCode);
+    $('#btn-code-import').addEventListener('click', importProfileCode);
+
+    $('#btn-pilot-start').addEventListener('click', () => {
+      if (state.pilot && !['running', 'awaiting-reboot'].includes(state.pilot.status)) {
+        state.pilot = null;
+        api.autopilotSave(null);
+        renderPilot();
+        return;
+      }
+      startPilot();
+    });
+    $('#btn-pilot-stop').addEventListener('click', () => {
+      pilotStopRequested = true;
+      $('#pilot-progress-step').textContent = 'Se detendrá al terminar el paso actual…';
+    });
+    $('#btn-pilot-code').addEventListener('click', async () => {
+      const data = await decodeCode($('#pilot-code').value);
+      if (!data) return;
+      state.pilotCode = data;
+      renderPilot();
+      showToast(`Código cargado: ${data.appIds.length} apps.`);
+    });
+    $('#pilot-steps').addEventListener('change', (e) => {
+      const id = e.target.dataset.pilotStep;
+      if (!id) return;
+      state.pilotDraft = { ...(state.pilotDraft || {}), [id]: e.target.checked };
+    });
+    $('#btn-pilot-reboot').addEventListener('click', async () => {
+      const res = await api.autopilotReboot();
+      showToast(res?.ok ? res.message : res?.error || 'No se pudo reiniciar.');
+    });
+    $('#btn-pilot-continue-now').addEventListener('click', () => continuePilot());
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.hasAttribute('data-error-diag')) {
+        btn.closest('.xh-error-bar')?.remove();
+        api.exportDiagnostics().then((res) => {
+          if (res?.ok) showToast(`Diagnóstico guardado en ${res.path}`);
+        });
+      } else if (btn.hasAttribute('data-error-close')) {
+        btn.closest('.xh-error-bar')?.remove();
+      }
+    });
+  }
+
+  // =========================================================================
   // Arranque inicial
   // =========================================================================
   async function boot() {
@@ -3011,9 +3708,11 @@
     initSpotlight();
     initEvents();
     initNewFeatures();
+    initExtraFeatures();
     await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
     renderPostFormatChecklist();
     checkAppUpdateSilently();
+    resumePilotIfNeeded();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

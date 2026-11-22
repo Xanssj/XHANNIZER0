@@ -467,5 +467,5 @@ module.exports = {
   restoreBackup,
   pendingEntries,
   // Solo para pruebas
-  _internals: { captureSystemState, restoreSystemState, SETTING_TARGETS, captureRegistry, restoreRegistry, capturePowerPlan, restorePowerPlan, captureAppx, stillInstalledAppx, captureDns },
+  _internals: { captureSystemState, restoreSystemState, SETTING_TARGETS, captureRegistry, restoreRegistry, captureKeys, restoreKeys, capturePowerPlan, restorePowerPlan, captureAppx, stillInstalledAppx, captureDns },
 };

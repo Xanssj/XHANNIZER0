@@ -1,0 +1,42 @@
+name: Publicar versión
+
+# Crea la versión en GitHub Releases al subir una etiqueta, por ejemplo:
+#   git tag v2.0.1 && git push origin v2.0.1
+# El auto-actualizador de la app lee esta versión (releases/latest).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: La etiqueta coincide con package.json
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            Write-Error "La etiqueta ${{ github.ref_name }} no coincide con la versión v$version de package.json"
+            exit 1
+          }
+
+      - run: npm ci
+      - run: npm test
+
+      # Firma de código: si existen los secretos CSC_LINK (certificado .pfx en base64 o URL) y
+      # CSC_KEY_PASSWORD, electron-builder firma el instalador y el portable. Sin ellos, publica sin firmar.
+      - name: Compilar y publicar
+        run: npx electron-builder --win nsis portable --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}

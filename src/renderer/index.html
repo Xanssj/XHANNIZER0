@@ -77,6 +77,12 @@
       <div>
         <div class="side-group-label">Post-formateo</div>
         <ul class="owner-sidebar-menu" id="sidebar-nav">
+          <li class="owner-menu-item">
+            <button type="button" data-tab="piloto">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+              <span>Piloto automático</span>
+            </button>
+          </li>
           <li class="owner-menu-item is-active">
             <button type="button" data-tab="drivers">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
@@ -193,6 +199,12 @@
               <span>Mantenimiento</span>
             </button>
           </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="rendimiento">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-6"/></svg>
+              <span>Rendimiento e informe</span>
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -217,6 +229,53 @@
 
     <!-- Workspace principal -->
     <main class="owner-content">
+      <!-- ==================== PILOTO AUTOMÁTICO ==================== -->
+      <section class="owner-tab-panel" id="tab-piloto">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Piloto automático</h1>
+            <p class="section-subtitle">Deja tu PC recién formateado listo con un solo botón: respaldo, drivers, runtimes, tus apps, ajustes de Windows, limpieza y chequeo final. Si hace falta reiniciar, XHANNIZER0 se vuelve a abrir solo y sigue donde quedó.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-pilot-stop" hidden>Detener</button>
+            <button type="button" class="btn-primary" id="btn-pilot-start">Iniciar piloto automático</button>
+          </div>
+        </header>
+        <div class="safety-banner" id="pilot-banner">
+          <div>Windows te pedirá permiso de administrador (UAC) en algunos pasos: el punto de restauración, los ajustes del sistema y la limpieza. Todo lo que cambie el sistema queda en un respaldo que puedes deshacer.</div>
+        </div>
+        <div class="driver-list" id="pilot-steps"></div>
+        <div class="section-header" style="margin-top:8px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Apps que se instalarán</h2>
+            <p class="section-subtitle" id="pilot-apps-info">Usa tu selección actual del catálogo o pega un código de perfil (XHZ1-…).</p>
+          </div>
+          <div class="section-actions">
+            <input type="text" class="xh-input" id="pilot-code" placeholder="Código de perfil (opcional)" autocomplete="off" spellcheck="false">
+            <button type="button" class="btn-secondary" id="btn-pilot-code">Cargar código</button>
+          </div>
+        </div>
+        <div class="backup-progress-box" id="pilot-progress-box" hidden>
+          <div class="item-progress-head">
+            <span class="item-progress-detail" id="pilot-progress-step">Preparando…</span>
+            <span class="item-progress-pct" id="pilot-progress-pct">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-bar" id="pilot-progress-bar" style="width:0%"></div></div>
+        </div>
+        <article class="driver-card" id="pilot-reboot-box" hidden>
+          <div class="driver-top">
+            <div class="driver-main" style="grid-column: span 2;">
+              <div class="driver-name">Hace falta reiniciar para terminar de instalar los drivers</div>
+              <div class="driver-meta"><span>Al reiniciar, XHANNIZER0 se abrirá solo y seguirá con el resto de los pasos.</span></div>
+            </div>
+            <div class="driver-actions">
+              <button type="button" class="btn-action-small is-ghost" id="btn-pilot-continue-now">Seguir sin reiniciar</button>
+              <button type="button" class="btn-action-small is-primary" id="btn-pilot-reboot">Reiniciar y continuar</button>
+            </div>
+          </div>
+        </article>
+      </section>
+
       <!-- ==================== SECCIÓN 1: DRIVERS (PRINCIPAL) ==================== -->
       <section class="owner-tab-panel is-active" id="tab-drivers">
         <header class="section-header">
@@ -659,6 +718,18 @@
           </div>
         </div>
         <div class="driver-list" id="pccheck-devices"></div>
+
+        <div class="section-header" style="margin-top:8px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Asistente de BIOS</h2>
+            <p class="section-subtitle" id="bios-sub">La ruta exacta del menú para tu placa madre, solo de lo que el chequeo marcó para revisar.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-bios-all">Ver todas las guías</button>
+            <button type="button" class="btn-primary" id="btn-reboot-bios">Reiniciar a la BIOS</button>
+          </div>
+        </div>
+        <div class="driver-list" id="bios-guide"></div>
       </section>
 
       <!-- ==================== MIGRAR MI PC ==================== -->
@@ -700,6 +771,23 @@
           </div>
         </div>
         <div class="driver-list" id="mig-restore-list"></div>
+
+        <div class="section-header" style="margin-top:12px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">3. Compartir perfil con código</h2>
+            <p class="section-subtitle">Convierte tu selección de apps y los ajustes que ya aplicaste en un código de texto (XHZ1-…). Quien lo pegue aquí recibe las mismas apps y ajustes, sin archivos ni cuentas.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-primary" id="btn-code-generate">Generar y copiar código</button>
+          </div>
+        </div>
+        <article class="driver-card">
+          <textarea class="xh-input xh-textarea" id="code-output" rows="3" readonly placeholder="Aquí aparece tu código."></textarea>
+          <div class="xh-row" style="margin-top:10px;">
+            <input type="text" class="xh-input" id="code-input" placeholder="Pega un código XHZ1-…" autocomplete="off" spellcheck="false" style="flex:1;">
+            <button type="button" class="btn-secondary" id="btn-code-import">Importar código</button>
+          </div>
+        </article>
       </section>
 
       <!-- ==================== MANTENIMIENTO ==================== -->
@@ -710,11 +798,31 @@
             <p class="section-subtitle">Repara Windows, programa actualizaciones automáticas de tus apps y revisa todo lo que XHANNIZER0 hizo en tu PC.</p>
           </div>
           <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-restore-point">Crear punto de restauración</button>
             <button type="button" class="btn-secondary" id="btn-export-diagnostics">Exportar diagnóstico (.zip)</button>
           </div>
         </header>
 
         <div class="catalog-grid" id="repair-grid"></div>
+
+        <div class="section-header" style="margin-top:8px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Limpieza post-formateo</h2>
+            <p class="section-subtitle">Windows.old, temporales, caché de Windows Update y de la GPU. Lo que borres aquí no va a la papelera.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-cleanup-scan">Analizar espacio</button>
+            <button type="button" class="btn-primary" id="btn-cleanup-run" disabled>Limpiar selección</button>
+          </div>
+        </div>
+        <div class="driver-list" id="cleanup-list"></div>
+        <div class="backup-progress-box" id="cleanup-progress-box" hidden>
+          <div class="item-progress-head">
+            <span class="item-progress-detail" id="cleanup-progress-step">Preparando…</span>
+            <span class="item-progress-pct" id="cleanup-progress-pct">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-bar" id="cleanup-progress-bar" style="width:0%"></div></div>
+        </div>
 
         <div class="section-header" style="margin-top:8px;">
           <div class="section-header-copy">
@@ -753,6 +861,80 @@
           </div>
         </div>
         <div class="driver-list" id="actionlog-list"></div>
+      </section>
+
+      <!-- ==================== RENDIMIENTO E INFORME ==================== -->
+      <section class="owner-tab-panel" id="tab-rendimiento">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Rendimiento e informe</h1>
+            <p class="section-subtitle">Mide tu PC antes y después de optimizarlo, prueba que la RAM aguante con XMP/EXPO y genera un informe en PDF para entregar al cliente.</p>
+          </div>
+        </header>
+
+        <div class="section-header">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Antes y después</h2>
+            <p class="section-subtitle">Mide «Antes» recién formateado o antes de optimizar; después usa XHANNIZER0 y mide «Después». Para comparar bien, mide cada vez unos minutos después de encender el PC.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-bench-baseline">Medir «Antes»</button>
+            <button type="button" class="btn-primary" id="btn-bench-after">Medir «Después»</button>
+          </div>
+        </div>
+        <article class="driver-card bench-card" id="bench-card">
+          <p class="section-subtitle">Todavía no hay mediciones.</p>
+        </article>
+        <div class="xh-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-secondary" id="btn-bench-share" disabled>Guardar como imagen</button>
+        </div>
+
+        <div class="section-header" style="margin-top:8px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Prueba de estabilidad</h2>
+            <p class="section-subtitle">Llena parte de la RAM con patrones y los verifica desde todos los núcleos; al final revisa si Windows registró errores de hardware (WHEA). Úsala después de activar XMP/EXPO. Es una prueba rápida: no reemplaza a MemTest86.</p>
+          </div>
+          <div class="section-actions">
+            <label class="section-subtitle">Duración
+              <select class="xh-field-select" id="stab-min">
+                <option value="2">2 min</option><option value="5">5 min</option><option value="10" selected>10 min</option><option value="20">20 min</option><option value="30">30 min</option>
+              </select>
+            </label>
+            <button type="button" class="btn-secondary" id="btn-stab-stop" hidden>Detener</button>
+            <button type="button" class="btn-primary" id="btn-stab-run">Iniciar prueba</button>
+          </div>
+        </div>
+        <div class="backup-progress-box" id="stab-progress-box" hidden>
+          <div class="item-progress-head">
+            <span class="item-progress-detail" id="stab-progress-step">Preparando…</span>
+            <span class="item-progress-pct" id="stab-progress-pct">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-bar" id="stab-progress-bar" style="width:0%"></div></div>
+        </div>
+        <div class="driver-list" id="stab-result"></div>
+
+        <div class="section-header" style="margin-top:8px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Modo técnico: informe para el cliente</h2>
+            <p class="section-subtitle">Un PDF con el equipo, el chequeo, el antes y después, el trabajo realizado y los programas instalados, listo para firmar. Usa XHANNIZER0 Portable desde tu USB y genera el informe al terminar.</p>
+          </div>
+        </div>
+        <article class="driver-card">
+          <div class="report-form">
+            <label>Cliente<input type="text" class="xh-input" id="rep-client" maxlength="80"></label>
+            <label>Técnico<input type="text" class="xh-input" id="rep-tech" maxlength="80"></label>
+            <label>Negocio<input type="text" class="xh-input" id="rep-business" maxlength="80" placeholder="Opcional"></label>
+            <label>Trabajo incluido
+              <select class="xh-field-select" id="rep-since" style="margin-left:0;">
+                <option value="day">Últimas 24 horas</option><option value="week">Últimos 7 días</option><option value="all">Todo el historial</option>
+              </select>
+            </label>
+            <label class="report-notes">Observaciones<textarea class="xh-input xh-textarea" id="rep-notes" rows="3" maxlength="3000" placeholder="Ej.: se cambió la pasta térmica, se recomienda ampliar a 32 GB de RAM…"></textarea></label>
+          </div>
+          <div class="xh-row" style="justify-content:flex-end;margin-top:10px;">
+            <button type="button" class="btn-primary" id="btn-report-pdf">Generar informe PDF</button>
+          </div>
+        </article>
       </section>
     </main>
   </div>
@@ -797,6 +979,11 @@
           <strong>Crear copia de seguridad antes de avanzar (Obligatorio)</strong>
           <small>Se guardará un respaldo verificado de drivers / estructura de carpetas en tu carpeta segura <code>XhanniBackups\XHANNIZER0</code> antes de ejecutar el cambio.</small>
         </span>
+      </label>
+
+      <label class="mig-check-row backup-rp-row">
+        <input type="checkbox" id="backup-rp-checkbox">
+        <span>También crear un punto de restauración de Windows <small>(pide permiso de administrador)</small></span>
       </label>
 
       <div class="backup-progress-box" id="backup-progress-box" hidden>
@@ -896,6 +1083,7 @@
   <div id="xh-toast" role="status" aria-live="polite"></div>
 
   <script src="js/spring.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

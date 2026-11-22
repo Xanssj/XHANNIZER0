@@ -141,4 +141,38 @@ async function exportDiagnostics({ destFile, data }) {
   }
 }
 
-module.exports = { runRepair, REPAIRS, getScheduledUpdate, setScheduledUpdate, exportDiagnostics, TASK_NAME };
+// ---------- Punto de restauración de Windows (red de seguridad extra, requiere administrador)
+async function createRestorePoint(description = 'XHANNIZER0') {
+  const logPath = path.join(os.tmpdir(), `xhannizer0-rp-${Date.now()}.json`);
+  const script = `$ErrorActionPreference = 'Continue'
+$res = @{ ok = $false; reason = '' }
+try {
+  Enable-ComputerRestore -Drive "$env:SystemDrive\\" -ErrorAction Stop
+  $before = @(Get-ComputerRestorePoint -ErrorAction SilentlyContinue).Count
+  # Windows limita a un punto cada 24 h salvo que se ajuste esta frecuencia (0 = sin límite)
+  $key = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SystemRestore'
+  $prev = (Get-ItemProperty $key -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue).SystemRestorePointCreationFrequency
+  Set-ItemProperty $key -Name SystemRestorePointCreationFrequency -Value 0 -Type DWord
+  Checkpoint-Computer -Description ${psData(String(description).slice(0, 60))} -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
+  if ($null -eq $prev) { Remove-ItemProperty $key -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue } else { Set-ItemProperty $key -Name SystemRestorePointCreationFrequency -Value $prev -Type DWord }
+  $after = @(Get-ComputerRestorePoint -ErrorAction SilentlyContinue).Count
+  $res.ok = ($after -gt $before)
+  if (-not $res.ok) { $res.reason = 'Windows no registró el punto nuevo.' }
+} catch { $res.reason = $_.Exception.Message }
+$res | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psData(logPath)} -Encoding UTF8
+exit 0`;
+  const elev = await runElevated(script, 5 * 60 * 1000);
+  if (elev.cancelled) return { ok: false, cancelled: true, error: 'Elevación UAC cancelada: no se creó el punto de restauración.' };
+  try {
+    const data = JSON.parse(fs.readFileSync(logPath, 'utf8').replace(/^﻿/, ''));
+    return data.ok
+      ? { ok: true, message: 'Punto de restauración de Windows creado.' }
+      : { ok: false, error: `No se pudo crear el punto de restauración: ${data.reason || 'motivo desconocido'}` };
+  } catch {
+    return { ok: false, error: 'No se pudo crear el punto de restauración.' };
+  } finally {
+    fs.rmSync(logPath, { force: true });
+  }
+}
+
+module.exports = { runRepair, REPAIRS, getScheduledUpdate, setScheduledUpdate, exportDiagnostics, createRestorePoint, TASK_NAME };

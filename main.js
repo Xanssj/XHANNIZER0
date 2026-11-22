@@ -41,6 +41,16 @@ const migration = require('./src/backend/migration');
 const maintenance = require('./src/backend/maintenance');
 const { initActionLog, logAction, readActionLog } = require('./src/backend/actionLog');
 const { restartExplorer } = require('./src/backend/windowsAudit');
+const { compareVersions } = require('./src/backend/semver');
+const bios = require('./src/backend/bios');
+const cleanup = require('./src/backend/cleanup');
+const benchmark = require('./src/backend/benchmark');
+const stability = require('./src/backend/stability');
+const { encodeProfileCode, decodeProfileCode } = require('./src/backend/profileCode');
+const { buildReportHtml } = require('./src/backend/report');
+const autopilot = require('./src/backend/autopilot');
+const os = require('os');
+const { clipboard } = require('electron');
 
 app.setAppUserModelId('studio.xhanni.xhannizer0');
 app.setName('XHANNIZER0');
@@ -51,7 +61,38 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
   app.setPath('userData', path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'XHANNIZER0-datos'));
 }
 initActionLog(app.getPath('userData'));
+benchmark.initBenchmark(app.getPath('userData'));
+autopilot.initAutopilot(app.getPath('userData'));
 Menu.setApplicationMenu(null);
+
+// ---------- Errores inesperados: se registran (para el diagnóstico) y se avisa a la interfaz
+const recentErrors = [];
+function recordError(source, err) {
+  const entry = {
+    at: new Date().toISOString(),
+    source,
+    message: String(err?.message || err || 'Error desconocido').slice(0, 500),
+    stack: String(err?.stack || '').split('\n').slice(0, 8).join('\n').slice(0, 2000),
+  };
+  recentErrors.unshift(entry);
+  recentErrors.length = Math.min(recentErrors.length, 50);
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'xhannizer0-errores.log'), `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch {
+    // Sin disco disponible: queda solo en memoria
+  }
+  if (win && !win.isDestroyed() && source !== 'renderer') win.webContents.send('xh:app-error', { message: entry.message });
+}
+function readErrorLog() {
+  try {
+    return fs.readFileSync(path.join(app.getPath('userData'), 'xhannizer0-errores.log'), 'utf8')
+      .trim().split('\n').slice(-200).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse();
+  } catch {
+    return recentErrors;
+  }
+}
+process.on('uncaughtException', (err) => recordError('main', err));
+process.on('unhandledRejection', (err) => recordError('main', err));
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -87,24 +128,6 @@ function withVerifiedBackup(handler) {
     if (!check.ok) return { ok: false, error: check.error, message: check.error };
     return handler(payload || {});
   };
-}
-
-// Compara versiones tipo semver ("2.0.10" > "2.0.9"); un sufijo -beta cuenta como menor.
-function compareVersions(a, b) {
-  const parse = (v) => {
-    const [core, pre = ''] = String(v || '').replace(/^v/i, '').split('-', 2);
-    return { nums: core.split('.').map((n) => parseInt(n, 10) || 0), pre };
-  };
-  const va = parse(a);
-  const vb = parse(b);
-  for (let i = 0; i < Math.max(va.nums.length, vb.nums.length); i += 1) {
-    const diff = (va.nums[i] || 0) - (vb.nums[i] || 0);
-    if (diff !== 0) return diff > 0 ? 1 : -1;
-  }
-  if (va.pre === vb.pre) return 0;
-  if (!va.pre) return 1;
-  if (!vb.pre) return -1;
-  return va.pre.localeCompare(vb.pre, undefined, { numeric: true }) > 0 ? 1 : -1;
 }
 
 function openExternalSafe(url) {
@@ -607,6 +630,8 @@ ipcMain.handle('xh:export-diagnostics', async () => {
       'chequeo-pc.json': getLastPcCheck() || {},
       'respaldos.json': backups,
       'acciones.json': readActionLog(500),
+      'errores.json': readErrorLog(),
+      'antes-y-despues.json': benchmark.getBenchmark(),
       'LEEME.txt': 'Diagnóstico generado por XHANNIZER0. Contiene el hardware detectado, el resultado del chequeo de PC, la lista de respaldos y el historial de acciones de la app. No incluye contraseñas ni archivos personales. Incluye el nombre del equipo y rutas de carpetas: revísalo antes de compartirlo.',
     },
   });
@@ -744,6 +769,186 @@ ipcMain.handle('xh:create-usb-kit', async (_event, payload) => {
   );
   return { ok: true, kitDir, count: list.length };
 });
+
+// ---------- Errores que reporta la interfaz
+let rendererErrorCount = 0;
+ipcMain.handle('xh:report-error', async (_event, payload) => {
+  if (rendererErrorCount >= 30) return { ok: false }; // evita llenar el registro si algo entra en bucle
+  rendererErrorCount += 1;
+  recordError('renderer', { message: payload?.message, stack: payload?.stack });
+  return { ok: true };
+});
+
+// ---------- Asistente de BIOS
+const motherboardInfo = () => {
+  const board = getLastHardwareScan()?.drivers?.find((d) => d.category === 'motherboard');
+  const vendor = board?.vendor || '';
+  return { manufacturer: vendor, product: board?.name ? board.name.replace(vendor, '').trim() : '' };
+};
+
+ipcMain.handle('xh:bios-guide', async (_event, payload) => {
+  const checks = payload?.all ? undefined : getLastPcCheck()?.checks || [];
+  return { ok: true, ...bios.getBiosGuide({ ...motherboardInfo(), checks }) };
+});
+
+ipcMain.handle('xh:reboot-to-bios', async () => {
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Reiniciar a la BIOS', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Reiniciar a la BIOS — XHANNIZER0',
+    message: '¿Reiniciar ahora y entrar directo a la BIOS?',
+    detail: 'Guarda tu trabajo y cierra los programas abiertos. El PC se reiniciará en 5 segundos. Para salir de la BIOS sin cambios, elige «Exit without saving».',
+  });
+  if (response !== 0) return { ok: false, canceled: true };
+  const res = await bios.rebootToFirmware();
+  logAction('bios', { label: 'Reinicio a la BIOS', ok: res.ok });
+  return res;
+});
+
+// ---------- Limpieza post-formateo
+let cleanupBusy = false;
+ipcMain.handle('xh:cleanup-scan', async () => cleanup.scanCleanup());
+ipcMain.handle('xh:cleanup-run', async (_event, payload) => {
+  if (cleanupBusy) return { ok: false, error: 'Ya hay una limpieza en curso.' };
+  const ids = (Array.isArray(payload?.ids) ? payload.ids : []).filter((id) => cleanup.ITEMS[id]);
+  if (!ids.length) return { ok: false, error: 'No elegiste nada para limpiar.' };
+  const names = ids.map((id) => `• ${cleanup.ITEMS[id].name}`).join('\n');
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Borrar definitivamente', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Limpieza — XHANNIZER0',
+    message: 'Se borrará lo siguiente (no va a la papelera y no se puede deshacer):',
+    detail: `${names}${ids.includes('windows-old') ? '\n\nAl borrar Windows.old ya no podrás volver a la versión anterior de Windows.' : ''}`,
+  });
+  if (response !== 0) return { ok: false, canceled: true };
+  cleanupBusy = true;
+  try {
+    const res = await cleanup.runCleanup(ids, (p) => {
+      if (win && !win.isDestroyed()) win.webContents.send('xh:cleanup-progress', p);
+    });
+    logAction('cleanup', { ids, freedBytes: res.freedBytes || 0, ok: res.ok });
+    return res;
+  } finally {
+    cleanupBusy = false;
+  }
+});
+
+// ---------- Antes y después
+ipcMain.handle('xh:benchmark-get', async () => benchmark.getBenchmark());
+ipcMain.handle('xh:benchmark-take', async (_event, payload) => {
+  const startup = await listStartupApps();
+  const startupEnabled = (startup.items || []).filter((s) => s.enabled !== false).length;
+  const res = await benchmark.takeSnapshot({ startupEnabled });
+  if (!res.ok) return res;
+  return benchmark.saveSnapshot(res.snapshot, Boolean(payload?.asBaseline));
+});
+ipcMain.handle('xh:benchmark-share', async (_event, rect) => {
+  if (!win || win.isDestroyed()) return { canceled: true };
+  const r = rect && ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(rect[k]))
+    ? { x: Math.max(0, Math.round(rect.x)), y: Math.max(0, Math.round(rect.y)), width: Math.round(rect.width), height: Math.round(rect.height) }
+    : undefined;
+  const image = await win.webContents.capturePage(r);
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Guardar imagen — XHANNIZER0',
+    defaultPath: path.join(app.getPath('pictures'), `XHANNIZER0-antes-y-despues-${new Date().toISOString().slice(0, 10)}.png`),
+    filters: [{ name: 'Imagen PNG', extensions: ['png'] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  fs.writeFileSync(res.filePath, image.toPNG());
+  return { ok: true, path: res.filePath };
+});
+
+// ---------- Prueba de estabilidad
+ipcMain.handle('xh:stability-run', async (_event, payload) => {
+  const res = await stability.runStabilityTest({
+    minutes: payload?.minutes,
+    memoryPercent: payload?.memoryPercent,
+    onProgress: (p) => {
+      if (win && !win.isDestroyed()) win.webContents.send('xh:stability-progress', p);
+    },
+  });
+  if (res.ok) logAction('stability', { label: `Prueba de estabilidad (${res.minutes} min)`, ok: res.stable, errors: res.errors, wheaErrors: res.wheaErrors });
+  return res;
+});
+ipcMain.handle('xh:stability-stop', async () => stability.stopStabilityTest());
+
+// ---------- Perfiles con código
+ipcMain.handle('xh:profile-code-encode', async (_event, payload) => {
+  const res = encodeProfileCode(payload || {});
+  if (res.ok) clipboard.writeText(res.code);
+  return res;
+});
+ipcMain.handle('xh:profile-code-decode', async (_event, code) => decodeProfileCode(code));
+
+// ---------- Punto de restauración de Windows
+ipcMain.handle('xh:create-restore-point', async () => {
+  const res = await maintenance.createRestorePoint('XHANNIZER0');
+  logAction('restore-point', { label: 'Punto de restauración de Windows', ok: res.ok });
+  return res;
+});
+
+// ---------- Modo técnico: informe PDF para el cliente
+ipcMain.handle('xh:report-pdf', async (_event, payload) => {
+  if (!win || win.isDestroyed()) return { canceled: true };
+  const clip = (v, n) => String(v || '').slice(0, n);
+  const since = payload?.since ? new Date(payload.since).getTime() : 0;
+  const catalog = await getCatalogWithStatusAsync();
+  const html = buildReportHtml({
+    client: clip(payload?.client, 80),
+    technician: clip(payload?.technician, 80),
+    business: clip(payload?.business, 80),
+    notes: clip(payload?.notes, 3000),
+    hardware: getLastHardwareScan(),
+    pcCheck: getLastPcCheck(),
+    comparison: benchmark.getBenchmark().comparison,
+    installedApps: catalog.filter((c) => c.installed).map((c) => c.name),
+    actions: readActionLog(300).filter((e) => !since || new Date(e.at).getTime() >= since).slice(0, 120),
+  });
+  const res = await dialog.showSaveDialog(win, {
+    title: 'Guardar informe — XHANNIZER0',
+    defaultPath: path.join(app.getPath('documents'), `Informe-${clip(payload?.client, 40).replace(/[^\p{L}\p{N} _-]/gu, '').trim() || 'cliente'}-${new Date().toISOString().slice(0, 10)}.pdf`),
+    filters: [{ name: 'Documento PDF', extensions: ['pdf'] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  const tmp = path.join(os.tmpdir(), `xhannizer0-informe-${Date.now()}.html`);
+  fs.writeFileSync(tmp, html, 'utf8');
+  const pdfWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
+  try {
+    await pdfWin.loadFile(tmp);
+    const pdf = await pdfWin.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true });
+    fs.writeFileSync(res.filePath, pdf);
+    logAction('report', { label: `Informe para ${clip(payload?.client, 40) || 'cliente'}`, ok: true });
+    return { ok: true, path: res.filePath };
+  } catch (err) {
+    return { ok: false, error: `No se pudo crear el PDF: ${err.message}` };
+  } finally {
+    pdfWin.destroy();
+    fs.rmSync(tmp, { force: true });
+  }
+});
+
+// ---------- Piloto automático
+ipcMain.handle('xh:autopilot-get', async () => ({
+  ok: true,
+  state: autopilot.readAutopilot(),
+  resumed: process.argv.includes(autopilot.RESUME_FLAG),
+}));
+ipcMain.handle('xh:autopilot-save', async (_event, data) => autopilot.saveAutopilot(data || null));
+ipcMain.handle('xh:autopilot-reboot', async () => {
+  const res = await autopilot.scheduleResumeAndReboot({
+    execPath: process.execPath,
+    appPath: app.getAppPath(),
+    isPackaged: app.isPackaged,
+    portableExe: process.env.PORTABLE_EXECUTABLE_FILE || null,
+  });
+  logAction('autopilot', { label: 'Reinicio para continuar el piloto automático', ok: res.ok });
+  return res;
+});
+ipcMain.handle('xh:autopilot-cancel-reboot', async () => autopilot.cancelResume());
 
 app.on('second-instance', () => {
   if (!win || win.isDestroyed()) return;

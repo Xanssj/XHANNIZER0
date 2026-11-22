@@ -10,7 +10,9 @@
     "start": "electron .",
     "dist:nsis": "electron-builder --win nsis",
     "dist:portable": "electron-builder --win portable",
-    "dist:all": "electron-builder --win nsis portable"
+    "dist:all": "electron-builder --win nsis portable",
+    "test": "node --test \"tests/*.test.js\"",
+    "validate:catalog": "node scripts/validate-catalog.js"
   },
   "devDependencies": {
     "electron": "45.3.4",
@@ -33,11 +35,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "requestedExecutionLevel": "asInvoker",
@@ -52,6 +58,14 @@
     },
     "portable": {
       "artifactName": "${productName}-${version}-Portable.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Xanssj",
+        "repo": "XHANNIZER0",
+        "releaseType": "release"
+      }
+    ]
   }
 }

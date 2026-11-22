@@ -105,4 +105,49 @@ contextBridge.exposeInMainWorld('xhApi', {
   setScheduledUpdate: (payload) => ipcRenderer.invoke('xh:set-scheduled-update', payload),
   getActionLog: () => ipcRenderer.invoke('xh:get-action-log'),
   exportDiagnostics: () => ipcRenderer.invoke('xh:export-diagnostics'),
+  createRestorePoint: () => ipcRenderer.invoke('xh:create-restore-point'),
+
+  // Errores inesperados
+  reportError: (payload) => ipcRenderer.invoke('xh:report-error', payload),
+  onAppError: (cb) => {
+    const handler = (_event, info) => cb(info);
+    ipcRenderer.on('xh:app-error', handler);
+    return () => ipcRenderer.removeListener('xh:app-error', handler);
+  },
+
+  // Asistente de BIOS
+  biosGuide: (payload) => ipcRenderer.invoke('xh:bios-guide', payload),
+  rebootToBios: () => ipcRenderer.invoke('xh:reboot-to-bios'),
+
+  // Limpieza post-formateo
+  cleanupScan: () => ipcRenderer.invoke('xh:cleanup-scan'),
+  cleanupRun: (payload) => ipcRenderer.invoke('xh:cleanup-run', payload),
+  onCleanupProgress: (cb) => {
+    const handler = (_event, p) => cb(p);
+    ipcRenderer.on('xh:cleanup-progress', handler);
+    return () => ipcRenderer.removeListener('xh:cleanup-progress', handler);
+  },
+
+  // Antes y después + prueba de estabilidad
+  benchmarkGet: () => ipcRenderer.invoke('xh:benchmark-get'),
+  benchmarkTake: (payload) => ipcRenderer.invoke('xh:benchmark-take', payload),
+  benchmarkShare: (rect) => ipcRenderer.invoke('xh:benchmark-share', rect),
+  stabilityRun: (payload) => ipcRenderer.invoke('xh:stability-run', payload),
+  stabilityStop: () => ipcRenderer.invoke('xh:stability-stop'),
+  onStabilityProgress: (cb) => {
+    const handler = (_event, p) => cb(p);
+    ipcRenderer.on('xh:stability-progress', handler);
+    return () => ipcRenderer.removeListener('xh:stability-progress', handler);
+  },
+
+  // Perfiles con código e informe técnico
+  profileCodeEncode: (payload) => ipcRenderer.invoke('xh:profile-code-encode', payload),
+  profileCodeDecode: (code) => ipcRenderer.invoke('xh:profile-code-decode', code),
+  reportPdf: (payload) => ipcRenderer.invoke('xh:report-pdf', payload),
+
+  // Piloto automático
+  autopilotGet: () => ipcRenderer.invoke('xh:autopilot-get'),
+  autopilotSave: (data) => ipcRenderer.invoke('xh:autopilot-save', data),
+  autopilotReboot: () => ipcRenderer.invoke('xh:autopilot-reboot'),
+  autopilotCancelReboot: () => ipcRenderer.invoke('xh:autopilot-cancel-reboot'),
 });
