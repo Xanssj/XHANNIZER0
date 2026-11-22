@@ -1,0 +1,46 @@
+name: Reportar un error
+description: Algo de XHANNIZER0 no funciona como debería.
+labels: [error]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por avisarnos. **Si es un fallo de seguridad, no lo publiques aquí:** abre un ticket en el [Discord oficial](https://discord.gg/Gcxfn7rvJN).
+  - type: input
+    id: version
+    attributes:
+      label: Versión de XHANNIZER0
+      description: Aparece en «Acerca de y soporte».
+      placeholder: 2.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: edicion
+    attributes:
+      label: Edición
+      options:
+        - Instalador
+        - Portable
+        - Desde el código (npm start)
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows
+      placeholder: Windows 11 Pro 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: que-paso
+    attributes:
+      label: Qué pasó
+      description: Qué hiciste, qué esperabas y qué pasó en cambio.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostico
+    attributes:
+      label: Diagnóstico (opcional)
+      description: |
+        En la app: Mantenimiento → Exportar diagnóstico. Puedes adjuntar el .zip aquí; incluye el nombre del equipo y rutas de carpetas, revísalo antes de subirlo.

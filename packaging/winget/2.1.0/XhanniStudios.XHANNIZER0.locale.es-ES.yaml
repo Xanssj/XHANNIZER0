@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: XhanniStudios.XHANNIZER0
+PackageVersion: 2.1.0
+PackageLocale: es-ES
+Publisher: Xhanni Studios
+PublisherUrl: https://xhannistudios.org
+PublisherSupportUrl: https://discord.gg/Gcxfn7rvJN
+PrivacyUrl: https://github.com/Xanssj/XHANNIZER0/blob/main/PRIVACY.md
+Author: xhanni
+PackageName: XHANNIZER0
+PackageUrl: https://github.com/Xanssj/XHANNIZER0
+License: MIT
+LicenseUrl: https://github.com/Xanssj/XHANNIZER0/blob/main/LICENSE
+ShortDescription: Deja Windows listo después de formatear o armar tu PC, sin anuncios ni instaladores ocultos.
+Description: |-
+  XHANNIZER0 instala drivers, runtimes y programas desde sus fuentes oficiales, revisa los errores típicos al armar un PC
+  (XMP/EXPO, monitor en la placa madre, Resizable BAR, Secure Boot), migra tus programas y ajustes a un PC nuevo y deja
+  Windows limpio y actualizado. Cada cambio exige un respaldo verificado y se puede deshacer. Sin cuentas, sin publicidad
+  y sin telemetría.
+Moniker: xhannizer0
+Tags:
+  - windows
+  - post-formateo
+  - drivers
+  - winget
+  - optimizacion
+  - instalador
+ReleaseNotesUrl: https://github.com/Xanssj/XHANNIZER0/blob/main/CHANGELOG.md
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

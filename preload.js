@@ -105,6 +105,8 @@ contextBridge.exposeInMainWorld('xhApi', {
   setScheduledUpdate: (payload) => ipcRenderer.invoke('xh:set-scheduled-update', payload),
   getActionLog: () => ipcRenderer.invoke('xh:get-action-log'),
   exportDiagnostics: () => ipcRenderer.invoke('xh:export-diagnostics'),
+  appInfo: () => ipcRenderer.invoke('xh:app-info'),
+  openDataFolder: () => ipcRenderer.invoke('xh:open-data-folder'),
   createRestorePoint: () => ipcRenderer.invoke('xh:create-restore-point'),
 
   // Errores inesperados

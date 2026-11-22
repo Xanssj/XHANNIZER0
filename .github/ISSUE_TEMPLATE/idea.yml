@@ -1,0 +1,26 @@
+name: Proponer una idea
+description: Una función nueva o un programa para el catálogo.
+labels: [idea]
+body:
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Tipo
+      options:
+        - Función nueva
+        - Agregar un programa al catálogo
+        - Mejorar algo que ya existe
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Tu idea
+      description: Qué te gustaría y para qué te serviría.
+    validations:
+      required: true
+  - type: input
+    id: winget
+    attributes:
+      label: ID de WinGet o sitio oficial (si es un programa)
+      placeholder: Editor.Programa o https://…

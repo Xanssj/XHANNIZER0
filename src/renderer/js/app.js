@@ -524,6 +524,67 @@
     if (target === 'mantenimiento') loadMaintenance();
     if (target === 'piloto') renderPilot();
     if (target === 'rendimiento') loadBenchmark();
+    if (target === 'acerca') loadAbout();
+  }
+
+  // =========================================================================
+  // Acerca de y soporte
+  // =========================================================================
+  const ABOUT_LINKS = {
+    discord: 'https://discord.gg/Gcxfn7rvJN',
+    web: 'https://xhannistudios.org',
+    team: 'https://xhannistudios.org/nosotros',
+    github: 'https://github.com/Xanssj/XHANNIZER0',
+    changelog: 'https://github.com/Xanssj/XHANNIZER0/blob/main/CHANGELOG.md',
+    privacy: 'https://github.com/Xanssj/XHANNIZER0/blob/main/PRIVACY.md',
+  };
+
+  async function loadAbout() {
+    try {
+      const info = await api.appInfo();
+      if (!info?.ok) return;
+      const edition = info.portable ? 'portable' : info.packaged ? 'instalada' : 'desde el código';
+      $('#about-version').textContent = `Versión ${info.version} · edición ${edition} · Electron ${info.electron}`;
+    } catch {
+      // Se queda con el texto por defecto
+    }
+  }
+
+  function initAbout() {
+    $('#tab-acerca').addEventListener('click', async (e) => {
+      const link = e.target.closest('[data-about-link]');
+      if (link && ABOUT_LINKS[link.dataset.aboutLink]) api.openExternal(ABOUT_LINKS[link.dataset.aboutLink]);
+    });
+    $('#btn-about-data').addEventListener('click', async () => {
+      const res = await api.openDataFolder();
+      if (!res?.ok) showToast(res?.error || 'No se pudo abrir la carpeta de datos.');
+    });
+    $('#btn-about-report').addEventListener('click', async () => {
+      const res = await api.exportDiagnostics();
+      if (res?.canceled) return;
+      if (res?.ok) showToast(`Diagnóstico guardado en ${res.path}. Adjúntalo en tu ticket de Discord.`);
+      else showToast(res?.error || 'No se pudo guardar el diagnóstico; igual puedes abrir un ticket.');
+      api.openExternal(ABOUT_LINKS.discord);
+    });
+    $('#btn-about-update').addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const upd = await api.checkAppUpdate();
+        if (upd?.hasUpdate) {
+          showToast(`Hay una versión nueva (v${upd.latestVersion}). Se abre la página de descarga.`);
+          api.openExternal('https://github.com/Xanssj/XHANNIZER0/releases/latest');
+        } else if (!upd?.ok) {
+          showToast('No se pudo revisar: sin conexión o GitHub no respondió.');
+        } else {
+          showToast('Ya tienes la última versión.');
+        }
+      } catch {
+        showToast('No se pudo revisar: sin conexión o GitHub no respondió.');
+      } finally {
+        btn.disabled = false;
+      }
+    });
   }
 
   function initNavigation() {
@@ -2076,7 +2137,7 @@
       const profile = {
         app: 'XHANNIZER0',
         studio: 'Xhanni Studios',
-        version: '2.0.0',
+        version: null, // lo completa el proceso principal
         exportedAt: new Date().toISOString(),
         theme: state.theme,
         lang: state.lang,
@@ -3709,6 +3770,7 @@
     initEvents();
     initNewFeatures();
     initExtraFeatures();
+    initAbout();
     await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
     renderPostFormatChecklist();
     checkAppUpdateSilently();

@@ -1,7 +1,7 @@
 {
   "name": "xhannizer0",
   "productName": "XHANNIZER0",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Utilidad post-formateo de Windows limpia y minimalista — Xhanni Studios",
   "author": "Xhanni Studios",
@@ -23,7 +23,8 @@
     "productName": "XHANNIZER0",
     "copyright": "Copyright © 2026 Xhanni Studios",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "main.js",
@@ -47,14 +48,17 @@
         }
       ],
       "requestedExecutionLevel": "asInvoker",
-      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "XHANNIZER0"
+      "shortcutName": "XHANNIZER0",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "portable": {
       "artifactName": "${productName}-${version}-Portable.${ext}"
@@ -67,5 +71,6 @@
         "releaseType": "release"
       }
     ]
-  }
+  },
+  "homepage": "https://xhannistudios.org"
 }

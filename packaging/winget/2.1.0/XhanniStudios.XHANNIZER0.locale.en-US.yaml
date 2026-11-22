@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.6.0.schema.json
+PackageIdentifier: XhanniStudios.XHANNIZER0
+PackageVersion: 2.1.0
+PackageLocale: en-US
+Publisher: Xhanni Studios
+PublisherUrl: https://xhannistudios.org
+PublisherSupportUrl: https://discord.gg/Gcxfn7rvJN
+PrivacyUrl: https://github.com/Xanssj/XHANNIZER0/blob/main/PRIVACY.md
+PackageName: XHANNIZER0
+PackageUrl: https://github.com/Xanssj/XHANNIZER0
+License: MIT
+ShortDescription: Get Windows ready after a clean install or a new PC build, with no ads or hidden installers.
+Tags:
+  - windows
+  - post-install
+  - drivers
+  - winget
+  - setup
+ManifestType: locale
+ManifestVersion: 1.6.0

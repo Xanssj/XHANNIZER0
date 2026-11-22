@@ -1,62 +1,60 @@
 <div align="center">
 
+<img src="build/icon.png" width="96" alt="">
+
 # XHANNIZER0
 
-**Utilidad post-formateo gratuita, limpia y minimalista para Windows — por Xhanni Studios**
+**Deja Windows listo después de formatear o armar tu PC, sin anuncios ni instaladores ocultos.**
 
-![Estado](https://img.shields.io/badge/Estado-Pr%C3%B3ximamente%20%2F%20Beta-0071E3?style=for-the-badge)
+Una app gratuita de [xhanni (Xhanni Studios)](https://xhannistudios.org).
+
+![Versión](https://img.shields.io/badge/Versi%C3%B3n-2.1.0-0071E3?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/Windows-11%20%2F%2010%20x64-1C1C1E?style=for-the-badge)
-![Filosofía](https://img.shields.io/badge/Bloatware-0%25%20Limpio-30D158?style=for-the-badge)
 ![Licencia](https://img.shields.io/badge/Licencia-MIT-6E6E73?style=for-the-badge)
+[![Pruebas](https://img.shields.io/github/actions/workflow/status/Xanssj/XHANNIZER0/tests.yml?label=Pruebas&style=for-the-badge)](https://github.com/Xanssj/XHANNIZER0/actions/workflows/tests.yml)
+
+[Descargar](https://github.com/Xanssj/XHANNIZER0/releases/latest) · [Soporte en Discord](https://discord.gg/Gcxfn7rvJN) · [Privacidad](PRIVACY.md) · [Cambios](CHANGELOG.md)
 
 </div>
 
 ---
 
-## Próximamente · Lanzamiento Oficial en Desarrollo
+## Qué hace
 
-**XHANNIZER0** nace para resolver un problema clásico después de formatear o armar un PC desde cero: dejar Windows listo en minutos **sin anuncios, sin instaladores ocultos y sin el ruido visual de programas tipo Driver Booster**.
+**🚀 Piloto automático.** Un botón deja tu PC recién formateado listo: respaldo, punto de restauración, drivers, runtimes, tus apps, ajustes de Windows, limpieza y chequeo final. Si hace falta reiniciar, la app se vuelve a abrir sola y sigue donde quedó.
 
-Diseñado bajo una estética **Apple Glass** sobre el material acrílico nativo de Windows 11 (Modo Oscuro / Claro e idioma ES / EN), con física de animaciones fluidas, transparencia total en cada descarga y respaldo obligatorio antes de tocar el sistema.
+**🩺 Chequeo de PC.** Encuentra los errores que Windows no avisa al armar o formatear: RAM sin XMP/EXPO, monitor conectado a la placa madre en vez de la tarjeta de video, Resizable BAR o Secure Boot apagados, SSD funcionando a menor velocidad y dispositivos sin driver. El **Asistente de BIOS** te muestra la ruta exacta del menú para tu placa (ASUS, MSI, Gigabyte, ASRock) y reinicia directo a la BIOS.
 
----
+**🧩 Drivers con detección real de hardware.** CPU, GPU dedicada e integrada, placa madre, audio, red y almacenamiento, comparados con los canales oficiales de cada fabricante. Los dispositivos sin driver se resuelven desde Windows Update por su Hardware ID exacto.
 
-## Qué incluye XHANNIZER0
+**📦 Catálogo oficial.** Más de 100 programas por WinGet o desde su sitio oficial (herramientas, launchers, navegadores, utilidades, runtimes y desarrollo), emuladores open-source desde sus repositorios de GitHub y búsqueda en Microsoft Store.
 
-- **Drivers Inteligentes con Detección Real de Hardware**
-  - Detecta CPU, **GPU Dedicada (dGPU)** con VRAM real de 64 bits, **GPU Integrada del CPU (iGPU)**, placa madre, audio principal, red y almacenamiento interno.
-  - Avisos claros de estabilidad (GPU, placa madre y audio) con opción de **Versión segura (WHQL)** u **Última oficial**.
-  - Detecta apps oficiales instaladas (`NVIDIA App`, `AMD Adrenalin`, `MSI Center`, etc.) y permite elegir entre instalar vía **XHANNIZER0** o desde la app del fabricante.
-- **Catálogo Limpio (+115 programas oficiales)**
-  - **Herramientas**: HWiNFO64, CPU-Z, GPU-Z, HWMonitor, FurMark 2, OCCT, Fan Control, DDU, NVCleanstall, CrystalDiskInfo/Mark, WizTree, Geek Uninstaller, PowerToys, Rufus y más.
-  - **Launchers / Gaming**: Steam, Epic Games, EA App, Riot Client, NVIDIA App, Battle.net, Ubisoft Connect, Rockstar, GOG, Xbox App, Discord, Modrinth, CurseForge, Heroic, Playnite, Moonlight.
-  - **Navegadores**: **Brave (Recomendado)**, Chrome, Firefox, Opera, Opera GX, Zen Browser, Vivaldi, Floorp, LibreWolf, Waterfox, Tor, Edge.
-  - **Compresores y Utilidades**: 7-Zip, NanaZip, WinRAR, PeaZip, Bandizip, Visual C++ AIO, VLC, OBS Studio, ShareX, Everything, LocalSend, SumatraPDF, Bitwarden, KeePassXC, Blender y más.
-  - **Programadores (Apartado dedicado)**: VS Code, Cursor, Windsurf, Claude Desktop, Ollama, LM Studio, Jan, Zed, Neovim, JetBrains Toolbox, Git, Node.js, Bun, Python, Go, Rust, Docker Desktop, Postman, Bruno, DBeaver, Notion, Obsidian, Figma.
-  - **Emuladores (GitHub Releases)**: 18 emuladores open-source descargados directamente desde sus repositorios oficiales de GitHub.
-  - **Microsoft Store**: búsqueda e instalación directa (Spotify, WhatsApp, Netflix, Apple Music, Telegram, etc.).
-- **Presets Post-Formateo (Experimental)**
-  - Perfiles adaptados a tu hardware real (**Gaming**, **Programadores / Developers**, **Uso Escolar**, **Uso de Oficina**).
-- **Auditoría, Seguridad y Control Total**
-  - **Respaldo inteligente obligatorio** antes de instalar drivers o modificar carpetas/discos/sistema.
-  - **Auditoría de Descargas en vivo**: muestra el origen exacto (`WinGet`, `Microsoft Store`, `GitHub Releases`, `Windows Update WHQL`), hash **SHA-256** y verificación de **firma digital Authenticode**.
-  - **Auditoría de Windows**, **Gestor de Inicio (Startup Manager)**, **Actualizador Global (`winget upgrade`)**, **Limpiador de Bloatware seguro**, **Red / DNS 1-Clic**, **Checklist Post-Formateo** y **Exportar / Importar Perfil (`.json`)**.
+**🔁 Migrar mi PC.** Antes de formatear, guarda tus programas, ajustes y carpetas en un USB; después, restáuralos en el PC nuevo sin sobrescribir nada. También puedes compartir tu selección como un código `XHZ1-…`.
+
+**🛠️ Mantenimiento.** Reparar Windows (SFC, DISM, Windows Update), actualizar tus apps cada semana, limpiar Windows.old y cachés, crear puntos de restauración y ver el historial de todo lo que hizo la app.
+
+**📊 Rendimiento e informe.** Compara tu PC antes y después de optimizarlo, prueba que la RAM aguante con XMP/EXPO y genera un **informe PDF para tu cliente** si formateas equipos por trabajo.
+
+**🛡️ Seguro por diseño.** Cada cambio exige un respaldo verificado y se puede deshacer. Ves el origen exacto de cada descarga, su SHA-256 y su firma digital, y los instaladores sin firma se bloquean. Sin cuentas, sin publicidad y sin telemetría ([detalles](PRIVACY.md)).
 
 ---
 
-## Hoja de Ruta (Roadmap)
+## Descargar e instalar
 
-- [x] Arquitectura Electron + diseño Apple Glass (Dark/Light + ES/EN)
-- [x] Escáner real de hardware (iGPU/dGPU, VRAM 64-bit, apps instaladas en Windows)
-- [x] Catálogo oficial, Emuladores GitHub, Microsoft Store y Presets hardware-aware
-- [x] Auditoría de descargas con SHA-256 / Authenticode y respaldo inteligente
-- [x] Auditoría Windows, Startup Manager, Debloater seguro, Actualizador Global y Red/DNS
-- [ ] Compilación pública firmada (`.exe` Instalador NSIS y versión Portátil)
-- [ ] Auto-actualizador integrado vía GitHub Releases
+1. Baja la última versión desde **[Releases](https://github.com/Xanssj/XHANNIZER0/releases/latest)**:
+   - `XHANNIZER0-x.x.x-x64-nsis.exe`: instalador.
+   - `XHANNIZER0-x.x.x-Portable.exe`: sin instalar, ideal para llevar en un USB (guarda sus datos junto al `.exe`).
+2. Si Windows muestra **«Windows protegió su PC»**, toca **Más información → Ejecutar de todas formas**. Aparece mientras la app no tenga firma de código.
 
----
+Necesitas Windows 10 u 11 de 64 bits. Algunas acciones piden permiso de administrador (UAC).
 
-## Vista previa para desarrolladores
+## Soporte
+
+¿Algo no funciona? En la app ve a **Acerca de y soporte → Reportar un problema**: se guarda un diagnóstico `.zip` y se abre el [Discord oficial](https://discord.gg/Gcxfn7rvJN), donde puedes abrir un ticket. Te responde quien hizo la app.
+
+Para fallos de seguridad, lee [SECURITY.md](SECURITY.md).
+
+## Para desarrolladores
 
 ```powershell
 git clone https://github.com/Xanssj/XHANNIZER0.git
@@ -65,15 +63,23 @@ npm install
 npm start
 ```
 
-### Generar ejecutable `.exe` (NSIS / Portátil)
+| Comando | Qué hace |
+| --- | --- |
+| `npm test` | Pruebas automáticas |
+| `npm run dist:all` | Compila el instalador y el portable en `dist/` |
+| `npx electron scripts/build-icon.js` | Regenera `build/icon.ico` desde `assets/icon.svg` |
+| `npm run validate:catalog` | Revisa que los IDs de WinGet del catálogo sigan existiendo |
 
-```powershell
-npm run dist:nsis
-npm run dist:portable
-```
+**Publicar una versión:** sube la versión en `package.json`, crea la etiqueta y súbela (`git tag v2.1.0` y `git push origin v2.1.0`). GitHub Actions corre las pruebas, compila y publica la versión. Si existen los secretos `CSC_LINK` y `CSC_KEY_PASSWORD`, también la firma.
+
+**Corregir el catálogo sin publicar una versión:** edita [`catalog-overrides.json`](catalog-overrides.json). Las apps instaladas lo descargan al abrirse.
+
+## Aviso legal
+
+XHANNIZER0 se entrega bajo la [licencia MIT](LICENSE), sin garantías: úsala bajo tu responsabilidad y mantén tus respaldos. Los emuladores se descargan desde sus proyectos oficiales; XHANNIZER0 no incluye ni distribuye BIOS, firmware ni juegos. Las marcas mencionadas pertenecen a sus dueños y se nombran solo para identificar el software que instala la app.
 
 ---
 
 <div align="center">
-  <sub>Desarrollado con foco en claridad, velocidad y cero bloatware por <strong>Xhanni Studios</strong>.</sub>
+  <sub>Hecho por <a href="https://xhannistudios.org/nosotros">xhanni</a> · <a href="https://xhannistudios.org">xhannistudios.org</a> · <a href="https://discord.gg/Gcxfn7rvJN">Discord</a></sub>
 </div>

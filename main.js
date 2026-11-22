@@ -151,6 +151,7 @@ function createWindow() {
     backgroundColor: '#00000000',
     backgroundMaterial: 'acrylic',
     title: 'XHANNIZER0 — Xhanni Studios',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -447,7 +448,7 @@ ipcMain.handle('xh:export-profile', async (_event, profileData) => {
     filters: [{ name: 'Perfil XHANNIZER0 (JSON)', extensions: ['json'] }],
   });
   if (res.canceled || !res.filePath) return { canceled: true };
-  fs.writeFileSync(res.filePath, JSON.stringify(profileData, null, 2), 'utf8');
+  fs.writeFileSync(res.filePath, JSON.stringify({ ...(profileData || {}), version: app.getVersion() }, null, 2), 'utf8');
   return { ok: true, path: res.filePath };
 });
 
@@ -474,7 +475,7 @@ ipcMain.handle('xh:check-app-update', async () => {
   return new Promise((resolve) => {
     const req = https.get(
       'https://api.github.com/repos/Xanssj/XHANNIZER0/releases/latest',
-      { headers: { 'User-Agent': 'XHANNIZER0/2.0 (Xhanni Studios)', Accept: 'application/vnd.github+json' }, timeout: 5000 },
+      { headers: { 'User-Agent': `XHANNIZER0/${currentVersion} (Xhanni Studios)`, Accept: 'application/vnd.github+json' }, timeout: 5000 },
       (res) => {
         if (res.statusCode !== 200) {
           res.resume();
@@ -611,6 +612,19 @@ ipcMain.handle('xh:set-scheduled-update', async (_event, payload) => {
 });
 
 ipcMain.handle('xh:get-action-log', async () => ({ items: readActionLog(150) }));
+
+ipcMain.handle('xh:app-info', async () => ({
+  ok: true,
+  version: app.getVersion(),
+  electron: process.versions.electron,
+  portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
+  packaged: app.isPackaged,
+}));
+
+ipcMain.handle('xh:open-data-folder', async () => {
+  const err = await shell.openPath(app.getPath('userData'));
+  return { ok: !err, error: err || null };
+});
 
 ipcMain.handle('xh:export-diagnostics', async () => {
   if (!win || win.isDestroyed()) return { canceled: true };

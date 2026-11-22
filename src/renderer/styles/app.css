@@ -1599,3 +1599,14 @@
 @media (max-width: 900px) {
   .report-form { grid-template-columns: 1fr; }
 }
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.about-head img { border-radius: 16px; flex-shrink: 0; }
+.about-grid { margin-top: 18px; }
+.about-grid .app-card { display: flex; flex-direction: column; gap: 10px; }
+.about-grid .app-card .btn-action-small { align-self: flex-start; }
+.about-grid .xh-row { margin-top: auto; }
+.about-legal { margin-top: 18px; font-size: 12px; }

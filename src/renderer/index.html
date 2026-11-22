@@ -205,6 +205,12 @@
               <span>Rendimiento e informe</span>
             </button>
           </li>
+          <li class="owner-menu-item">
+            <button type="button" data-tab="acerca">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span>Acerca de y soporte</span>
+            </button>
+          </li>
         </ul>
       </div>
 
@@ -468,6 +474,9 @@
             <button type="button" class="btn-secondary" id="btn-emu-check-gh">Verificar versiones en GitHub</button>
           </div>
         </header>
+        <div class="safety-banner">
+          <div>XHANNIZER0 no incluye ni descarga BIOS, firmware ni juegos. Algunos emuladores los necesitan: úsalos solo con copias de consolas y juegos que te pertenezcan.</div>
+        </div>
         <div class="toolbar-row">
           <div class="owner-filter-chips" id="emu-filters">
             <button type="button" class="owner-filter-chip is-active" data-emu-filter="all">Todos</button>
@@ -935,6 +944,61 @@
             <button type="button" class="btn-primary" id="btn-report-pdf">Generar informe PDF</button>
           </div>
         </article>
+      </section>
+
+      <!-- ==================== ACERCA DE Y SOPORTE ==================== -->
+      <section class="owner-tab-panel" id="tab-acerca">
+        <header class="section-header">
+          <div class="section-header-copy about-head">
+            <img src="../../assets/icon.svg" width="64" height="64" alt="">
+            <div>
+              <h1 class="console-title">XHANNIZER0</h1>
+              <p class="section-subtitle" id="about-version">Versión —</p>
+            </div>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-about-update">Buscar actualización</button>
+          </div>
+        </header>
+        <p class="section-subtitle">Una app gratuita de <strong>xhanni (Xhanni Studios)</strong>, un estudio pequeño de software en Chile. Hacemos herramientas simples, rápidas y bonitas, y detrás de cada una hay alguien que responde.</p>
+
+        <div class="catalog-grid about-grid">
+          <article class="app-card">
+            <div class="app-card-head"><strong>¿Algo no funciona?</strong></div>
+            <p class="app-card-desc">Guarda un diagnóstico (.zip) y abre el Discord oficial para crear un ticket. Te responde quien hizo la app. El archivo incluye el nombre del equipo: revísalo antes de compartirlo.</p>
+            <button type="button" class="btn-action-small is-primary" id="btn-about-report">Reportar un problema</button>
+          </article>
+          <article class="app-card">
+            <div class="app-card-head"><strong>Comunidad y novedades</strong></div>
+            <p class="app-card-desc">Soporte, ideas y anuncios de nuevas versiones en el Discord de xhanni.</p>
+            <button type="button" class="btn-action-small is-ghost" data-about-link="discord">Abrir Discord</button>
+          </article>
+          <article class="app-card">
+            <div class="app-card-head"><strong>Privacidad</strong></div>
+            <p class="app-card-desc">Sin cuentas, sin publicidad y sin telemetría. Todo lo que guarda la app queda en tu PC.</p>
+            <div class="xh-row">
+              <button type="button" class="btn-action-small is-ghost" data-about-link="privacy">Leer la política</button>
+              <button type="button" class="btn-action-small is-ghost" id="btn-about-data">Abrir datos de la app</button>
+            </div>
+          </article>
+          <article class="app-card">
+            <div class="app-card-head"><strong>Código abierto</strong></div>
+            <p class="app-card-desc">Licencia MIT. Revisa el código, propone ideas o mira qué cambió en cada versión.</p>
+            <div class="xh-row">
+              <button type="button" class="btn-action-small is-ghost" data-about-link="github">GitHub</button>
+              <button type="button" class="btn-action-small is-ghost" data-about-link="changelog">Novedades</button>
+            </div>
+          </article>
+          <article class="app-card">
+            <div class="app-card-head"><strong>¿Necesitas algo a medida?</strong></div>
+            <p class="app-card-desc">xhanni también hace Allmighty, el bot que administra tu Discord, además de bots, sitios web y proyectos de ciberseguridad a medida.</p>
+            <div class="xh-row">
+              <button type="button" class="btn-action-small is-ghost" data-about-link="web">xhannistudios.org</button>
+              <button type="button" class="btn-action-small is-ghost" data-about-link="team">Conocer al equipo</button>
+            </div>
+          </article>
+        </div>
+        <p class="section-subtitle about-legal">XHANNIZER0 se entrega sin garantías (licencia MIT): úsala bajo tu responsabilidad y mantén tus respaldos. Las marcas mencionadas pertenecen a sus dueños.</p>
       </section>
     </main>
   </div>
