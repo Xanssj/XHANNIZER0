@@ -79,4 +79,30 @@ contextBridge.exposeInMainWorld('xhApi', {
   deleteBackup: (backupId) => ipcRenderer.invoke('xh:delete-backup', backupId),
   restoreBackup: (backupId) => ipcRenderer.invoke('xh:restore-backup', backupId),
   createUsbKit: (payload) => ipcRenderer.invoke('xh:create-usb-kit', payload),
+
+  // Chequeo de PC armado y drivers de dispositivos con problemas
+  pcCheck: () => ipcRenderer.invoke('xh:pc-check'),
+  installDeviceDriver: (payload) => ipcRenderer.invoke('xh:install-device-driver', payload),
+
+  // Windows 11
+  restartExplorer: () => ipcRenderer.invoke('xh:restart-explorer'),
+
+  // Migrar mi PC
+  migrationFolders: () => ipcRenderer.invoke('xh:migration-folders'),
+  migrationMeasure: (folderPath) => ipcRenderer.invoke('xh:migration-measure', folderPath),
+  migrationExport: (payload) => ipcRenderer.invoke('xh:migration-export', payload),
+  migrationOpen: () => ipcRenderer.invoke('xh:migration-open'),
+  migrationRestoreFolders: (payload) => ipcRenderer.invoke('xh:migration-restore-folders', payload),
+  onMigrationProgress: (cb) => {
+    const handler = (_event, progress) => cb(progress);
+    ipcRenderer.on('xh:migration-progress', handler);
+    return () => ipcRenderer.removeListener('xh:migration-progress', handler);
+  },
+
+  // Mantenimiento
+  runRepair: (kind) => ipcRenderer.invoke('xh:run-repair', kind),
+  getScheduledUpdate: () => ipcRenderer.invoke('xh:get-scheduled-update'),
+  setScheduledUpdate: (payload) => ipcRenderer.invoke('xh:set-scheduled-update', payload),
+  getActionLog: () => ipcRenderer.invoke('xh:get-action-log'),
+  exportDiagnostics: () => ipcRenderer.invoke('xh:export-diagnostics'),
 });

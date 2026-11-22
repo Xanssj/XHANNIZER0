@@ -1,7 +1,131 @@
 'use strict';
 
 const { execFile } = require('child_process');
-const { runElevated } = require('./powershell');
+const { runElevated, psData } = require('./powershell');
+
+// =========================================================================
+// Windows 11: limpieza opcional (todos reversibles con «Deshacer cambios»)
+// values: valores de registro que se escriben · keys: claves que se crean (se borran al deshacer)
+// =========================================================================
+const ADV = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced';
+const CDM = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager';
+const CLASSIC_MENU_KEY = 'HKCU:\\Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}';
+const dword = (path, name, value) => ({ path, name, value, type: 'DWord' });
+
+const WIN11_TWEAKS = [
+  {
+    id: 'w11-start-ads', name: 'Quitar anuncios y recomendaciones del menú Inicio',
+    description: 'Oculta apps «recomendadas», sugerencias y promociones del menú Inicio y de Configuración.',
+    values: [dword(ADV, 'Start_IrisRecommendations', 0), dword(CDM, 'SubscribedContent-338388Enabled', 0), dword(CDM, 'SubscribedContent-338389Enabled', 0), dword(CDM, 'SystemPaneSuggestionsEnabled', 0)],
+    restartExplorer: true,
+  },
+  {
+    id: 'w11-lockscreen-ads', name: 'Quitar anuncios de la pantalla de bloqueo',
+    description: 'Desactiva los datos curiosos, consejos y publicidad sobre la pantalla de bloqueo.',
+    values: [dword(CDM, 'RotatingLockScreenOverlayEnabled', 0), dword(CDM, 'SubscribedContent-338387Enabled', 0)],
+  },
+  {
+    id: 'w11-bing', name: 'Quitar búsquedas de Bing del menú Inicio',
+    description: 'La búsqueda de Inicio solo mostrará apps, archivos y ajustes de tu PC, sin resultados web.',
+    values: [dword('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search', 'BingSearchEnabled', 0)],
+    restartExplorer: true,
+  },
+  {
+    id: 'w11-widgets', name: 'Desactivar Widgets (noticias y clima de MSN)',
+    description: 'Quita el panel de Widgets y su feed de noticias de la barra de tareas. Pide permisos de administrador.',
+    values: [dword('HKLM:\\SOFTWARE\\Policies\\Microsoft\\Dsh', 'AllowNewsAndInterests', 0)],
+    elevated: true, restartExplorer: true,
+  },
+  {
+    id: 'w11-recall', name: 'Desactivar Recall (capturas de pantalla con IA)',
+    description: 'Impide que Windows guarde capturas periódicas de tu actividad en equipos Copilot+. Pide permisos de administrador.',
+    values: [dword('HKCU:\\Software\\Policies\\Microsoft\\Windows\\WindowsAI', 'DisableAIDataAnalysis', 1)],
+    elevated: true, minBuild: 26100,
+  },
+  {
+    id: 'w11-tailored', name: 'Desactivar experiencias personalizadas y encuestas',
+    description: 'Microsoft deja de usar tus datos de diagnóstico para sugerencias y Windows no te pedirá opiniones.',
+    values: [dword('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy', 'TailoredExperiencesWithDiagnosticDataEnabled', 0), dword('HKCU:\\Software\\Microsoft\\Siuf\\Rules', 'NumberOfSIUFInPeriod', 0)],
+  },
+  {
+    id: 'w11-context-menu', name: 'Menú contextual clásico (clic derecho completo)',
+    description: 'Muestra el menú de clic derecho completo de Windows 10, sin pasar por «Mostrar más opciones».',
+    values: [{ path: `${CLASSIC_MENU_KEY}\\InprocServer32`, name: '(default)', value: '', type: 'String' }],
+    keys: [CLASSIC_MENU_KEY],
+    restartExplorer: true,
+  },
+  {
+    id: 'w11-taskbar-left', name: 'Barra de tareas alineada a la izquierda',
+    description: 'Vuelve a poner el botón Inicio y los iconos a la izquierda, como en Windows 10.',
+    values: [dword(ADV, 'TaskbarAl', 0)],
+  },
+];
+
+const needsElevation = (p) => /^HKLM:/i.test(p) || /^HKCU:\\Software\\Policies/i.test(p);
+
+function applyValuesScript(values) {
+  return `
+foreach ($v in @(${psData(values)})) {
+  if (-not (Test-Path -LiteralPath $v.path)) { New-Item -Path $v.path -Force | Out-Null }
+  if ($v.name -eq '(default)') { Set-Item -LiteralPath $v.path -Value $v.value }
+  else { Set-ItemProperty -LiteralPath $v.path -Name $v.name -Value $v.value -Type $v.type -ErrorAction Stop }
+}
+exit 0`;
+}
+
+async function scanWin11Tweaks(build) {
+  const available = WIN11_TWEAKS.filter((t) => build >= 22000 && build >= (t.minBuild || 0));
+  if (!available.length) return [];
+  const ps = `
+$out = @{}
+foreach ($t in @(${psData(available.map((t) => ({ id: t.id, values: t.values })))})) {
+  $ok = $true
+  foreach ($v in @($t.values)) {
+    $item = Get-Item -LiteralPath $v.path -ErrorAction SilentlyContinue
+    $name = if ($v.name -eq '(default)') { '' } else { $v.name }
+    if (-not $item -or -not ($item.GetValueNames() -contains $name) -or ([string]$item.GetValue($name) -ne [string]$v.value)) { $ok = $false }
+  }
+  $out[$t.id] = $ok
+}
+$out | ConvertTo-Json -Compress`;
+  const r = await runPowerShell(ps, 12000);
+  let state = {};
+  try {
+    state = JSON.parse(r.stdout || '{}');
+  } catch {
+    state = {};
+  }
+  return available.map((t) => ({
+    id: t.id,
+    group: 'win11',
+    optional: true,
+    category: 'Windows 11',
+    name: t.name,
+    description: t.description,
+    currentState: state[t.id] ? 'Aplicado' : 'Predeterminado de Windows',
+    isOptimal: Boolean(state[t.id]),
+    canApply: true,
+    impact: t.elevated ? 'Opcional · Admin' : 'Opcional',
+    requiresRestart: false,
+    restartExplorer: Boolean(t.restartExplorer),
+  }));
+}
+
+async function applyWin11Tweak(tweak) {
+  const script = applyValuesScript(tweak.values);
+  const r = tweak.elevated || tweak.values.some((v) => needsElevation(v.path))
+    ? await runElevated(script, 30000)
+    : await runPowerShell(`$ErrorActionPreference = 'Stop'
+${script}`, 12000);
+  const tail = tweak.restartExplorer ? ' Reinicia el Explorador para verlo.' : '';
+  if (r.ok) return { ok: true, message: `${tweak.name}: aplicado.${tail}` };
+  return { ok: false, message: r.cancelled ? 'Elevación UAC cancelada por el usuario.' : `No se pudo aplicar: ${tweak.name}.` };
+}
+
+async function restartExplorer() {
+  const r = await runPowerShell('Stop-Process -Name explorer -Force; Start-Sleep -Milliseconds 1500; if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }', 15000);
+  return { ok: r.ok, message: r.ok ? 'Explorador de Windows reiniciado.' : 'No se pudo reiniciar el Explorador.' };
+}
 
 function runPowerShell(script, timeout = 15000) {
   return new Promise((resolve) => {
@@ -33,6 +157,7 @@ $darkApps = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\Curren
 $powerRaw = (powercfg /getactivescheme) -join ' '
 $refreshRates = @(Get-CimInstance Win32_VideoController | Where-Object { $_.CurrentRefreshRate -gt 0 } | Select-Object -ExpandProperty CurrentRefreshRate)
 $maxHz = if ($refreshRates.Count -gt 0) { ($refreshRates | Measure-Object -Maximum).Maximum } else { 60 }
+$build = [Environment]::OSVersion.Version.Build
 $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' | ForEach-Object { $_.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } }).Count
 
 @{
@@ -46,6 +171,7 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
   powerRaw = $powerRaw
   maxHz = $maxHz
   startupCount = $startupCount
+  build = $build
 } | ConvertTo-Json -Compress
 `;
 
@@ -163,11 +289,15 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
   ];
 
   const pendingCount = items.filter((i) => !i.isOptimal).length;
+  const build = Number(data.build || 0);
+  const win11Items = await scanWin11Tweaks(build);
   return {
-    items,
+    // Los ajustes de Windows 11 son opcionales: no cuentan como «pendientes»
+    items: [...items, ...win11Items],
     pendingCount,
     optimalCount: items.length - pendingCount,
     startupCount: Number(data.startupCount || 0),
+    isWindows11: build >= 22000,
   };
 }
 
@@ -178,6 +308,9 @@ async function applyWindowsSetting({ settingId, backupId }) {
       error: 'Se requiere una copia de seguridad vigente antes de modificar configuraciones de Windows.',
     };
   }
+
+  const tweak = WIN11_TWEAKS.find((t) => t.id === settingId);
+  if (tweak) return applyWin11Tweak(tweak);
 
   const commands = {
     'win-gamemode': `
@@ -253,4 +386,6 @@ async function applyWindowsSetting({ settingId, backupId }) {
 module.exports = {
   scanWindowsSettings,
   applyWindowsSetting,
+  restartExplorer,
+  WIN11_TWEAKS,
 };

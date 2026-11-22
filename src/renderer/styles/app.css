@@ -1417,3 +1417,42 @@
     grid-column: 1 / -1;
   }
 }
+
+/* ===== Controles de formulario de Mantenimiento / Migración ===== */
+.xh-field-select,
+#sched-day,
+#sched-time {
+  font: inherit;
+  font-size: 13px;
+  color: var(--label);
+  background: var(--fill);
+  border: 0.5px solid var(--sep-strong);
+  border-radius: var(--r-xs);
+  padding: 5px 8px;
+  margin-left: 6px;
+  color-scheme: dark;
+}
+:root[data-theme="light"] #sched-day,
+:root[data-theme="light"] #sched-time {
+  color-scheme: light;
+}
+.mig-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.mig-check-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.pc-fix {
+  color: var(--link);
+}
+.repair-output {
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: var(--label-2, var(--label));
+  margin-top: 6px;
+}

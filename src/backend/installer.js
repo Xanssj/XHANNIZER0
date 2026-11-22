@@ -9,6 +9,7 @@ const { spawn, execFile } = require('child_process');
 const { shell } = require('electron');
 const { getCatalogItem, detectInstalledPath } = require('./catalog');
 const { getEmulatorById, resolveGithubLatestRelease } = require('./emulators');
+const { runPowerShell, runElevated, psData } = require('./powershell');
 
 // Calcula hash SHA-256 real y verifica firma Authenticode de Windows en archivos descargados
 function computeSha256(filePath) {
@@ -199,70 +200,97 @@ function runWingetInstall(wingetId, onProgress, source = null) {
   });
 }
 
-// Instala o verifica controladores firmados WHQL directamente desde Windows Update sin abrir el navegador
-function installWindowsUpdateDriver(deviceKeyword, onProgress) {
-  return new Promise((resolve) => {
-    const safeKey = String(deviceKeyword || '')
-      .replace(/[^a-z0-9\s-]/gi, ' ')
-      .trim()
-      .split(/\s+/)
-      .filter((w) => w.length >= 3)
-      .slice(0, 2)
-      .join('|');
-
-    const ps = `
-$ErrorActionPreference = 'SilentlyContinue'
-$session = New-Object -ComObject Microsoft.Update.Session
-$searcher = $session.CreateUpdateSearcher()
-$res = $searcher.Search("IsInstalled=0 and Type='Driver'")
-$matched = @()
-foreach ($u in $res.Updates) {
-  $title = [string]$u.Title
-  $model = [string]$u.DriverModel
-  if (-not '${safeKey}' -or $title -match '${safeKey}' -or $model -match '${safeKey}') {
-    $matched += $u
+// Resuelve los Hardware IDs exactos de los dispositivos (DEVPKEY_Device_HardwareIds).
+// `instanceIds`: IDs de instancia PnP concretos; `scope`: grupo de dispositivos PCI del sistema.
+async function resolveHardwareIds({ instanceIds = [], scope = null }) {
+  const ps = `
+$ids = @(${psData(instanceIds.map(String))})
+$scope = ${psData(scope || '')}
+if ($scope -eq 'system-pci') {
+  $ids += @(Get-PnpDevice -PresentOnly -Class System -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -like 'PCI\\*' } | ForEach-Object { $_.InstanceId })
+} elseif ($scope -eq 'storage-pci') {
+  $ids += @(Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -like 'PCI\\*' -and $_.Class -in @('SCSIAdapter','HDC') } | ForEach-Object { $_.InstanceId })
+}
+$hw = foreach ($id in ($ids | Select-Object -Unique)) {
+  (Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_HardwareIds' -ErrorAction SilentlyContinue).Data
+}
+ConvertTo-Json -InputObject @($hw | Where-Object { $_ } | Select-Object -Unique) -Compress`;
+  const r = await runPowerShell(ps, 20000);
+  try {
+    const list = JSON.parse(r.stdout || '[]');
+    return (Array.isArray(list) ? list : [list]).map((x) => String(x).toLowerCase());
+  } catch {
+    return [];
   }
 }
-if ($matched.Count -eq 0) {
-  pnputil.exe /scan-devices | Out-Null
-  @{ status = 'uptodate'; count = 0; message = 'Driver WHQL al día en el catálogo oficial de Windows Update.' } | ConvertTo-Json -Compress
-  exit 0
-}
-$coll = New-Object -ComObject Microsoft.Update.UpdateColl
-foreach ($m in $matched) { [void]$coll.Add($m) }
-$downloader = $session.CreateUpdateDownloader()
-$downloader.Updates = $coll
-$dlRes = $downloader.Download()
-$installer = $session.CreateUpdateInstaller()
-$installer.Updates = $coll
-$instRes = $installer.Install()
-pnputil.exe /scan-devices | Out-Null
-@{
-  status = if ($instRes.ResultCode -eq 2) { 'installed' } else { 'needs_admin' }
-  count = $matched.Count
-  titles = @($matched | ForEach-Object { $_.Title })
-  reboot = [bool]$instRes.RebootRequired
-} | ConvertTo-Json -Compress
-`;
 
-    onProgress({ state: 'downloading', progress: 32, detail: 'Consultando catálogo oficial WHQL (Microsoft Update)…' });
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps],
-      { windowsHide: true, timeout: 65000, maxBuffer: 2 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err || !stdout) {
-          resolve({ status: 'offline_or_blocked', count: 0 });
-          return;
-        }
-        try {
-          resolve(JSON.parse(String(stdout).trim()));
-        } catch {
-          resolve({ status: 'uptodate', count: 0 });
-        }
-      }
-    );
-  });
+// Busca en Windows Update solo drivers cuyo DriverHardwareID coincide EXACTAMENTE con un
+// Hardware ID del dispositivo. La búsqueda no requiere admin; la instalación se eleva (UAC).
+// Devuelve los drivers pendientes de Windows Update que coinciden con los Hardware IDs, o null si falla
+async function searchDriverUpdates(hardwareIds) {
+  const searchPs = `
+$hw = @(${psData(hardwareIds)})
+$searcher = (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher()
+$res = $searcher.Search("IsInstalled=0 and Type='Driver'")
+$out = foreach ($u in $res.Updates) {
+  if ($u.DriverHardwareID -and ($hw -contains ([string]$u.DriverHardwareID).ToLower())) {
+    [pscustomobject]@{ id = $u.Identity.UpdateID; title = [string]$u.Title; hwid = [string]$u.DriverHardwareID }
+  }
+}
+ConvertTo-Json -InputObject @($out) -Compress`;
+  const search = await runPowerShell(`$ErrorActionPreference = 'Stop'\n${searchPs}`, 120000);
+  if (!search.ok) return null;
+  try {
+    const matches = JSON.parse(search.stdout || '[]');
+    return Array.isArray(matches) ? matches : [matches];
+  } catch {
+    return null;
+  }
+}
+
+async function installWindowsUpdateDriver(target, onProgress) {
+  onProgress({ state: 'downloading', progress: 20, detail: 'Identificando el dispositivo (Hardware ID)…' });
+  const hardwareIds = await resolveHardwareIds(target || {});
+  if (!hardwareIds.length) {
+    return { status: 'no_hwid', count: 0 };
+  }
+
+  onProgress({ state: 'downloading', progress: 32, detail: 'Consultando catálogo oficial WHQL (Microsoft Update)…' });
+  const matches = await searchDriverUpdates(hardwareIds);
+  if (!matches) return { status: 'offline_or_blocked', count: 0 };
+  if (!matches.length) {
+    return { status: 'uptodate', count: 0 };
+  }
+
+  onProgress({ state: 'installing', progress: 60, detail: `Instalando ${matches.length} driver(s) WHQL (se pedirán permisos de administrador)…` });
+  const resultFile = path.join(os.tmpdir(), `xhannizer0-wu-${Date.now()}.json`);
+  const installPs = `
+$ids = @(${psData(matches.map((m) => m.id))})
+$session = New-Object -ComObject Microsoft.Update.Session
+$res = $session.CreateUpdateSearcher().Search("IsInstalled=0 and Type='Driver'")
+$coll = New-Object -ComObject Microsoft.Update.UpdateColl
+foreach ($u in $res.Updates) { if ($ids -contains $u.Identity.UpdateID) { [void]$coll.Add($u) } }
+$result = @{ status = 'uptodate'; count = 0; reboot = $false }
+if ($coll.Count -gt 0) {
+  $dl = $session.CreateUpdateDownloader(); $dl.Updates = $coll; [void]$dl.Download()
+  $inst = $session.CreateUpdateInstaller(); $inst.Updates = $coll
+  $r = $inst.Install()
+  $result = @{ status = $(if ($r.ResultCode -eq 2) { 'installed' } else { 'failed' }); count = $coll.Count; reboot = [bool]$r.RebootRequired }
+}
+$result | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psData(resultFile)} -Encoding UTF8`;
+  const elev = await runElevated(installPs, 15 * 60 * 1000);
+  let result = { status: elev.cancelled ? 'needs_admin' : 'failed', count: matches.length };
+  try {
+    result = { ...JSON.parse(fs.readFileSync(resultFile, 'utf8').replace(/^﻿/, '')), titles: matches.map((m) => m.title) };
+  } catch {
+    // Sin archivo de resultado: UAC cancelado o error
+  }
+  try {
+    fs.rmSync(resultFile, { force: true });
+  } catch {
+    // Ignorar
+  }
+  return result;
 }
 
 async function installSingleItem(task, emit) {
@@ -456,7 +484,8 @@ async function installSingleItem(task, emit) {
       sourceOrigin: whqlOrigin,
     });
 
-    const wuRes = await installWindowsUpdateDriver(cleanName, (upd) =>
+    // pnpTarget lo completa el proceso principal desde el último escaneo (nunca la interfaz)
+    const wuRes = await installWindowsUpdateDriver(task.pnpTarget || {}, (upd) =>
       emitAudit({ ...upd, sourceType: 'Windows Update WHQL', sourceOrigin: whqlOrigin })
     );
 
@@ -477,21 +506,51 @@ async function installSingleItem(task, emit) {
       emitAudit({
         state: 'done',
         progress: 100,
-        detail: 'Driver WHQL verificado al día por Windows Update (escaneo PnP completado)',
+        detail: 'Windows Update no tiene un driver más nuevo para este Hardware ID exacto',
         sourceType: 'Windows Update WHQL',
         sourceOrigin: whqlOrigin,
       });
       return { id, ok: true };
     }
 
+    const wuWarnings = {
+      no_hwid: 'No se pudo identificar el Hardware ID del dispositivo: reescanea el hardware o usa la web oficial del fabricante',
+      needs_admin: 'Instalación cancelada: Windows pidió permisos de administrador (UAC) y no se concedieron',
+      offline_or_blocked: 'No se pudo consultar Windows Update (sin conexión o servicio bloqueado)',
+      failed: 'Windows Update no pudo instalar el driver; revisa Windows Update o la web oficial',
+    };
     emitAudit({
       state: 'warning',
       progress: 100,
-      detail: 'Instalación WHQL requiere ejecutar XHANNIZER0 como Administrador para aplicar cambios de sistema',
+      detail: wuWarnings[wuRes.status] || wuWarnings.failed,
       sourceType: 'Windows Update WHQL',
       sourceOrigin: whqlOrigin,
     });
     return { id, ok: false };
+  }
+
+  // Caso 3C: Paquete WinGet genérico (programas de una migración que no están en el catálogo)
+  if (type === 'winget') {
+    const wingetId = String(task.wingetId || '');
+    const origin = `winget: ${wingetId}`;
+    if (!/^[A-Za-z0-9][A-Za-z0-9.+_-]{1,120}$/.test(wingetId) || !(await hasWinget())) {
+      emitAudit({ state: 'warning', progress: 100, detail: 'Paquete WinGet inválido o WinGet no disponible', sourceType: 'WinGet Oficial', sourceOrigin: origin });
+      return { id, ok: false };
+    }
+    emitAudit({ state: 'downloading', progress: 12, detail: `Instalando ${wingetId}…`, sourceType: 'WinGet Oficial', sourceOrigin: origin });
+    const res = await runWingetInstall(
+      wingetId,
+      (upd) => emitAudit({ ...upd, sourceType: 'WinGet Oficial', sourceOrigin: origin }),
+      task.wingetSource === 'msstore' ? 'msstore' : null
+    );
+    emitAudit({
+      state: res.ok ? 'done' : 'warning',
+      progress: 100,
+      detail: res.ok ? (res.alreadyLatest ? 'Ya instalado' : 'Instalado correctamente') : 'WinGet no pudo instalar este paquete',
+      sourceType: 'WinGet Oficial',
+      sourceOrigin: origin,
+    });
+    return { id, ok: res.ok };
   }
 
   // Caso 4: Software del catálogo (WinGet silencioso -> descarga HTTPS directa en app)
@@ -627,6 +686,7 @@ async function runBatchInstall(tasks, emit) {
 }
 
 module.exports = {
+  _internals: { resolveHardwareIds, searchDriverUpdates },
   DOWNLOAD_DIR,
   EMULATOR_DOWNLOAD_DIR,
   hasWinget,

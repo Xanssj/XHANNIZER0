@@ -41,6 +41,9 @@
     upgrades: [],
     bloatware: [],
     networkInfo: null,
+    pcCheck: null,
+    migFolders: null,
+    migration: null,
     theme: localStorage.getItem('xh_theme') || 'dark',
     lang: localStorage.getItem('xh_lang') || 'es',
     pendingDriverConfirm: null,
@@ -509,6 +512,9 @@
     if (target === 'upgrades' && !state.upgrades.length) loadUpgrades(false);
     if (target === 'cleaner-net' && !state.networkInfo) loadCleanerAndNet(false);
     if (target === 'discos') loadDisks();
+    if (target === 'pc-check' && !state.pcCheck) loadPcCheck();
+    if (target === 'migracion' && !state.migFolders) loadMigrationFolders();
+    if (target === 'mantenimiento') loadMaintenance();
   }
 
   function initNavigation() {
@@ -1120,9 +1126,7 @@
       return;
     }
 
-    list.innerHTML = items
-      .map(
-        (item) => `
+    const card = (item) => `
       <article class="driver-card">
         <div class="driver-top">
           <div class="driver-icon ${item.isOptimal ? '' : 'is-warn'}">
@@ -1146,9 +1150,22 @@
               : `<button type="button" class="btn-action-small is-primary" data-apply-win="${esc(item.id)}">${esc(item.applyLabel || 'Aplicar')}</button>`}
           </div>
         </div>
-      </article>`
-      )
-      .join('');
+      </article>`;
+
+    const base = items.filter((i) => i.group !== 'win11');
+    const win11 = items.filter((i) => i.group === 'win11');
+    list.innerHTML =
+      base.map(card).join('') +
+      (win11.length
+        ? `
+      <article class="driver-card">
+        <div class="driver-title-row" style="justify-content:space-between;">
+          <span><strong>Windows 11: quitar anuncios y molestias</strong>
+          <span class="section-subtitle">Opcionales, se aplican uno a uno y se pueden deshacer desde el respaldo.</span></span>
+          <button type="button" class="btn-action-small is-ghost" id="btn-restart-explorer">Reiniciar Explorador</button>
+        </div>
+      </article>` + win11.map(card).join('')
+        : '');
   }
 
   // =========================================================================
@@ -1170,6 +1187,7 @@
       { label: '3. Auditoría Windows', done: winOptimal, tab: 'windows-audit' },
       { label: `4. Apps esenciales (${installedCount})`, done: hasApps, tab: 'utilidades' },
       { label: '5. Inicio optimizado', done: startupClean, tab: 'startup' },
+      { label: '6. Chequeo de PC', done: Boolean(state.pcCheck && !state.pcCheck.warnCount), tab: 'pc-check' },
     ];
 
     const doneCount = steps.filter((s) => s.done).length;
@@ -2078,7 +2096,7 @@
     $('#btn-winaudit-rescan').addEventListener('click', () => loadWindowsAudit(true));
     $('#btn-winaudit-apply-all').addEventListener('click', () => {
       const pending = (state.winAudit?.items || []).filter(
-        (i) => !i.isOptimal && i.id !== 'win-refresh-rate' && i.id !== 'win-hags'
+        (i) => !i.isOptimal && !i.optional && i.id !== 'win-refresh-rate' && i.id !== 'win-hags'
       );
       if (!pending.length) {
         showToast('Todas las configuraciones recomendadas automáticas ya están activas.');
@@ -2541,6 +2559,448 @@
   }
 
   // =========================================================================
+  // Chequeo de PC armado
+  // =========================================================================
+  const STATUS_PILL = { ok: ['is-ok', 'Correcto'], warn: ['is-warn', 'Revisar'], info: ['is-neutral', 'Info'] };
+  const ICON_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>';
+  const ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>';
+
+  async function loadPcCheck() {
+    const btn = $('#btn-pccheck-run');
+    btn.disabled = true;
+    btn.textContent = 'Analizando…';
+    try {
+      const res = await api.pcCheck();
+      if (!res?.ok) {
+        showToast(res?.error || 'No se pudo analizar el PC.');
+        return;
+      }
+      state.pcCheck = res;
+      renderPcCheck();
+      renderPostFormatChecklist();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Analizar de nuevo';
+    }
+  }
+
+  function renderPcCheck() {
+    const data = state.pcCheck;
+    if (!data) return;
+    const order = { warn: 0, info: 1, ok: 2 };
+    const checks = [...data.checks].sort((a, b) => (order[a.status] ?? 1) - (order[b.status] ?? 1));
+    $('#pc-warn').textContent = String(checks.filter((c) => c.status === 'warn').length);
+    $('#pc-ok').textContent = String(checks.filter((c) => c.status === 'ok').length);
+    $('#pc-devices').textContent = String(data.devices.length);
+    const badge = $('#badge-pccheck');
+    badge.hidden = !data.warnCount;
+    badge.textContent = String(data.warnCount || 0);
+
+    $('#pccheck-list').innerHTML = checks
+      .map((c) => {
+        const [cls, label] = STATUS_PILL[c.status] || STATUS_PILL.info;
+        return `
+      <article class="driver-card">
+        <div class="driver-top">
+          <div class="driver-icon ${c.status === 'ok' ? '' : 'is-warn'}">${c.status === 'ok' ? ICON_OK : ICON_WARN}</div>
+          <div class="driver-main" style="grid-column: span 2;">
+            <div class="driver-title-row">
+              <span class="driver-category">${esc(c.category)}</span>
+              <span class="pill-badge ${cls}">${label}</span>
+            </div>
+            <div class="driver-name">${esc(c.title)}</div>
+            <div class="driver-meta">
+              ${c.detail ? `<span>${esc(c.detail)}</span>` : ''}
+              ${c.fix ? `<span class="pc-fix">Cómo arreglarlo: ${esc(c.fix)}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      </article>`;
+      })
+      .join('');
+
+    $('#pccheck-devices').innerHTML = data.devices.length
+      ? data.devices
+          .map(
+            (d) => `
+      <article class="driver-card">
+        <div class="driver-top">
+          <div class="driver-icon is-warn">${ICON_WARN}</div>
+          <div class="driver-main" style="grid-column: span 2;">
+            <div class="driver-title-row">
+              <span class="driver-category">${esc(d.pnpClass || 'Dispositivo')}</span>
+              <span class="pill-badge is-warn">${esc(d.problem)}</span>
+            </div>
+            <div class="driver-name">${esc(d.name)}</div>
+            <div class="driver-meta"><span class="audit-origin-url">${esc(d.instanceId)}</span></div>
+          </div>
+          <div class="driver-actions">
+            ${d.canSearchDriver
+              ? `<button type="button" class="btn-action-small is-primary" data-device-driver="${esc(d.instanceId)}">Buscar driver</button>`
+              : '<span class="pill-badge is-neutral">Revisar manualmente</span>'}
+          </div>
+        </div>
+      </article>`
+          )
+          .join('')
+      : `<article class="driver-card"><p class="section-subtitle">Todos tus dispositivos tienen su driver funcionando.</p></article>`;
+  }
+
+  function requestDeviceDriver(btn) {
+    const instanceId = btn.dataset.deviceDriver;
+    const device = state.pcCheck?.devices?.find((d) => d.instanceId === instanceId);
+    if (!device) return;
+    ensureVerifiedBackup({
+      scope: 'drivers',
+      label: `Driver para ${device.name}`,
+      detail: 'Se buscará en Windows Update el driver WHQL cuyo Hardware ID coincide exactamente con este dispositivo.',
+      items: [device.name],
+      onConfirmed: async (backupRes) => {
+        btn.disabled = true;
+        btn.textContent = 'Buscando…';
+        try {
+          const res = await api.installDeviceDriver({ instanceId, backupId: backupRes.id });
+          showToast(res?.ok ? `Driver de ${device.name} instalado o verificado.` : res?.error || 'No se pudo instalar el driver: revisa la Auditoría de descargas.');
+          await loadPcCheck();
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Buscar driver';
+        }
+      },
+    });
+  }
+
+  // =========================================================================
+  // Migrar mi PC
+  // =========================================================================
+  const formatBytes = (n) => {
+    const v = Number(n) || 0;
+    if (v >= 1024 ** 3) return `${(v / 1024 ** 3).toFixed(1)} GB`;
+    if (v >= 1024 ** 2) return `${Math.round(v / 1024 ** 2)} MB`;
+    return `${Math.max(1, Math.round(v / 1024))} KB`;
+  };
+
+  async function loadMigrationFolders() {
+    const res = await api.migrationFolders();
+    state.migFolders = (res?.folders || []).map((f) => ({ ...f, checked: ['desktop', 'documents', 'pictures'].includes(f.key), size: null }));
+    renderMigrationFolders();
+    // Medir tamaños en segundo plano, de a una carpeta
+    for (const f of state.migFolders) {
+      const m = await api.migrationMeasure(f.path);
+      if (m?.ok) {
+        f.size = m;
+        renderMigrationFolders();
+      }
+    }
+  }
+
+  function renderMigrationFolders() {
+    const list = $('#mig-folders');
+    if (!list) return;
+    list.innerHTML = (state.migFolders || [])
+      .map(
+        (f, i) => `
+      <article class="driver-card">
+        <label class="mig-check-row">
+          <input type="checkbox" data-mig-folder="${i}" ${f.checked ? 'checked' : ''}>
+          <span class="driver-main">
+            <span class="driver-name">${esc(f.name)}</span>
+            <span class="driver-meta"><span class="audit-origin-url">${esc(f.path)}</span>
+            <span>${f.size ? `${f.size.files} archivos · ${formatBytes(f.size.bytes)}` : 'Calculando tamaño…'}</span></span>
+          </span>
+        </label>
+      </article>`
+      )
+      .join('');
+    const total = (state.migFolders || []).filter((f) => f.checked && f.size).reduce((s, f) => s + f.size.bytes, 0);
+    $('#btn-mig-export').textContent = total ? `Exportar a USB o carpeta (${formatBytes(total)})` : 'Exportar a USB o carpeta';
+  }
+
+  function setMigrationProgress(p) {
+    const box = $('#mig-progress-box');
+    box.hidden = false;
+    $('#mig-progress-step').textContent = p.step || '';
+    $('#mig-progress-pct').textContent = `${Math.round(p.percent || 0)}%`;
+    $('#mig-progress-bar').style.width = `${Math.round(p.percent || 0)}%`;
+  }
+
+  async function runMigrationExport() {
+    const dest = await api.pickFolder();
+    if (dest?.canceled || !dest?.path) return;
+    const folders = (state.migFolders || []).filter((f) => f.checked).map((f) => (f.key ? { key: f.key } : { path: f.path }));
+    const btn = $('#btn-mig-export');
+    btn.disabled = true;
+    setMigrationProgress({ step: 'Preparando migración…', percent: 1 });
+    try {
+      const res = await api.migrationExport({
+        destDir: dest.path,
+        folders,
+        profile: { theme: state.theme, lang: state.lang, selectedIds: Array.from(state.selected.keys()) },
+      });
+      if (!res?.ok) {
+        showToast(res?.error || 'No se pudo exportar la migración.');
+        return;
+      }
+      showToast(`Migración lista: ${res.packages} programas y ${res.files} archivos (${formatBytes(res.bytes)}).`);
+      await api.openPath(res.dir);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function openMigration() {
+    const res = await api.migrationOpen();
+    if (res?.canceled) return;
+    if (!res?.ok) {
+      showToast(res?.error || 'No se pudo abrir la migración.');
+      return;
+    }
+    if (!state.winAudit) await loadWindowsAudit(false);
+    state.migration = {
+      ...res,
+      packages: res.packages.map((p) => ({ ...p, checked: !p.installed })),
+      settings: res.settingIds
+        .map((id) => (state.winAudit?.items || []).find((i) => i.id === id))
+        .filter(Boolean)
+        .map((s) => ({ id: s.id, name: s.name, isOptimal: s.isOptimal, checked: !s.isOptimal })),
+      folders: res.folders.map((f) => ({ ...f, checked: true })),
+    };
+    renderMigrationRestore();
+  }
+
+  function renderMigrationRestore() {
+    const mig = state.migration;
+    const list = $('#mig-restore-list');
+    if (!mig || !list) return;
+    const group = (title, key, rows) => `
+      <article class="driver-card">
+        <div class="driver-title-row" style="justify-content:space-between;">
+          <strong>${esc(title)}</strong>
+          ${rows.length ? `<span><button type="button" class="btn-action-small is-ghost" data-mig-all="${key}" data-value="1">Todos</button>
+          <button type="button" class="btn-action-small is-ghost" data-mig-all="${key}" data-value="0">Ninguno</button></span>` : ''}
+        </div>
+        ${rows.length ? rows.join('') : '<p class="section-subtitle">Nada para restaurar.</p>'}
+      </article>`;
+    const row = (key, i, checked, name, meta) => `
+        <label class="mig-check-row" style="padding:6px 0;">
+          <input type="checkbox" data-mig-item="${key}" data-index="${i}" ${checked ? 'checked' : ''}>
+          <span><span class="driver-name" style="font-size:14px;">${esc(name)}</span> <span class="section-subtitle">${esc(meta)}</span></span>
+        </label>`;
+    list.innerHTML = `
+      <div class="safety-banner"><div>Migración de <strong>${esc(mig.pcName || 'PC')}</strong> creada el ${esc(String(mig.createdAt || '').slice(0, 10))}.</div></div>
+      ${group(`Programas (${mig.packages.length})`, 'packages', mig.packages.map((p, i) => row('packages', i, p.checked, p.name, `${p.wingetId}${p.installed ? ' · ya instalado' : ''}`)))}
+      ${group(`Ajustes de Windows (${mig.settings.length})`, 'settings', mig.settings.map((s, i) => row('settings', i, s.checked, s.name, s.isOptimal ? 'ya aplicado aquí' : 'se aplicará con respaldo')))}
+      ${group(`Carpetas (${mig.folders.length})`, 'folders', mig.folders.map((f, i) => row('folders', i, f.checked, f.name, `${f.files} archivos · ${formatBytes(f.bytes)}`)))}`;
+    $('#btn-mig-restore').disabled = false;
+  }
+
+  async function runMigrationRestore() {
+    const mig = state.migration;
+    if (!mig) return;
+    const folders = mig.folders.filter((f) => f.checked);
+    const settings = mig.settings.filter((s) => s.checked);
+    const tasks = mig.packages
+      .filter((p) => p.checked)
+      .map((p) => (p.catalogId && state.catalog.some((c) => c.id === p.catalogId)
+        ? { id: p.catalogId, type: 'app', name: p.name }
+        : { id: `wg-${p.wingetId}`, type: 'winget', wingetId: p.wingetId, wingetSource: p.source === 'msstore' ? 'msstore' : undefined, name: p.name }));
+    if (!folders.length && !settings.length && !tasks.length) {
+      showToast('No marcaste nada para restaurar.');
+      return;
+    }
+    const btn = $('#btn-mig-restore');
+    btn.disabled = true;
+    try {
+      if (folders.length) {
+        setMigrationProgress({ step: 'Restaurando carpetas…', percent: 1 });
+        const res = await api.migrationRestoreFolders({ manifestPath: mig.manifestPath, folderIds: folders.map((f) => f.id) });
+        showToast(res?.ok ? res.message : res?.error || 'No se pudieron restaurar las carpetas.');
+      }
+      const installAll = async (backupId) => {
+        if (tasks.length) await executeInstallTasks(tasks, backupId);
+      };
+      if (settings.length) {
+        ensureVerifiedBackup({
+          scope: 'windows-config',
+          label: `Restaurar ${settings.length} ajustes de Windows de la migración`,
+          detail: settings.map((s) => s.name).join(' · '),
+          items: settings.map((s) => s.name),
+          onConfirmed: async (backupRes) => {
+            for (const s of settings) await api.applyWindowsSetting({ settingId: s.id, backupId: backupRes.id });
+            state.winAudit = null;
+            await installAll(backupRes.id);
+          },
+        });
+      } else {
+        await installAll(null);
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // =========================================================================
+  // Mantenimiento
+  // =========================================================================
+  const REPAIR_CARDS = [
+    { id: 'sfc', title: 'Reparar archivos de Windows (SFC)', desc: 'Busca y reemplaza archivos del sistema dañados o modificados. Tarda unos 10–20 minutos.' },
+    { id: 'dism', title: 'Reparar la imagen de Windows (DISM)', desc: 'Descarga de Windows Update los componentes dañados que SFC no puede arreglar. Ejecútalo antes de SFC si SFC falla.' },
+    { id: 'wu-reset', title: 'Restablecer Windows Update', desc: 'Para cuando Windows Update se queda trabado o da errores. Conserva una copia de la caché anterior.' },
+  ];
+  const DAY_NAMES = { Sunday: 'domingo', Monday: 'lunes', Tuesday: 'martes', Wednesday: 'miércoles', Thursday: 'jueves', Friday: 'viernes', Saturday: 'sábado' };
+  const ACTION_NAMES = {
+    install: 'Instalación', 'windows-setting': 'Ajuste de Windows', preset: 'Preset', startup: 'Inicio de Windows', bloatware: 'Bloatware',
+    network: 'Red / DNS', disk: 'Carpetas y discos', restore: 'Deshacer cambios', repair: 'Reparación de Windows', 'scheduled-update': 'Actualización programada',
+  };
+
+  function renderRepairGrid() {
+    $('#repair-grid').innerHTML = REPAIR_CARDS.map(
+      (r) => `
+      <article class="app-card">
+        <div class="app-card-head"><strong>${esc(r.title)}</strong></div>
+        <p class="app-card-desc">${esc(r.desc)}</p>
+        <div class="repair-output" id="repair-out-${r.id}"></div>
+        <button type="button" class="btn-action-small is-primary" data-repair="${r.id}">Ejecutar</button>
+      </article>`
+    ).join('');
+  }
+
+  async function runRepairFromCard(btn) {
+    const kind = btn.dataset.repair;
+    $$('[data-repair]').forEach((b) => (b.disabled = true));
+    btn.textContent = 'En curso…';
+    try {
+      const res = await api.runRepair(kind);
+      if (res?.canceled) return;
+      showToast(res?.message || res?.error || 'Reparación terminada.');
+      const out = $(`#repair-out-${kind}`);
+      if (out) out.textContent = res?.output || res?.error || '';
+      loadActionLog();
+    } finally {
+      $$('[data-repair]').forEach((b) => (b.disabled = false));
+      btn.textContent = 'Ejecutar';
+    }
+  }
+
+  async function loadScheduledUpdate() {
+    const s = await api.getScheduledUpdate();
+    const status = $('#sched-status');
+    if (s?.enabled) {
+      const next = s.nextRun ? new Date(s.nextRun).toLocaleString() : '—';
+      status.textContent = `Activada: cada ${DAY_NAMES[s.day] || s.day} a las ${s.time || '--:--'} · próxima: ${next}`;
+      if (s.day) $('#sched-day').value = s.day;
+      if (s.time) $('#sched-time').value = s.time;
+    } else {
+      status.textContent = 'Desactivada';
+    }
+  }
+
+  async function loadActionLog() {
+    const res = await api.getActionLog();
+    const items = res?.items || [];
+    const describe = (e) => {
+      if (Array.isArray(e.items)) return e.items.map((i) => `${i.name || i.id}${i.ok ? '' : ' (falló)'}`).join(', ');
+      if (e.action === 'restore') return `${e.total} cambio(s) deshechos${e.failed ? `, ${e.failed} con problemas` : ''}`;
+      return e.label || e.kind || '';
+    };
+    $('#actionlog-list').innerHTML = items.length
+      ? items
+          .map(
+            (e) => `
+      <article class="driver-card">
+        <div class="driver-top">
+          <div class="driver-main" style="grid-column: span 2;">
+            <div class="driver-title-row">
+              <span class="driver-category">${esc(ACTION_NAMES[e.action] || e.action)}</span>
+              <span class="pill-badge ${e.ok === false ? 'is-warn' : 'is-ok'}">${esc(new Date(e.at).toLocaleString())}</span>
+              ${e.reversible ? '<span class="pill-badge is-neutral">Reversible</span>' : ''}
+            </div>
+            <div class="driver-name" style="font-size:14px;">${esc(describe(e))}</div>
+          </div>
+        </div>
+      </article>`
+          )
+          .join('')
+      : `<article class="driver-card"><p class="section-subtitle">Todavía no hay acciones registradas.</p></article>`;
+  }
+
+  function loadMaintenance() {
+    renderRepairGrid();
+    loadScheduledUpdate();
+    loadActionLog();
+  }
+
+  function initNewFeatures() {
+    $('#btn-pccheck-run').addEventListener('click', loadPcCheck);
+
+    api.onMigrationProgress(setMigrationProgress);
+    $('#btn-mig-export').addEventListener('click', runMigrationExport);
+    $('#btn-mig-add-folder').addEventListener('click', async () => {
+      const res = await api.pickFolder();
+      if (res?.canceled || !res?.path) return;
+      if ((state.migFolders || []).some((f) => f.path === res.path)) return;
+      const entry = { name: res.path.split(/[\\/]/).filter(Boolean).pop() || res.path, path: res.path, checked: true, size: null };
+      state.migFolders = [...(state.migFolders || []), entry];
+      renderMigrationFolders();
+      const m = await api.migrationMeasure(res.path);
+      if (m?.ok) {
+        entry.size = m;
+        renderMigrationFolders();
+      }
+    });
+    $('#mig-folders').addEventListener('change', (e) => {
+      const i = e.target.dataset.migFolder;
+      if (i === undefined) return;
+      state.migFolders[Number(i)].checked = e.target.checked;
+      renderMigrationFolders();
+    });
+    $('#btn-mig-open').addEventListener('click', openMigration);
+    $('#btn-mig-restore').addEventListener('click', runMigrationRestore);
+    $('#mig-restore-list').addEventListener('change', (e) => {
+      const key = e.target.dataset.migItem;
+      if (!key || !state.migration) return;
+      state.migration[key][Number(e.target.dataset.index)].checked = e.target.checked;
+    });
+
+    $('#btn-sched-enable').addEventListener('click', async () => {
+      const res = await api.setScheduledUpdate({ enabled: true, day: $('#sched-day').value, time: $('#sched-time').value });
+      showToast(res?.ok ? res.message : res?.error || 'No se pudo programar.');
+      loadScheduledUpdate();
+    });
+    $('#btn-sched-disable').addEventListener('click', async () => {
+      const res = await api.setScheduledUpdate({ enabled: false });
+      showToast(res?.message || 'Actualización automática desactivada.');
+      loadScheduledUpdate();
+    });
+    $('#btn-actionlog-refresh').addEventListener('click', loadActionLog);
+    $('#btn-export-diagnostics').addEventListener('click', async () => {
+      const res = await api.exportDiagnostics();
+      if (res?.canceled) return;
+      showToast(res?.ok ? `Diagnóstico guardado en ${res.path}` : res?.error || 'No se pudo exportar el diagnóstico.');
+    });
+
+    // Botones creados dinámicamente
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (btn.dataset.deviceDriver) {
+        requestDeviceDriver(btn);
+      } else if (btn.dataset.repair) {
+        runRepairFromCard(btn);
+      } else if (btn.dataset.migAll && state.migration) {
+        const key = btn.dataset.migAll;
+        state.migration[key].forEach((x) => (x.checked = btn.dataset.value === '1'));
+        renderMigrationRestore();
+      } else if (btn.id === 'btn-restart-explorer') {
+        btn.disabled = true;
+        const res = await api.restartExplorer();
+        showToast(res?.message || 'Explorador reiniciado.');
+        btn.disabled = false;
+      }
+    });
+  }
+
+  // =========================================================================
   // Arranque inicial
   // =========================================================================
   async function boot() {
@@ -2550,6 +3010,7 @@
     initDriverConfirmModal();
     initSpotlight();
     initEvents();
+    initNewFeatures();
     await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
     renderPostFormatChecklist();
     checkAppUpdateSilently();

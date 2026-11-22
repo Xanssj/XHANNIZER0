@@ -929,6 +929,101 @@ const CATALOG = [
     registryMatch: /Visual C\+\+ 2015-2022 Redistributable \(x64\)/i,
     checkPaths: ['C:\\Windows\\System32\\vcruntime140_1.dll'],
   },
+  // ---------- Runtimes: sin ellos muchos juegos y apps no abren tras formatear
+  {
+    id: 'vcredist-x86',
+    section: 'utilidades',
+    name: 'Visual C++ Redistributable (x86)',
+    vendor: 'Microsoft',
+    iconUrl: iconFromDomain('microsoft.com'),
+    description: 'Versión de 32 bits de las librerías C++ 2015–2022. Muchos juegos y launchers de 32 bits la necesitan aunque tu Windows sea de 64 bits.',
+    wingetId: 'Microsoft.VCRedist.2015+.x86',
+    officialUrl: 'https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist',
+    downloadUrl: 'https://aka.ms/vs/17/release/vc_redist.x86.exe',
+    sizeHint: '13 MB',
+    tags: ['Runtime', 'Juegos'],
+    registryMatch: /Visual C\+\+ 2015-2022 Redistributable \(x86\)/i,
+    checkPaths: ['C:\\Windows\\SysWOW64\\vcruntime140.dll'],
+  },
+  {
+    id: 'vcredist-2013',
+    section: 'utilidades',
+    name: 'Visual C++ 2013 Redistributable',
+    vendor: 'Microsoft',
+    iconUrl: iconFromDomain('microsoft.com'),
+    description: 'Librerías C++ 2013 que todavía piden juegos y programas más antiguos (error «falta MSVCR120.dll»).',
+    wingetId: 'Microsoft.VCRedist.2013.x64',
+    officialUrl: 'https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist',
+    sizeHint: '7 MB',
+    tags: ['Runtime', 'Juegos'],
+    registryMatch: /Visual C\+\+ 2013 Redistributable \(x64\)/i,
+    checkPaths: ['C:\\Windows\\System32\\msvcr120.dll'],
+  },
+  {
+    id: 'directx-legacy',
+    section: 'utilidades',
+    name: 'DirectX End-User Runtime (junio 2010)',
+    vendor: 'Microsoft',
+    iconUrl: iconFromDomain('microsoft.com'),
+    description: 'Componentes de DirectX 9/10/11 que Windows no trae de serie. Arregla errores como «falta d3dx9_43.dll» o «XINPUT1_3.dll» en juegos clásicos.',
+    wingetId: 'Microsoft.DirectX',
+    officialUrl: 'https://www.microsoft.com/download/details.aspx?id=35',
+    sizeHint: '95 MB',
+    tags: ['Runtime', 'Juegos'],
+    checkPaths: ['C:\\Windows\\System32\\d3dx9_43.dll'],
+  },
+  {
+    id: 'dotnet-desktop-8',
+    section: 'utilidades',
+    name: '.NET Desktop Runtime 8',
+    vendor: 'Microsoft',
+    iconUrl: iconFromDomain('dotnet.microsoft.com'),
+    description: 'Necesario para muchas apps modernas de Windows (herramientas de RGB, launchers, mods). Versión con soporte extendido (LTS).',
+    wingetId: 'Microsoft.DotNet.DesktopRuntime.8',
+    officialUrl: 'https://dotnet.microsoft.com/download/dotnet/8.0',
+    sizeHint: '55 MB',
+    tags: ['Runtime'],
+    registryMatch: /Microsoft Windows Desktop Runtime - 8\./i,
+  },
+  {
+    id: 'dotnet-desktop-9',
+    section: 'utilidades',
+    name: '.NET Desktop Runtime 9',
+    vendor: 'Microsoft',
+    iconUrl: iconFromDomain('dotnet.microsoft.com'),
+    description: 'Versión más reciente del runtime de escritorio de .NET para las apps que ya la piden.',
+    wingetId: 'Microsoft.DotNet.DesktopRuntime.9',
+    officialUrl: 'https://dotnet.microsoft.com/download/dotnet/9.0',
+    sizeHint: '55 MB',
+    tags: ['Runtime'],
+    registryMatch: /Microsoft Windows Desktop Runtime - 9\./i,
+  },
+  {
+    id: 'xna-redist',
+    section: 'utilidades',
+    name: 'XNA Framework 4.0',
+    vendor: 'Microsoft',
+    iconUrl: iconFromDomain('microsoft.com'),
+    description: 'Lo necesitan juegos indie hechos con XNA, como Terraria.',
+    wingetId: 'Microsoft.XNARedist',
+    officialUrl: 'https://www.microsoft.com/download/details.aspx?id=20914',
+    sizeHint: '7 MB',
+    tags: ['Runtime', 'Juegos'],
+    registryMatch: /XNA Framework Redistributable 4\.0/i,
+  },
+  {
+    id: 'java-temurin-21',
+    section: 'utilidades',
+    name: 'Java 21 (Eclipse Temurin JRE)',
+    vendor: 'Eclipse Adoptium',
+    iconUrl: iconFromDomain('adoptium.net'),
+    description: 'Java gratuito y de código abierto para Minecraft Java, servidores y apps que lo necesitan, sin el instalador de Oracle.',
+    wingetId: 'EclipseAdoptium.Temurin.21.JRE',
+    officialUrl: 'https://adoptium.net/',
+    sizeHint: '45 MB',
+    tags: ['Runtime'],
+    registryMatch: /Eclipse Temurin JRE .*21/i,
+  },
   {
     id: 'vlc',
     section: 'utilidades',
@@ -1701,10 +1796,83 @@ function detectInstalledPath(item) {
   return null;
 }
 
+// =========================================================================
+// Catálogo remoto: correcciones y altas publicadas en catalog-overrides.json del repositorio.
+// Se valida todo: solo HTTPS, IDs de WinGet bien formados y, para un enlace de descarga
+// directa, el mismo dominio que el original. Los programas nuevos solo se instalan por WinGet.
+// =========================================================================
+const WINGET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9.+_-]{1,120}$/;
+const SECTIONS = ['herramientas', 'launchers', 'navegadores', 'utilidades', 'dev'];
+let overrides = { items: {}, added: [] };
+
+const isHttps = (u) => {
+  try {
+    return new URL(u).protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+const hostOf = (u) => {
+  try {
+    return new URL(u).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+const shortText = (v, max) => (typeof v === 'string' && v.trim() && v.length <= max ? v.trim() : null);
+
+function validateOverrides(raw) {
+  const clean = { items: {}, added: [] };
+  if (!raw || raw.format !== 1) return clean;
+  for (const [id, o] of Object.entries(raw.items || {})) {
+    const base = CATALOG.find((c) => c.id === id);
+    if (!base || !o || typeof o !== 'object') continue;
+    const patch = {};
+    if (WINGET_ID_RE.test(String(o.wingetId || ''))) patch.wingetId = o.wingetId;
+    if (isHttps(o.officialUrl)) patch.officialUrl = o.officialUrl;
+    if (isHttps(o.downloadUrl) && base.downloadUrl && hostOf(o.downloadUrl) === hostOf(base.downloadUrl)) patch.downloadUrl = o.downloadUrl;
+    if (shortText(o.description, 300)) patch.description = o.description.trim();
+    if (o.hidden === true) patch.hidden = true;
+    if (Object.keys(patch).length) clean.items[id] = patch;
+  }
+  for (const a of (Array.isArray(raw.added) ? raw.added : []).slice(0, 50)) {
+    if (!a || !/^[a-z0-9-]{2,40}$/.test(String(a.id)) || CATALOG.some((c) => c.id === a.id)) continue;
+    if (!SECTIONS.includes(a.section) || !WINGET_ID_RE.test(String(a.wingetId || '')) || !isHttps(a.officialUrl)) continue;
+    const name = shortText(a.name, 60);
+    if (!name) continue;
+    const domain = /^[a-z0-9.-]{3,80}$/i.test(String(a.iconDomain || '')) ? a.iconDomain : hostOf(a.officialUrl);
+    clean.added.push({
+      id: a.id,
+      section: a.section,
+      name,
+      vendor: shortText(a.vendor, 60) || name,
+      iconUrl: iconFromDomain(domain),
+      description: shortText(a.description, 300) || '',
+      wingetId: a.wingetId,
+      officialUrl: a.officialUrl,
+      tags: (Array.isArray(a.tags) ? a.tags : []).filter((t) => shortText(t, 24)).slice(0, 4),
+      remote: true,
+    });
+  }
+  return clean;
+}
+
+function setCatalogOverrides(raw) {
+  overrides = validateOverrides(raw);
+  return { items: Object.keys(overrides.items).length, added: overrides.added.length };
+}
+
+function effectiveCatalog() {
+  return [
+    ...CATALOG.map((item) => (overrides.items[item.id] ? { ...item, ...overrides.items[item.id] } : item)),
+    ...overrides.added,
+  ].filter((item) => !item.hidden);
+}
+
 async function getCatalogWithStatusAsync() {
   const snapshot = await scanWindowsInstalledApps();
 
-  return CATALOG.map((item) => {
+  return effectiveCatalog().map((item) => {
     let installedPath = detectInstalledPath(item);
     let installed = Boolean(installedPath);
     let installedVersion = null;
@@ -1746,7 +1914,7 @@ async function getCatalogWithStatusAsync() {
 }
 
 function getCatalogWithStatus() {
-  return CATALOG.map((item) => {
+  return effectiveCatalog().map((item) => {
     const installedPath = detectInstalledPath(item);
     return {
       ...item,
@@ -1758,12 +1926,14 @@ function getCatalogWithStatus() {
 }
 
 function getCatalogItem(id) {
-  return CATALOG.find((item) => item.id === id) || null;
+  return effectiveCatalog().find((item) => item.id === id) || null;
 }
 
 module.exports = {
   CATALOG,
   iconFromDomain,
+  setCatalogOverrides,
+  validateOverrides,
   getCatalogWithStatus,
   getCatalogWithStatusAsync,
   getCatalogItem,

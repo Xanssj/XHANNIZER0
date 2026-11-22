@@ -14,6 +14,8 @@ const {
   ORGANIZE_GROUPS,
 } = require('./safetyBackup');
 const { toggleStartupApp } = require('./startupManager');
+const { WIN11_TWEAKS } = require('./windowsAudit');
+const { logAction } = require('./actionLog');
 
 // ---------- Valores de registro que toca cada acción
 const R = {
@@ -39,6 +41,9 @@ const SETTING_TARGETS = {
   'win-power-plan': { label: 'Plan de energía', reg: [], power: true },
   'win-dark-mode': { label: 'Modo oscuro', reg: [R.appsLight, R.systemLight] },
 };
+for (const t of WIN11_TWEAKS) {
+  SETTING_TARGETS[t.id] = { label: t.name, reg: t.values.map((v) => ({ path: v.path, name: v.name })), keys: t.keys || [] };
+}
 
 const PRESET_TARGETS = {
   'preset-gaming': { reg: [R.gameMode], power: true },
@@ -46,7 +51,8 @@ const PRESET_TARGETS = {
   'preset-office': { reg: [R.hideExt], power: true },
 };
 
-const isHklm = (p) => /^HKLM:/i.test(p);
+// HKLM y HKCUSoftwarePolicies solo se pueden escribir con permisos de administrador
+const isHklm = (p) => /^HKLM:/i.test(p) || /^HKCU:\\Software\\Policies/i.test(p);
 
 // ---------- Registro
 async function captureRegistry(targets) {
@@ -54,8 +60,9 @@ async function captureRegistry(targets) {
   const ps = `
 $out = foreach ($x in @(${psData(targets)})) {
   $item = Get-Item -LiteralPath $x.path -ErrorAction SilentlyContinue
-  if ($item -and ($item.GetValueNames() -contains $x.name)) {
-    [pscustomobject]@{ path = $x.path; name = $x.name; existed = $true; kind = [string]$item.GetValueKind($x.name); value = $item.GetValue($x.name, $null, 'DoNotExpandEnvironmentNames') }
+  $n = if ($x.name -eq '(default)') { '' } else { $x.name }
+  if ($item -and ($item.GetValueNames() -contains $n)) {
+    [pscustomobject]@{ path = $x.path; name = $x.name; existed = $true; kind = [string]$item.GetValueKind($n); value = $item.GetValue($n, $null, 'DoNotExpandEnvironmentNames') }
   } else {
     [pscustomobject]@{ path = $x.path; name = $x.name; existed = $false }
   }
@@ -75,11 +82,14 @@ foreach ($x in @(${psData(values)})) {
     $val = $x.value
     if ($x.kind -eq 'Binary') { $val = [byte[]]@($x.value) }
     if ($x.kind -eq 'MultiString') { $val = [string[]]@($x.value) }
-    Set-ItemProperty -LiteralPath $x.path -Name $x.name -Value $val -Type $x.kind -ErrorAction Stop
+    if ($x.name -eq '(default)') { Set-Item -LiteralPath $x.path -Value $val -ErrorAction Stop }
+    else { Set-ItemProperty -LiteralPath $x.path -Name $x.name -Value $val -Type $x.kind -ErrorAction Stop }
   } else {
     Remove-ItemProperty -LiteralPath $x.path -Name $x.name -ErrorAction SilentlyContinue
   }
-}`;
+}
+# Un Remove silencioso de un valor inexistente no debe contar como fallo
+exit 0`;
 }
 
 async function restoreRegistry(values) {
@@ -110,9 +120,27 @@ async function restorePowerPlan(guid) {
   return r.ok ? { ok: true } : { ok: false, note: 'El plan de energía original ya no existe.' };
 }
 
+async function captureKeys(keys) {
+  if (!keys.length) return [];
+  const r = await runPowerShell(`ConvertTo-Json -InputObject @(foreach ($k in @(${psData(keys)})) { [pscustomobject]@{ path = $k; existed = [bool](Test-Path -LiteralPath $k) } }) -Compress`, 8000);
+  if (!r.ok) throw new Error('No se pudo leer el registro antes del cambio.');
+  const parsed = JSON.parse(r.stdout || '[]');
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+async function restoreKeys(keys) {
+  const created = keys.filter((k) => !k.existed).map((k) => k.path);
+  if (!created.length) return { ok: true };
+  const script = `foreach ($k in @(${psData(created)})) { if (Test-Path -LiteralPath $k) { Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction Stop } }`;
+  const r = created.some(isHklm) ? await runElevated(script, 30000) : await runPowerShell(`$ErrorActionPreference = 'Stop'
+${script}`, 8000);
+  return r.ok ? { ok: true } : { ok: false, note: 'No se pudieron quitar claves de registro creadas.' };
+}
+
 async function captureSystemState(target) {
   return {
     registry: await captureRegistry(target.reg || []),
+    keys: await captureKeys(target.keys || []),
     powerScheme: target.power ? await capturePowerPlan() : null,
   };
 }
@@ -122,6 +150,10 @@ async function restoreSystemState(data) {
   let ok = true;
   if (data.registry?.length) {
     const r = await restoreRegistry(data.registry);
+    if (!r.ok) { ok = false; notes.push(r.note); }
+  }
+  if (data.keys?.length) {
+    const r = await restoreKeys(data.keys);
     if (!r.ok) { ok = false; notes.push(r.note); }
   }
   if (data.powerScheme) {
@@ -359,6 +391,12 @@ async function withUndo(backupId, kind, payload, run) {
       // El cambio ya se aplicó; el fallo del diario no debe ocultar el resultado
     }
   }
+  logAction(kind, {
+    label: prepared?.label || payload?.settingId || payload?.actionId || payload?.action || kind,
+    backupId,
+    ok: Boolean(res?.ok),
+    reversible: Boolean(prepared && !prepared.irreversible),
+  });
   return res;
 }
 
@@ -413,6 +451,7 @@ async function restoreBackup(backupId) {
   }
 
   const failed = results.filter((r) => !r.ok).length;
+  logAction('restore', { backupId, total: results.length, failed });
   return {
     ok: failed === 0,
     results,
@@ -428,5 +467,5 @@ module.exports = {
   restoreBackup,
   pendingEntries,
   // Solo para pruebas
-  _internals: { captureRegistry, restoreRegistry, capturePowerPlan, restorePowerPlan, captureAppx, stillInstalledAppx, captureDns },
+  _internals: { captureSystemState, restoreSystemState, SETTING_TARGETS, captureRegistry, restoreRegistry, capturePowerPlan, restorePowerPlan, captureAppx, stillInstalledAppx, captureDns },
 };

@@ -517,8 +517,8 @@ $gpusEnriched = $gpus | ForEach-Object {
 $board = Get-CimInstance Win32_BaseBoard | Select-Object -First 1 Manufacturer, Product, Version
 $bios = Get-CimInstance Win32_BIOS | Select-Object -First 1 SMBIOSBIOSVersion, ReleaseDate
 $ramPhysical = (Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum
-$audio = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'MEDIA' -and $_.DeviceName } | Select-Object DeviceName, Manufacturer, DriverVersion, DriverDate)
-$net = @(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true -and $_.Name -notmatch 'Bluetooth|Virtual|TAP|Hyper-V|WAN' } | Select-Object -First 3 Name, Manufacturer, NetConnectionID, Speed)
+$audio = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'MEDIA' -and $_.DeviceName } | Select-Object DeviceName, Manufacturer, DriverVersion, DriverDate, DeviceID)
+$net = @(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true -and $_.Name -notmatch 'Bluetooth|Virtual|TAP|Hyper-V|WAN' } | Select-Object -First 3 Name, Manufacturer, NetConnectionID, Speed, PNPDeviceID)
 $netDrivers = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'NET' -and $_.DeviceName } | Select-Object DeviceName, DriverVersion, DriverDate)
 $disks = @(Get-CimInstance Win32_DiskDrive | Select-Object Model, Size, InterfaceType, MediaType)
 $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption, Version, BuildNumber, TotalVisibleMemorySize
@@ -617,6 +617,7 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
         installedVersion: gpu.DriverVersion || 'Desconocida',
         installedDate: formatDriverDate(gpu.DriverDate),
         hardwareDetail: gpu.isIntegrated ? `Integrada en CPU · ${vramLabel}` : `Dedicada · ${vramLabel}`,
+        pnpInstanceIds: gpu.PNPDeviceID ? [gpu.PNPDeviceID] : [],
       })
     );
   });
@@ -633,6 +634,7 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
       installedVersion: `${systemSummary.cores}C / ${systemSummary.threads}T`,
       installedDate: 'Activo',
       hardwareDetail: `${parsed?.cpu?.MaxClockSpeed ? `${(parsed.cpu.MaxClockSpeed / 1000).toFixed(2)} GHz · ` : ''}${igpuTag}`,
+      pnpScope: 'system-pci',
     })
   );
 
@@ -650,6 +652,7 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
       installedVersion: parsed?.bios?.SMBIOSBIOSVersion || 'BIOS detectada',
       installedDate: formatDriverDate(parsed?.bios?.ReleaseDate),
       hardwareDetail: parsed?.board?.Version ? `Rev. ${parsed.board.Version}` : 'Chipset y controladores de sistema',
+      pnpScope: 'system-pci',
     })
   );
 
@@ -675,6 +678,7 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
         installedVersion: primaryAudio.DriverVersion || 'Detectado',
         installedDate: formatDriverDate(primaryAudio.DriverDate),
         hardwareDetail: 'Controlador de sonido principal',
+        pnpInstanceIds: primaryAudio.DeviceID ? [primaryAudio.DeviceID] : [],
       })
     );
   }
@@ -697,6 +701,7 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
         installedVersion: matchedNetDrv?.DriverVersion || 'Instalado',
         installedDate: formatDriverDate(matchedNetDrv?.DriverDate),
         hardwareDetail: primaryNet.NetConnectionID || 'Interfaz de red física',
+        pnpInstanceIds: primaryNet.PNPDeviceID ? [primaryNet.PNPDeviceID] : [],
       })
     );
   }
@@ -720,19 +725,29 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
         installedVersion: 'Estándar Windows',
         installedDate: 'Verificado',
         hardwareDetail: gb ? `${gb} GB · ${isNvme ? 'NVMe / SSD interno' : primaryDisk.InterfaceType || 'Disco interno'}` : 'Unidad interna',
+        pnpScope: 'storage-pci',
       })
     );
   }
 
-  return {
+  lastScan = {
     system: systemSummary,
     drivers: components,
     advisoriesCount: components.filter((c) => c.advisory && c.advisory.level === 'warn').length,
     updatesCount: components.filter((c) => c.needsUpdate).length,
   };
+  return lastScan;
+}
+
+// Último escaneo en el proceso principal: el instalador de drivers toma de aquí los IDs de
+// dispositivo en lugar de confiar en lo que envíe la interfaz.
+let lastScan = null;
+function getLastHardwareScan() {
+  return lastScan;
 }
 
 module.exports = {
   detectHardwareAndDrivers,
+  getLastHardwareScan,
   fetchJson,
 };
