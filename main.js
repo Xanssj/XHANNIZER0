@@ -35,6 +35,7 @@ const {
   scanNetworkAndDns,
   applyNetworkAction,
 } = require('./src/backend/postFormatTools');
+const { withUndo, restoreBackup, pendingEntries } = require('./src/backend/restore');
 
 app.setAppUserModelId('studio.xhanni.xhannizer0');
 app.setName('XHANNIZER0');
@@ -310,7 +311,9 @@ ipcMain.handle('xh:scan-disks', async () => {
   return scanDisksAndFolders();
 });
 
-ipcMain.handle('xh:run-disk-action', withVerifiedBackup((payload) => executeDiskOrFolderAction(payload)));
+ipcMain.handle('xh:run-disk-action', withVerifiedBackup((payload) =>
+  withUndo(payload.backupId, 'disk', payload, () => executeDiskOrFolderAction(payload))
+));
 
 // ---------- Microsoft Store (búsqueda y ficha nativa)
 ipcMain.handle('xh:store-featured', async () => {
@@ -332,29 +335,39 @@ ipcMain.handle('xh:get-presets', async (_event, system) => {
   return { presets: buildHardwarePresets(system) };
 });
 
-ipcMain.handle('xh:apply-preset-opt', withVerifiedBackup((payload) => applyPresetOptimizations(payload)));
+ipcMain.handle('xh:apply-preset-opt', withVerifiedBackup((payload) =>
+  withUndo(payload.backupId, 'preset', payload, () => applyPresetOptimizations(payload))
+));
 
 // ---------- Auditoría de Configuraciones de Windows
 ipcMain.handle('xh:scan-windows-audit', async (_event, system) => {
   return scanWindowsSettings(system);
 });
 
-ipcMain.handle('xh:apply-windows-setting', withVerifiedBackup((payload) => applyWindowsSetting(payload)));
+ipcMain.handle('xh:apply-windows-setting', withVerifiedBackup((payload) =>
+  withUndo(payload.backupId, 'windows-setting', payload, () => applyWindowsSetting(payload))
+));
 
 // ---------- Gestor de Inicio de Windows (Startup Manager)
 ipcMain.handle('xh:list-startup', async () => {
   return listStartupApps();
 });
 
-ipcMain.handle('xh:toggle-startup', withVerifiedBackup((payload) => toggleStartupApp(payload)));
+ipcMain.handle('xh:toggle-startup', withVerifiedBackup((payload) =>
+  withUndo(payload.backupId, 'startup', payload, () => toggleStartupApp(payload))
+));
 
 // ---------- Bloatware, Actualizador Global WinGet y Red/DNS
 ipcMain.handle('xh:scan-bloatware', async () => scanBloatware());
-ipcMain.handle('xh:remove-bloatware', withVerifiedBackup((payload) => removeBloatware(payload)));
+ipcMain.handle('xh:remove-bloatware', withVerifiedBackup((payload) =>
+  withUndo(payload.backupId, 'bloatware', payload, () => removeBloatware(payload))
+));
 ipcMain.handle('xh:scan-upgrades', async () => scanWingetUpgrades());
 ipcMain.handle('xh:run-upgrade', async (_event, payload) => runWingetUpgrade(payload || {}));
 ipcMain.handle('xh:scan-network', async () => scanNetworkAndDns());
-ipcMain.handle('xh:apply-network', withVerifiedBackup((payload) => applyNetworkAction(payload)));
+ipcMain.handle('xh:apply-network', withVerifiedBackup((payload) =>
+  withUndo(payload.backupId, 'network', payload, () => applyNetworkAction(payload))
+));
 
 // ---------- Exportar / Importar Perfil XHANNIZER0 (.json)
 ipcMain.handle('xh:export-profile', async (_event, profileData) => {
@@ -434,11 +447,62 @@ ipcMain.handle('xh:delete-backup', async (_event, backupId) => {
   if (!target.startsWith(rootResolved + path.sep)) {
     return { ok: false, error: 'Ruta de respaldo no autorizada.' };
   }
+  const pendingUndo = pendingEntries(String(backupId)).length;
+  if (pendingUndo > 0 && win && !win.isDestroyed()) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Eliminar de todos modos', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Eliminar respaldo — XHANNIZER0',
+      message: `Este respaldo tiene ${pendingUndo} cambio(s) que todavía se pueden deshacer.`,
+      detail: 'Si lo eliminas, ya no podrás revertir esos cambios desde XHANNIZER0.',
+    });
+    if (response !== 0) return { ok: false, canceled: true };
+  }
   try {
     fs.rmSync(target, { recursive: true, force: true });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
+  }
+});
+
+// ---------- Deshacer los cambios registrados en un respaldo (restauración real)
+let restoreBusy = false;
+ipcMain.handle('xh:restore-backup', async (_event, backupId) => {
+  if (!backupId || /[\\/:*?"<>|]/.test(String(backupId))) {
+    return { ok: false, error: 'ID de respaldo inválido.' };
+  }
+  if (restoreBusy) return { ok: false, error: 'Ya hay una restauración en curso.' };
+  const pending = pendingEntries(String(backupId));
+  if (!pending.length) return { ok: false, error: 'Este respaldo no tiene cambios pendientes por deshacer.' };
+
+  // La confirmación vive en el proceso principal: el renderer no puede saltársela
+  const shown = pending.slice(-12).reverse().map((e) => `• ${e.label}`);
+  if (pending.length > 12) shown.push(`• …y ${pending.length - 12} más`);
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: ['Deshacer cambios', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Deshacer cambios — XHANNIZER0',
+    message: `¿Deshacer ${pending.length} cambio(s) hechos con este respaldo?`,
+    detail: `${shown.join('\n')}\n\nSe revierten del más reciente al más antiguo. Algunos pasos pueden pedir permisos de administrador.`,
+  });
+  if (response !== 0) return { ok: false, canceled: true };
+
+  restoreBusy = true;
+  try {
+    const res = await restoreBackup(String(backupId));
+    for (const family of res.storeFamilies || []) {
+      if (/^[A-Za-z0-9._-]+_[a-z0-9]{13}$/.test(family)) {
+        await shell.openExternal(`ms-windows-store://pdp/?PFN=${encodeURIComponent(family)}`);
+      }
+    }
+    return res;
+  } finally {
+    restoreBusy = false;
   }
 });
 

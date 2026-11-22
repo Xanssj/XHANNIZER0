@@ -106,7 +106,7 @@ Write-Output 'Aplicación reactivada en el inicio de Windows.'
 $ErrorActionPreference = 'Stop'
 $src = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
 $dst = 'HKCU:\\Software\\XHANNIZER0\\DisabledStartup'
-New-Item -Path $dst -Force | Out-Null
+if (-not (Test-Path -Path $dst)) { New-Item -Path $dst -Force | Out-Null }
 $val = (Get-ItemProperty -Path $src -Name '${safeName}').'${safeName}'
 Set-ItemProperty -Path $dst -Name '${safeName}' -Value $val
 Remove-ItemProperty -Path $src -Name '${safeName}'

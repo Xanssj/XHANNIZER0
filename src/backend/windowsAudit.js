@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFile } = require('child_process');
+const { runElevated } = require('./powershell');
 
 function runPowerShell(script, timeout = 15000) {
   return new Promise((resolve) => {
@@ -180,7 +181,7 @@ async function applyWindowsSetting({ settingId, backupId }) {
 
   const commands = {
     'win-gamemode': `
-      New-Item -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Force | Out-Null
+      if (-not (Test-Path -Path 'HKCU:\\Software\\Microsoft\\GameBar')) { New-Item -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Force | Out-Null }
       Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AllowAutoGameMode' -Value 1 -Type DWord
       Write-Output 'Modo Juego activado correctamente.'
     `,
@@ -203,12 +204,12 @@ async function applyWindowsSetting({ settingId, backupId }) {
       Write-Output 'Extensiones de archivo visibles habilitadas.'
     `,
     'win-clipboard': `
-      New-Item -Path 'HKCU:\\Software\\Microsoft\\Clipboard' -Force | Out-Null
+      if (-not (Test-Path -Path 'HKCU:\\Software\\Microsoft\\Clipboard')) { New-Item -Path 'HKCU:\\Software\\Microsoft\\Clipboard' -Force | Out-Null }
       Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Clipboard' -Name 'EnableClipboardHistory' -Value 1 -Type DWord
       Write-Output 'Historial del portapapeles (Win + V) activado.'
     `,
     'win-privacy-ads': `
-      New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Force | Out-Null
+      if (-not (Test-Path -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo')) { New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Force | Out-Null }
       Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Name 'Enabled' -Value 0 -Type DWord
       Write-Output 'ID de publicidad de Windows desactivado.'
     `,
@@ -230,13 +231,17 @@ async function applyWindowsSetting({ settingId, backupId }) {
   const res = await runPowerShell(ps, 12000);
   if (!res.ok && settingId === 'win-hags') {
     // Auto-elevación UAC bajo demanda solo cuando se requiere modificar HKLM
-    const elevatedCmd = `Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command "Set-ItemProperty -Path ''HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers'' -Name ''HwSchMode'' -Value 2 -Type DWord"'`;
-    const elevRes = await runPowerShell(elevatedCmd, 25000);
+    const elevRes = await runElevated(
+      "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' -Name 'HwSchMode' -Value 2 -Type DWord",
+      30000
+    );
     return {
       ok: elevRes.ok,
       message: elevRes.ok
         ? 'HAGS activado con elevación UAC (reinicia Windows para aplicar).'
-        : 'Elevación UAC cancelada por el usuario.',
+        : elevRes.cancelled
+          ? 'Elevación UAC cancelada por el usuario.'
+          : 'No se pudo activar HAGS.',
     };
   }
   return {

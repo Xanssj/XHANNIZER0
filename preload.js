@@ -77,5 +77,6 @@ contextBridge.exposeInMainWorld('xhApi', {
   // Auto-actualizador, Gestión de Respaldos y Kit USB
   checkAppUpdate: () => ipcRenderer.invoke('xh:check-app-update'),
   deleteBackup: (backupId) => ipcRenderer.invoke('xh:delete-backup', backupId),
+  restoreBackup: (backupId) => ipcRenderer.invoke('xh:restore-backup', backupId),
   createUsbKit: (payload) => ipcRenderer.invoke('xh:create-usb-kit', payload),
 });

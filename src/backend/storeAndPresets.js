@@ -270,7 +270,7 @@ function applyPresetOptimizations({ presetId, backupId }) {
   let ps = `$ErrorActionPreference = 'SilentlyContinue'\n`;
   if (presetId === 'preset-gaming') {
     ps += `
-New-Item -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Force | Out-Null
+if (-not (Test-Path -Path 'HKCU:\\Software\\Microsoft\\GameBar')) { New-Item -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Force | Out-Null }
 Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AllowAutoGameMode' -Value 1 -Type DWord
 powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
 Write-Output 'Game Mode activado y plan de energía ajustado.'

@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFile } = require('child_process');
+const { runElevated } = require('./powershell');
 
 function runExec(file, args, timeout = 25000) {
   return new Promise((resolve) => {
@@ -225,24 +226,14 @@ async function applyNetworkAction({ action, adapterName, backupId }) {
     return { ok: false, error: 'Acción de red desconocida.' };
   }
 
-  // Cambiar DNS requiere elevación UAC bajo demanda.
-  // El comando interno va en -EncodedCommand (Base64 UTF-16LE) para que las comillas del
-  // nombre del adaptador no rompan el -ArgumentList del proceso elevado.
-  const encoded = Buffer.from(`$ErrorActionPreference = 'Stop'; ${innerCmd}`, 'utf16le').toString('base64');
-  const elevCmd = [
-    '$ErrorActionPreference = \'Stop\'',
-    'try {',
-    `  $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${encoded}'`,
-    '} catch { Write-Output \'UAC_CANCELLED\'; exit 2 }',
-    'exit $p.ExitCode',
-  ].join('\n');
-  const r = await runPowerShell(elevCmd, 30000);
+  // Cambiar DNS requiere elevación UAC bajo demanda (el comando viaja como -EncodedCommand).
+  const r = await runElevated(innerCmd, 30000);
   if (r.ok) {
     return { ok: true, message: `${label} en ${adapterName}.` };
   }
   return {
     ok: false,
-    message: /UAC_CANCELLED/.test(r.stdout)
+    message: r.cancelled
       ? 'Elevación UAC cancelada por el usuario.'
       : `No se pudo aplicar el cambio de DNS en ${adapterName}.`,
   };

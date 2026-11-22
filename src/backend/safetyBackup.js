@@ -137,6 +137,7 @@ function listBackups() {
         createdAt: data.createdAt,
         backupDir: path.join(BACKUP_ROOT, entry.name),
         restorePointNote: data.restorePointNote || '',
+        ...journalSummary(data.id || entry.name),
       });
     } catch {
       // Ignorar manifiestos corruptos
@@ -145,12 +146,60 @@ function listBackups() {
   return results.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 12);
 }
 
+// =========================================================================
+// Diario de deshacer: cada cambio aplicado bajo un respaldo guarda aquí su estado previo
+// =========================================================================
+const JOURNAL_FILE = 'undo-journal.json';
+
+function isSafeBackupId(id) {
+  return Boolean(id) && !/[\\/:*?"<>|]/.test(id) && id !== '.' && id !== '..';
+}
+
+function readJournal(backupId) {
+  const id = String(backupId || '');
+  if (!isSafeBackupId(id)) return { entries: [] };
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(BACKUP_ROOT, id, JOURNAL_FILE), 'utf8'));
+    return { entries: Array.isArray(data.entries) ? data.entries : [] };
+  } catch {
+    return { entries: [] };
+  }
+}
+
+function writeJournal(backupId, journal) {
+  const id = String(backupId || '');
+  if (!isSafeBackupId(id)) throw new Error('ID de respaldo inválido.');
+  const dir = path.join(BACKUP_ROOT, id);
+  if (!fs.existsSync(path.join(dir, 'backup-manifest.json'))) throw new Error('Respaldo no encontrado.');
+  const file = path.join(dir, JOURNAL_FILE);
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(journal, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+function appendJournal(backupId, entry) {
+  const journal = readJournal(backupId);
+  const seq = journal.entries.reduce((max, e) => Math.max(max, e.seq || 0), 0) + 1;
+  journal.entries.push({ seq, at: new Date().toISOString(), ...entry });
+  writeJournal(backupId, journal);
+  return seq;
+}
+
+function journalSummary(backupId) {
+  const { entries } = readJournal(backupId);
+  return {
+    undoTotal: entries.length,
+    undoPending: entries.filter((e) => !e.restoredAt && !e.irreversible).length,
+    undoIrreversible: entries.filter((e) => e.irreversible).length,
+  };
+}
+
 const BACKUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 // Comprueba en disco que el respaldo exista, tenga manifiesto válido y sea reciente (< 24 h).
 function verifyBackup(backupId) {
   const id = String(backupId || '');
-  if (!id || /[\\/:*?"<>|]/.test(id) || id === '.' || id === '..') {
+  if (!isSafeBackupId(id)) {
     return { ok: false, error: 'ID de respaldo inválido.' };
   }
   const manifestPath = path.join(BACKUP_ROOT, id, 'backup-manifest.json');
@@ -237,6 +286,14 @@ $ErrorActionPreference = 'SilentlyContinue'
   };
 }
 
+const CLEAN_STRUCTURE_FOLDERS = ['Proyectos', 'Juegos', 'Instaladores', 'Drivers_Oficiales', 'Documentos_Trabajo'];
+const ORGANIZE_GROUPS = {
+  Instaladores: ['.exe', '.msi', '.msix', '.bat'],
+  Comprimidos: ['.zip', '.rar', '.7z', '.tar', '.gz', '.iso'],
+  Imagenes: ['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif'],
+  Documentos: ['.pdf', '.docx', '.xlsx', '.txt', '.md', '.csv'],
+};
+
 async function executeDiskOrFolderAction({ actionId, targetDir, backupId }) {
   if (!backupId) {
     return {
@@ -247,7 +304,7 @@ async function executeDiskOrFolderAction({ actionId, targetDir, backupId }) {
 
   if (actionId === 'create-clean-structure') {
     const base = targetDir || path.join(os.homedir(), 'XhanniWorkspace');
-    const folders = ['Proyectos', 'Juegos', 'Instaladores', 'Drivers_Oficiales', 'Documentos_Trabajo'];
+    const folders = CLEAN_STRUCTURE_FOLDERS;
     ensureDir(base);
     for (const sub of folders) {
       ensureDir(path.join(base, sub));
@@ -264,12 +321,7 @@ async function executeDiskOrFolderAction({ actionId, targetDir, backupId }) {
     if (!fs.existsSync(downloads)) {
       return { ok: false, error: `No se encontró la carpeta ${downloads}` };
     }
-    const groups = {
-      Instaladores: ['.exe', '.msi', '.msix', '.bat'],
-      Comprimidos: ['.zip', '.rar', '.7z', '.tar', '.gz', '.iso'],
-      Imagenes: ['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif'],
-      Documentos: ['.pdf', '.docx', '.xlsx', '.txt', '.md', '.csv'],
-    };
+    const groups = ORGANIZE_GROUPS;
     let moved = 0;
     const entries = fs.readdirSync(downloads, { withFileTypes: true });
     for (const entry of entries) {
@@ -339,6 +391,12 @@ module.exports = {
   createSafetyBackup,
   listBackups,
   verifyBackup,
+  readJournal,
+  writeJournal,
+  appendJournal,
+  journalSummary,
+  CLEAN_STRUCTURE_FOLDERS,
+  ORGANIZE_GROUPS,
   scanDisksAndFolders,
   executeDiskOrFolderAction,
 };

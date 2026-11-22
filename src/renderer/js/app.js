@@ -1499,6 +1499,15 @@
     renderDisks();
   }
 
+  function undoSummaryText(b) {
+    const parts = [`${b.undoTotal} cambio${b.undoTotal === 1 ? '' : 's'} registrado${b.undoTotal === 1 ? '' : 's'}`];
+    const restored = b.undoTotal - b.undoPending - (b.undoIrreversible || 0);
+    if (b.undoPending) parts.push(`${b.undoPending} reversible${b.undoPending === 1 ? '' : 's'}`);
+    if (restored > 0) parts.push(`${restored} ya deshecho${restored === 1 ? '' : 's'}`);
+    if (b.undoIrreversible) parts.push(`${b.undoIrreversible} no reversible${b.undoIrreversible === 1 ? '' : 's'}`);
+    return parts.join(' · ');
+  }
+
   function renderBackupsHistory(backups) {
     const listEl = $('#backups-history-list');
     if (!listEl) return;
@@ -1524,8 +1533,14 @@
             <div class="driver-meta">
               <span>${esc(b.restorePointNote || b.backupDir)}</span>
             </div>
+            ${b.undoTotal
+              ? `<div class="driver-meta"><span>${esc(undoSummaryText(b))}</span></div>`
+              : ''}
           </div>
           <div class="driver-actions">
+            ${b.undoPending
+              ? `<button type="button" class="btn-action-small is-primary" data-restore-backup="${esc(b.id)}">Deshacer cambios (${Number(b.undoPending)})</button>`
+              : ''}
             <button type="button" class="btn-action-small" data-open-backup-dir="${esc(b.backupDir)}">Abrir</button>
             <button type="button" class="btn-action-small is-ghost" data-delete-backup="${esc(b.id)}">Eliminar</button>
           </div>
@@ -2099,8 +2114,28 @@
         if (res?.ok) {
           showToast('Respaldo eliminado.');
           await Promise.all([loadDisks(), refreshBackupCount()]);
-        } else {
+        } else if (!res?.canceled) {
           showToast(res?.error || 'No se pudo eliminar el respaldo.');
+        }
+        return;
+      }
+      if (btn.dataset.restoreBackup) {
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Deshaciendo…';
+        try {
+          const res = await api.restoreBackup(btn.dataset.restoreBackup);
+          if (res?.canceled) return;
+          const failed = (res?.results || []).filter((r) => !r.ok);
+          const detail = failed.length ? ` ${failed.map((r) => `${r.label}: ${r.note}`).join(' | ')}` : '';
+          showToast((res?.message || res?.error || 'No se pudo deshacer.') + detail);
+          // Los datos mostrados pueden haber cambiado: se recargan en la próxima visita
+          state.winAudit = null;
+          state.networkInfo = null;
+          await Promise.all([loadDisks(), refreshBackupCount()]);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = original;
         }
         return;
       }
