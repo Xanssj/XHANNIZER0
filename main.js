@@ -15,6 +15,7 @@ const {
   BACKUP_ROOT,
   createSafetyBackup,
   listBackups,
+  verifyBackup,
   scanDisksAndFolders,
   executeDiskOrFolderAction,
 } = require('./src/backend/safetyBackup');
@@ -65,6 +66,33 @@ function saveWindowState(targetWin) {
 
 let win = null;
 let installBusy = false;
+
+// Las operaciones que modifican el sistema exigen un respaldo real en disco (no solo un ID).
+function withVerifiedBackup(handler) {
+  return async (_event, payload) => {
+    const check = verifyBackup(payload?.backupId);
+    if (!check.ok) return { ok: false, error: check.error, message: check.error };
+    return handler(payload || {});
+  };
+}
+
+// Compara versiones tipo semver ("2.0.10" > "2.0.9"); un sufijo -beta cuenta como menor.
+function compareVersions(a, b) {
+  const parse = (v) => {
+    const [core, pre = ''] = String(v || '').replace(/^v/i, '').split('-', 2);
+    return { nums: core.split('.').map((n) => parseInt(n, 10) || 0), pre };
+  };
+  const va = parse(a);
+  const vb = parse(b);
+  for (let i = 0; i < Math.max(va.nums.length, vb.nums.length); i += 1) {
+    const diff = (va.nums[i] || 0) - (vb.nums[i] || 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  if (va.pre === vb.pre) return 0;
+  if (!va.pre) return 1;
+  if (!vb.pre) return -1;
+  return va.pre.localeCompare(vb.pre, undefined, { numeric: true }) > 0 ? 1 : -1;
+}
 
 function openExternalSafe(url) {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
@@ -207,11 +235,14 @@ ipcMain.handle('xh:install-batch', async (_event, payload) => {
   }
   const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
   const hasDrivers = tasks.some((t) => t.type === 'driver');
-  if (hasDrivers && !payload?.backupId) {
-    return {
-      ok: false,
-      error: 'Por seguridad, se requiere completar una copia de seguridad antes de instalar drivers.',
-    };
+  if (hasDrivers) {
+    const check = verifyBackup(payload?.backupId);
+    if (!check.ok) {
+      return {
+        ok: false,
+        error: `Por seguridad, se requiere una copia de seguridad vigente antes de instalar drivers. ${check.error}`,
+      };
+    }
   }
   installBusy = true;
   const emit = (update) => {
@@ -279,9 +310,7 @@ ipcMain.handle('xh:scan-disks', async () => {
   return scanDisksAndFolders();
 });
 
-ipcMain.handle('xh:run-disk-action', async (_event, payload) => {
-  return executeDiskOrFolderAction(payload || {});
-});
+ipcMain.handle('xh:run-disk-action', withVerifiedBackup((payload) => executeDiskOrFolderAction(payload)));
 
 // ---------- Microsoft Store (búsqueda y ficha nativa)
 ipcMain.handle('xh:store-featured', async () => {
@@ -303,35 +332,29 @@ ipcMain.handle('xh:get-presets', async (_event, system) => {
   return { presets: buildHardwarePresets(system) };
 });
 
-ipcMain.handle('xh:apply-preset-opt', async (_event, payload) => {
-  return applyPresetOptimizations(payload || {});
-});
+ipcMain.handle('xh:apply-preset-opt', withVerifiedBackup((payload) => applyPresetOptimizations(payload)));
 
 // ---------- Auditoría de Configuraciones de Windows
 ipcMain.handle('xh:scan-windows-audit', async (_event, system) => {
   return scanWindowsSettings(system);
 });
 
-ipcMain.handle('xh:apply-windows-setting', async (_event, payload) => {
-  return applyWindowsSetting(payload || {});
-});
+ipcMain.handle('xh:apply-windows-setting', withVerifiedBackup((payload) => applyWindowsSetting(payload)));
 
 // ---------- Gestor de Inicio de Windows (Startup Manager)
 ipcMain.handle('xh:list-startup', async () => {
   return listStartupApps();
 });
 
-ipcMain.handle('xh:toggle-startup', async (_event, payload) => {
-  return toggleStartupApp(payload || {});
-});
+ipcMain.handle('xh:toggle-startup', withVerifiedBackup((payload) => toggleStartupApp(payload)));
 
 // ---------- Bloatware, Actualizador Global WinGet y Red/DNS
 ipcMain.handle('xh:scan-bloatware', async () => scanBloatware());
-ipcMain.handle('xh:remove-bloatware', async (_event, payload) => removeBloatware(payload || {}));
+ipcMain.handle('xh:remove-bloatware', withVerifiedBackup((payload) => removeBloatware(payload)));
 ipcMain.handle('xh:scan-upgrades', async () => scanWingetUpgrades());
 ipcMain.handle('xh:run-upgrade', async (_event, payload) => runWingetUpgrade(payload || {}));
 ipcMain.handle('xh:scan-network', async () => scanNetworkAndDns());
-ipcMain.handle('xh:apply-network', async (_event, payload) => applyNetworkAction(payload || {}));
+ipcMain.handle('xh:apply-network', withVerifiedBackup((payload) => applyNetworkAction(payload)));
 
 // ---------- Exportar / Importar Perfil XHANNIZER0 (.json)
 ipcMain.handle('xh:export-profile', async (_event, profileData) => {
@@ -382,7 +405,7 @@ ipcMain.handle('xh:check-app-update', async () => {
           try {
             const data = JSON.parse(raw);
             const latestTag = String(data.tag_name || '').replace(/^v/i, '');
-            const hasUpdate = Boolean(latestTag && latestTag !== currentVersion);
+            const hasUpdate = Boolean(latestTag && compareVersions(latestTag, currentVersion) > 0);
             resolve({
               ok: true,
               currentVersion,

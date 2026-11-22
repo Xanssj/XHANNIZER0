@@ -562,7 +562,25 @@ async function installSingleItem(task, emit) {
         sourceOrigin: item.downloadUrl,
       });
       const cryptoInfo = await verifyDownloadedFile(dest);
-      await shell.openPath(dest);
+      if (cryptoInfo.signatureStatus !== 'Firma válida') {
+        // Nunca ejecutar un instalador sin firma Authenticode válida: se descarta el archivo.
+        try {
+          fs.rmSync(dest, { force: true });
+        } catch {
+          // Si Windows lo bloquea, al menos no se ejecuta
+        }
+        emitAudit({
+          state: 'warning',
+          progress: 100,
+          detail: `Instalación bloqueada: el instalador no tiene una firma digital válida (${cryptoInfo.signatureStatus}). Descárgalo manualmente desde la web oficial.`,
+          sourceType: 'CDN Oficial del Fabricante',
+          sourceOrigin: item.downloadUrl,
+          ...cryptoInfo,
+        });
+        return { id, ok: false };
+      }
+      const openErr = await shell.openPath(dest);
+      if (openErr) throw new Error(openErr);
       emitAudit({
         state: 'done',
         progress: 100,

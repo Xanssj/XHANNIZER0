@@ -145,6 +145,32 @@ function listBackups() {
   return results.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 12);
 }
 
+const BACKUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+// Comprueba en disco que el respaldo exista, tenga manifiesto válido y sea reciente (< 24 h).
+function verifyBackup(backupId) {
+  const id = String(backupId || '');
+  if (!id || /[\\/:*?"<>|]/.test(id) || id === '.' || id === '..') {
+    return { ok: false, error: 'ID de respaldo inválido.' };
+  }
+  const manifestPath = path.join(BACKUP_ROOT, id, 'backup-manifest.json');
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch {
+    return { ok: false, error: 'No se encontró el respaldo indicado en disco. Crea una copia de seguridad nueva.' };
+  }
+  const created = Date.parse(manifest.createdAt || '');
+  if (manifest.id !== id || Number.isNaN(created)) {
+    return { ok: false, error: 'El manifiesto del respaldo está dañado. Crea una copia de seguridad nueva.' };
+  }
+  const age = Date.now() - created;
+  if (age < -5 * 60 * 1000 || age > BACKUP_MAX_AGE_MS) {
+    return { ok: false, error: 'El respaldo tiene más de 24 horas. Crea una copia de seguridad nueva.' };
+  }
+  return { ok: true, backup: manifest };
+}
+
 async function scanDisksAndFolders() {
   const psScript = `
 $ErrorActionPreference = 'SilentlyContinue'
@@ -312,6 +338,7 @@ module.exports = {
   BACKUP_ROOT,
   createSafetyBackup,
   listBackups,
+  verifyBackup,
   scanDisksAndFolders,
   executeDiskOrFolderAction,
 };
