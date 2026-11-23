@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: '0 12 * * 1' # Todos los lunes
   push:
+    branches: [main]
     paths:
       - 'src/backend/catalog.js'
       - 'src/backend/emulators.js'

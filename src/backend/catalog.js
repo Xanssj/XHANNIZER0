@@ -399,7 +399,7 @@ const CATALOG = [
     vendor: 'Riot Games',
     iconUrl: iconFromDomain('riotgames.com'),
     description: 'Launcher unificado de Riot Games para VALORANT, League of Legends y Teamfight Tactics.',
-    wingetId: 'RiotGames.Valorant.Live',
+    wingetId: 'RiotGames.Valorant.LATAM', // WinGet publica el cliente por región; LATAM para Chile
     officialUrl: 'https://www.riotgames.com/',
     downloadUrl: 'https://valorant.secure.dyn.riotcdn.net/channels/public/x/installer/current/live.live.na.exe',
     sizeHint: '66 MB',
@@ -417,7 +417,7 @@ const CATALOG = [
     vendor: 'NVIDIA',
     iconUrl: iconFromDomain('nvidia.com'),
     description: 'Centro moderno de NVIDIA para drivers Game Ready/Studio, ShadowPlay, filtros y optimización sin cuenta obligatoria.',
-    wingetId: 'Nvidia.NvidiaApp',
+    wingetId: null, // NVIDIA App ya no está en WinGet: se instala desde su sitio oficial
     officialUrl: 'https://www.nvidia.com/es-la/software/nvidia-app/',
     downloadUrl: 'https://www.nvidia.com/es-la/software/nvidia-app/',
     sizeHint: '148 MB',

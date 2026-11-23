@@ -1,6 +1,6 @@
 # Cambios
 
-## 2.1.0 — sin publicar
+## 2.1.0 — 2026-11-22
 
 ### Nuevo
 - **Piloto automático post-formateo**: respaldo, punto de restauración, drivers, runtimes, tus apps, ajustes de Windows, limpieza y chequeo final con un solo botón. Si hace falta reiniciar, la app se vuelve a abrir sola y sigue donde quedó.
@@ -25,6 +25,7 @@
 - Aviso cuando algo falla, con registro de errores para el diagnóstico.
 - Pruebas automáticas (`npm test`) y compilación y publicación automática en GitHub.
 - Ícono propio para el instalador, el portable y la ventana.
+- Catálogo: Riot Client usa el paquete de WinGet de Latinoamérica y NVIDIA App se instala desde su sitio oficial (ya no está en WinGet).
 
 ## 2.0.0
 - Lanzamiento inicial: drivers con detección real de hardware, catálogo oficial, emuladores, Microsoft Store, presets, auditoría de Windows, gestor de inicio, actualizador global, limpiador de bloatware, Red/DNS, Spotlight (Ctrl+K), respaldos y Kit USB.

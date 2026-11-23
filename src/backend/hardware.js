@@ -54,7 +54,7 @@ function detectCompanionApp(combinedText, category) {
       name: 'NVIDIA App',
       installed: Boolean(exePath),
       exePath,
-      wingetId: 'Nvidia.NvidiaApp',
+      wingetId: null, // NVIDIA App ya no está en WinGet: se instala desde su sitio oficial
       officialUrl: 'https://www.nvidia.com/es-la/software/nvidia-app/',
     };
   }
@@ -295,7 +295,7 @@ function enrichDriverMetadata(component) {
         sourceName: 'NVIDIA Official Drivers',
         officialUrl: 'https://www.nvidia.com/es-la/drivers/',
         safeUrl: 'https://www.nvidia.com/es-la/drivers/details/237719/',
-        wingetId: 'Nvidia.NvidiaApp',
+        wingetId: null, // NVIDIA App ya no está en WinGet: se instala desde su sitio oficial
         needsUpdate: isOutdated,
         status: isIn572Branch ? 'warning' : isOutdated ? 'available' : 'ok',
         advisory: isIn572Branch

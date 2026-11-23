@@ -48,10 +48,10 @@
         }
       ],
       "requestedExecutionLevel": "asInvoker",
-      "artifactName": "${productName}-${version}-${arch}-${target}.${ext}",
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "artifactName": "${productName}-${version}-${arch}-nsis.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
