@@ -279,6 +279,7 @@ const CATALOG = [
   },
   {
     id: 'obs-studio',
+    kinds: ['video'],
     section: 'utilidades',
     name: 'OBS Studio',
     vendor: 'OBS Project',
@@ -830,6 +831,7 @@ const CATALOG = [
   // =========================================================================
   {
     id: 'winrar',
+    kinds: ['archivos'],
     section: 'utilidades',
     name: 'WinRAR',
     vendor: 'RARLAB',
@@ -848,6 +850,7 @@ const CATALOG = [
   },
   {
     id: '7zip',
+    kinds: ['archivos'],
     section: 'utilidades',
     name: '7-Zip',
     vendor: 'Igor Pavlov',
@@ -868,6 +871,7 @@ const CATALOG = [
   },
   {
     id: 'nanazip',
+    kinds: ['archivos'],
     section: 'utilidades',
     name: 'NanaZip',
     vendor: 'M2-Team',
@@ -886,6 +890,7 @@ const CATALOG = [
   },
   {
     id: 'peazip',
+    kinds: ['archivos'],
     section: 'utilidades',
     name: 'PeaZip',
     vendor: 'Giorgio Tani',
@@ -901,6 +906,7 @@ const CATALOG = [
   },
   {
     id: 'bandizip',
+    kinds: ['archivos'],
     section: 'utilidades',
     name: 'Bandizip',
     vendor: 'Bandisoft',
@@ -1026,6 +1032,7 @@ const CATALOG = [
   },
   {
     id: 'vlc',
+    kinds: ['video', 'audio'],
     section: 'utilidades',
     name: 'VLC Media Player',
     vendor: 'VideoLAN',
@@ -1170,6 +1177,7 @@ const CATALOG = [
   },
   {
     id: 'audacity',
+    kinds: ['audio'],
     section: 'utilidades',
     name: 'Audacity',
     vendor: 'Muse Group',
@@ -1185,6 +1193,7 @@ const CATALOG = [
   },
   {
     id: 'handbrake',
+    kinds: ['video'],
     section: 'utilidades',
     name: 'HandBrake',
     vendor: 'HandBrake Team',

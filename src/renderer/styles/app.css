@@ -1610,3 +1610,27 @@
 .about-grid .app-card .btn-action-small { align-self: flex-start; }
 .about-grid .xh-row { margin-top: auto; }
 .about-legal { margin-top: 18px; font-size: 12px; }
+
+/* Lista desplegable de los <select>: el fondo del control es translúcido y Chromium
+   dibuja las opciones sobre blanco. Se les da un fondo sólido según el tema. */
+select option,
+select optgroup {
+  background-color: #1c1c1e;
+  color: #f5f5f7;
+}
+select option:checked {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+:root[data-theme="light"] select option,
+:root[data-theme="light"] select optgroup {
+  background-color: #ffffff;
+  color: #1d1d1f;
+}
+:root[data-theme="light"] select option:checked {
+  background-color: #0071e3;
+  color: #ffffff;
+}
+
+/* Compresores: filtro por tipo encima de la barra de herramientas */
+.util-kind-filters { margin-bottom: 12px; width: fit-content; max-width: 100%; }

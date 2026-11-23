@@ -11,6 +11,7 @@
     previousTab: 'drivers',
     driverFilter: 'all',
     devFilter: 'all',
+    utilFilter: 'all',
     emuFilter: 'all',
     emuSearch: '',
     installFilters: {
@@ -803,6 +804,7 @@
       if (instFilter === 'installed' && !item.installed) return false;
       if (instFilter === 'missing' && item.installed) return false;
       if (section === 'dev' && state.devFilter !== 'all' && item.subCategory !== state.devFilter) return false;
+      if (section === 'utilidades' && state.utilFilter !== 'all' && !(item.kinds || []).includes(state.utilFilter)) return false;
       if (!query) return true;
       return (
         item.name.toLowerCase().includes(query) ||
@@ -1990,6 +1992,16 @@
         $$('#dev-filters .owner-filter-chip').forEach((c) => c.classList.remove('is-active'));
         chip.classList.add('is-active');
         renderCatalogSection('dev');
+      });
+    });
+
+    // Filtros de Compresores: Archivos / Video / Audio
+    $$('#util-filters .owner-filter-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        state.utilFilter = chip.dataset.utilFilter;
+        $$('#util-filters .owner-filter-chip').forEach((c) => c.classList.remove('is-active'));
+        chip.classList.add('is-active');
+        renderCatalogSection('utilidades');
       });
     });
 
