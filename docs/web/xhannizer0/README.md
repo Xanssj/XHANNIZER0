@@ -15,7 +15,13 @@ Todo lo necesario para sumar XHANNIZER0 a la web. Las carpetas copian la estruct
 
 ## Antes de empezar
 
-**Publica primero la versión 2.1.0 en GitHub** (crea la etiqueta `v2.1.0` y súbela). Todos los botones «Descargar» apuntan a `https://github.com/Xanssj/XHANNIZER0/releases/latest`, que da error 404 mientras no exista ninguna versión publicada.
+Los botones «Descargar» apuntan a `xhannizer0/descargar` (y el enlace portable a `xhannizer0/descargar/portable`). Esa ruta del sitio debe:
+
+1. Pedir la última versión: `https://api.github.com/repos/Xanssj/XHANNIZER0/releases/latest` (sin token el límite es 60 consultas por hora e IP; guarda la respuesta en caché unos minutos).
+2. Elegir el archivo de `assets[]` cuyo `name` **termina en** `-x64-nsis.exe` (instalador) o `-Portable.exe` (portable). Usa «termina en», no «contiene»: también existe `…-x64-nsis.exe.blockmap`, que no es el instalador.
+3. Redirigir (302) a su `browser_download_url`. GitHub lo sirve como descarga directa.
+
+La versión 2.1.0 ya está publicada, así que la ruta funciona desde hoy y toma sola cada versión nueva.
 
 ## Paso a paso
 

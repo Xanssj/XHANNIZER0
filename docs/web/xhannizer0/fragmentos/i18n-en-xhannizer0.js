@@ -90,4 +90,5 @@
     'Migración a un PC nuevo por USB': 'Move to a new PC with a USB drive',
     'Sin anuncios, sin cuentas y sin telemetría': 'No ads, no accounts and no telemetry',
     'Ver la app': 'See the app',
+    '¿Sin instalar? Descarga la versión portable': 'No install? Get the portable version',
     'Nuevo': 'New', // solo si no existe ya en el diccionario
