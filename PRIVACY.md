@@ -43,4 +43,4 @@ El **informe para el cliente** (Modo técnico) también se genera solo en tu PC,
 
 Como XHANNIZER0 no nos envía datos, no tenemos datos tuyos de la app que entregar o borrar. Para borrar lo que guarda en tu PC, elimina las carpetas de la sección 1.
 
-Para cualquier consulta, abre un ticket de soporte en el [Discord oficial de xhanni](https://discord.gg/Gcxfn7rvJN). Tratamos los datos según la Ley 19.628 de Chile y, desde su entrada en vigencia, la Ley 21.719 que la reemplaza.
+Para cualquier consulta, abre un ticket de soporte en el [Discord oficial de xhanni](https://discord.gg/QKmUekvX2X). Tratamos los datos según la Ley 19.628 de Chile y, desde su entrada en vigencia, la Ley 21.719 que la reemplaza.

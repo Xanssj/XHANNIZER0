@@ -533,7 +533,7 @@
   // Acerca de y soporte
   // =========================================================================
   const ABOUT_LINKS = {
-    discord: 'https://discord.gg/Gcxfn7rvJN',
+    discord: 'https://discord.gg/QKmUekvX2X',
     web: 'https://xhannistudios.org',
     team: 'https://xhannistudios.org/nosotros',
     github: 'https://github.com/Xanssj/XHANNIZER0',

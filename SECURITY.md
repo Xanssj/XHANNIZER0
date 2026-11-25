@@ -4,7 +4,7 @@ XHANNIZER0 instala software y cambia ajustes de Windows, así que nos tomamos en
 
 ## Cómo reportar un problema de seguridad
 
-**No lo publiques en un issue de GitHub.** Abre un ticket privado en el [Discord oficial de xhanni](https://discord.gg/Gcxfn7rvJN) e incluye:
+**No lo publiques en un issue de GitHub.** Abre un ticket privado en el [Discord oficial de xhanni](https://discord.gg/QKmUekvX2X) e incluye:
 
 - La versión de XHANNIZER0 (aparece en **Acerca de y soporte**).
 - Qué encontraste y cómo reproducirlo.

@@ -13,7 +13,7 @@ Una app gratuita de [xhanni (Xhanni Studios)](https://xhannistudios.org).
 ![Licencia](https://img.shields.io/badge/Licencia-MIT-6E6E73?style=for-the-badge)
 [![Pruebas](https://img.shields.io/github/actions/workflow/status/Xanssj/XHANNIZER0/tests.yml?label=Pruebas&style=for-the-badge)](https://github.com/Xanssj/XHANNIZER0/actions/workflows/tests.yml)
 
-[Descargar](https://github.com/Xanssj/XHANNIZER0/releases/latest) · [Soporte en Discord](https://discord.gg/Gcxfn7rvJN) · [Privacidad](PRIVACY.md) · [Cambios](CHANGELOG.md)
+[Descargar](https://github.com/Xanssj/XHANNIZER0/releases/latest) · [Soporte en Discord](https://discord.gg/QKmUekvX2X) · [Privacidad](PRIVACY.md) · [Cambios](CHANGELOG.md)
 
 </div>
 
@@ -50,7 +50,7 @@ Necesitas Windows 10 u 11 de 64 bits. Algunas acciones piden permiso de administ
 
 ## Soporte
 
-¿Algo no funciona? En la app ve a **Acerca de y soporte → Reportar un problema**: se guarda un diagnóstico `.zip` y se abre el [Discord oficial](https://discord.gg/Gcxfn7rvJN), donde puedes abrir un ticket. Te responde quien hizo la app.
+¿Algo no funciona? En la app ve a **Acerca de y soporte → Reportar un problema**: se guarda un diagnóstico `.zip` y se abre el [Discord oficial](https://discord.gg/QKmUekvX2X), donde puedes abrir un ticket. Te responde quien hizo la app.
 
 Para fallos de seguridad, lee [SECURITY.md](SECURITY.md).
 
@@ -81,5 +81,5 @@ XHANNIZER0 se entrega bajo la [licencia MIT](LICENSE), sin garantías: úsala ba
 ---
 
 <div align="center">
-  <sub>Hecho por <a href="https://xhannistudios.org/nosotros">xhanni</a> · <a href="https://xhannistudios.org">xhannistudios.org</a> · <a href="https://discord.gg/Gcxfn7rvJN">Discord</a></sub>
+  <sub>Hecho por <a href="https://xhannistudios.org/nosotros">xhanni</a> · <a href="https://xhannistudios.org">xhannistudios.org</a> · <a href="https://discord.gg/QKmUekvX2X">Discord</a></sub>
 </div>
