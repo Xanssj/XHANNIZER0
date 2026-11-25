@@ -270,7 +270,9 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
       id: 'win-power-plan',
       category: 'Energía',
       name: 'Plan de energía óptimo del sistema',
-      description: 'Configura un plan de energía estable sin estrangulamiento agresivo de frecuencia para escritorio.',
+      description: hardwareSystem?.formFactor === 'laptop'
+        ? 'En portátiles se usa Equilibrado: rinde bien enchufado y cuida la batería y la temperatura.'
+        : 'Configura un plan de energía estable sin estrangulamiento agresivo de frecuencia para escritorio.',
       currentState: powerLabel,
       isOptimal: isHighPerf || isBalanced,
       canApply: true,
@@ -311,6 +313,9 @@ async function applyWindowsSetting({ settingId, backupId }) {
 
   const tweak = WIN11_TWEAKS.find((t) => t.id === settingId);
   if (tweak) return applyWin11Tweak(tweak);
+  // En portátiles el plan óptimo es Equilibrado (Alto rendimiento gasta batería y calienta)
+  const laptop = require('./hardware').getLastHardwareScan()?.system?.formFactor === 'laptop';
+  const powerPlan = laptop ? '381b4222-f694-41f0-9685-ff5bb260df2e' : '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c';
 
   const commands = {
     'win-gamemode': `
@@ -347,7 +352,7 @@ async function applyWindowsSetting({ settingId, backupId }) {
       Write-Output 'ID de publicidad de Windows desactivado.'
     `,
     'win-power-plan': `
-      powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
+      powercfg /setactive ${powerPlan} 2>$null
       if ($LASTEXITCODE -ne 0) { powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e 2>$null }
       Write-Output 'Plan de energía óptimo aplicado.'
     `,

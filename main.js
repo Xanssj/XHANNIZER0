@@ -248,6 +248,56 @@ ipcMain.on('xh:set-theme', (_event, theme) => {
   nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark';
 });
 
+// ---------- Idioma de las ventanas de Windows (diálogos nativos)
+// La interfaz avisa el idioma elegido; en inglés se traducen título, texto, botones y filtros.
+const i18nDict = require('./src/renderer/js/i18n-en.js');
+let uiLang = 'es';
+ipcMain.on('xh:set-lang', (_event, lang) => { uiLang = lang === 'en' ? 'en' : 'es'; });
+
+function trText(s) {
+  if (uiLang !== 'en' || typeof s !== 'string' || !s) return s;
+  const whole = i18nDict.translate(s);
+  if (whole != null) return whole;
+  return s.split('\n').map((line) => {
+    const m = line.match(/^(\s*(?:[•\-–]\s*)?)(.*?)(\s*)$/);
+    const tr = m && m[2] ? i18nDict.translate(m[2]) : null;
+    return tr != null ? m[1] + tr + m[3] : line;
+  }).join('\n');
+}
+
+// Traduce el texto entre etiquetas de un HTML ya armado (informe PDF)
+function trHtml(html) {
+  if (uiLang !== 'en' || typeof html !== 'string') return html;
+  const unesc = (s) => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const translateBody = (part) => part.replace(/>([^<>]+)</g, (m, text) => {
+    const core = text.trim();
+    if (!core) return m;
+    const tr = i18nDict.translate(unesc(core));
+    return tr == null ? m : `>${text.replace(core, () => esc(tr))}<`;
+  });
+  // Los estilos (<style>) no se tocan
+  const cut = html.lastIndexOf('</style>');
+  const head = cut < 0 ? '' : html.slice(0, cut);
+  const body = cut < 0 ? html : html.slice(cut);
+  const title = head.replace(/<title>([^<]*)<\/title>/, (m, t) => `<title>${esc(i18nDict.translate(unesc(t)) || unesc(t))}</title>`);
+  return title.replace('<html lang="es">', '<html lang="en">') + translateBody(body);
+}
+
+function trDialogOptions(opts) {
+  if (uiLang !== 'en' || !opts || typeof opts !== 'object') return opts;
+  const o = { ...opts };
+  ['title', 'message', 'detail', 'checkboxLabel', 'buttonLabel'].forEach((k) => { if (o[k]) o[k] = trText(o[k]); });
+  if (Array.isArray(o.buttons)) o.buttons = o.buttons.map(trText);
+  if (Array.isArray(o.filters)) o.filters = o.filters.map((f) => ({ ...f, name: trText(f.name) }));
+  return o;
+}
+
+['showMessageBox', 'showSaveDialog', 'showOpenDialog'].forEach((fn) => {
+  const orig = dialog[fn].bind(dialog);
+  dialog[fn] = (a, b) => (b === undefined ? orig(trDialogOptions(a)) : orig(a, trDialogOptions(b)));
+});
+
 // ---------- Configuración inicial (asistente de bienvenida)
 // Lo que el usuario confirma o escribe a mano sobre su PC. Los drivers siempre usan la detección
 // real del hardware; estos datos personalizan la app (resumen, recomendaciones y presets).
@@ -287,7 +337,10 @@ ipcMain.handle('xh:setup-save', async (_event, payload) => {
 const VERSION_FILE = () => path.join(app.getPath('userData'), 'ultima-version.json');
 function changelogFor(version) {
   try {
-    const text = fs.readFileSync(path.join(__dirname, 'CHANGELOG.md'), 'utf8');
+    // En inglés se usa CHANGELOG.en.md si tiene esta versión; si no, las notas en español
+    const enFile = path.join(__dirname, 'CHANGELOG.en.md');
+    const enText = uiLang === 'en' && fs.existsSync(enFile) ? fs.readFileSync(enFile, 'utf8') : '';
+    const text = enText.includes(`## ${version}`) ? enText : fs.readFileSync(path.join(__dirname, 'CHANGELOG.md'), 'utf8');
     const start = text.indexOf(`## ${version}`);
     if (start < 0) return [];
     const next = text.indexOf('\n## ', start + 3);
@@ -382,6 +435,12 @@ let lastBiosLookup = null;
 async function applyBiosLookup(scan) {
   const board = scan?.drivers?.find((d) => d.category === 'motherboard');
   if (!board) return;
+  // Portátiles y PCs de marca: la BIOS la entrega el fabricante del equipo con su propia app
+  if (board.oem) {
+    lastBiosLookup = null;
+    board.bios = { supported: false, latestVersion: null, isNewer: false, canPrepareUsb: false, supportUrl: board.oem.url, flashTool: board.oem.app, error: null };
+    return;
+  }
   const info = motherboardInfo();
   const look = await biosUpdate.lookupLatestBios({ ...info, biosVersion: board.installedVersion });
   const { boardCode } = biosUpdate.parseMsiProduct(info.product);
@@ -993,7 +1052,7 @@ ipcMain.handle('xh:report-error', async (_event, payload) => {
 const motherboardInfo = () => {
   const board = getLastHardwareScan()?.drivers?.find((d) => d.category === 'motherboard');
   const vendor = board?.vendor || '';
-  return { manufacturer: vendor, product: board?.name ? board.name.replace(vendor, '').trim() : '' };
+  return { manufacturer: vendor, product: board?.name ? board.name.replace(vendor, '').trim() : '', brandSystem: Boolean(board?.oem) };
 };
 
 ipcMain.handle('xh:bios-guide', async (_event, payload) => {
@@ -1265,6 +1324,7 @@ ipcMain.handle('xh:report-pdf', async (_event, payload) => {
     installedApps: catalog.filter((c) => c.installed).map((c) => c.name),
     actions: readActionLog(300).filter((e) => !since || new Date(e.at).getTime() >= since).slice(0, 120),
   });
+  const finalHtml = trHtml(html);
   const res = await dialog.showSaveDialog(win, {
     title: 'Guardar informe — XHANNIZER0',
     defaultPath: path.join(app.getPath('documents'), `Informe-${clip(payload?.client, 40).replace(/[^\p{L}\p{N} _-]/gu, '').trim() || 'cliente'}-${new Date().toISOString().slice(0, 10)}.pdf`),
@@ -1272,7 +1332,7 @@ ipcMain.handle('xh:report-pdf', async (_event, payload) => {
   });
   if (res.canceled || !res.filePath) return { canceled: true };
   const tmp = path.join(os.tmpdir(), `xhannizer0-informe-${Date.now()}.html`);
-  fs.writeFileSync(tmp, html, 'utf8');
+  fs.writeFileSync(tmp, finalHtml, 'utf8');
   const pdfWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
   try {
     await pdfWin.loadFile(tmp);

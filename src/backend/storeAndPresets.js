@@ -172,6 +172,7 @@ function buildHardwarePresets(system) {
   const dGpuVram = Number(sys.dedicatedGpuVramGb || 0);
   const hasStrongGpu = Boolean(dGpuName && dGpuVram >= 6);
   const has16GbRam = ramGb >= 16;
+  const laptop = sys.formFactor === 'laptop';
 
   const hwBadge = dGpuName
     ? `${sys.cpuName?.split(' ').slice(0, 4).join(' ') || 'CPU'} · ${dGpuName} (${dGpuVram || '?'} GB) · ${ramGb} GB RAM`
@@ -201,7 +202,9 @@ function buildHardwarePresets(system) {
       appIds: gamingApps,
       optimizations: [
         'Activar Modo Juego nativo de Windows (Game Mode)',
-        'Configurar plan de energía de Alto Rendimiento (seguro en PC de escritorio)',
+        laptop
+          ? 'Configurar plan de energía Equilibrado (en portátiles cuida la batería y la temperatura)'
+          : 'Configurar plan de energía de Alto Rendimiento (seguro en PC de escritorio)',
         'Verificar librerías Visual C++ Redistributable x64',
       ],
     },
@@ -268,11 +271,14 @@ function applyPresetOptimizations({ presetId, backupId }) {
   }
 
   let ps = `$ErrorActionPreference = 'SilentlyContinue'\n`;
+  const laptop = require('./hardware').getLastHardwareScan()?.system?.formFactor === 'laptop';
   if (presetId === 'preset-gaming') {
+    // En portátiles Alto rendimiento gasta la batería y calienta: se usa Equilibrado
+    const plan = laptop ? '381b4222-f694-41f0-9685-ff5bb260df2e' : '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c';
     ps += `
 if (-not (Test-Path -Path 'HKCU:\\Software\\Microsoft\\GameBar')) { New-Item -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Force | Out-Null }
 Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AllowAutoGameMode' -Value 1 -Type DWord
-powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
+powercfg /setactive ${plan} 2>$null
 Write-Output 'Game Mode activado y plan de energía ajustado.'
 `;
   } else if (presetId === 'preset-dev' || presetId === 'preset-office') {

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('xhApi', {
   // Controles de ventana (semáforo estilo macOS) y tema
   windowAction: (action) => ipcRenderer.send('xh:window', action),
   setTheme: (theme) => ipcRenderer.send('xh:set-theme', theme),
+  setLang: (lang) => ipcRenderer.send('xh:set-lang', lang),
   onWindowState: (cb) => {
     const handler = (_event, state) => cb(state);
     ipcRenderer.on('xh:window', handler);

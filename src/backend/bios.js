@@ -67,6 +67,22 @@ const GUIDES = {
   },
 };
 
+// Portátiles y PCs de marca: la BIOS es del fabricante del equipo y sus menús son más simples
+const OEM_KEYS = [
+  [/ALIENWARE|\bDELL\b/i, 'Dell', 'F2 al ver el logo de Dell (F12 abre el menú de arranque)'],
+  [/HEWLETT|\bHP\b/i, 'HP', 'Esc al encender y luego F10'],
+  [/LENOVO/i, 'Lenovo', 'F2 o Fn + F2 (IdeaPad/Legion) · F1 (ThinkPad) · o el botón Novo'],
+  [/\bACER\b/i, 'Acer', 'F2 al encender'],
+  [/ASUS/i, 'ASUS', 'F2 al encender (mantenlo presionado antes de pulsar el botón de encendido)'],
+  [/MICRO-STAR|\bMSI\b/i, 'MSI', 'Supr al encender'],
+  [/GIGABYTE|AORUS/i, 'GIGABYTE', 'F2 al encender'],
+  [/MICROSOFT/i, 'Microsoft Surface', 'Mantén Subir volumen y presiona el botón de encendido'],
+  [/SAMSUNG/i, 'Samsung', 'F2 al encender'],
+  [/HUAWEI|HONOR/i, 'Huawei / HONOR', 'F2 al encender'],
+  [/RAZER/i, 'Razer', 'F1 o Supr al encender'],
+  [/DYNABOOK|TOSHIBA/i, 'Dynabook', 'F2 al encender'],
+];
+
 const TOPICS = {
   'ram-xmp': 'Activar el perfil de velocidad de la RAM (XMP / EXPO)',
   rebar: 'Activar Resizable BAR',
@@ -95,9 +111,12 @@ function topicForCheck(checkId) {
 }
 
 // Devuelve la guía para la placa detectada. Si se pasan `checks`, solo los temas con aviso.
-function getBiosGuide({ manufacturer, product, checks } = {}) {
-  const key = brandFromManufacturer(manufacturer);
-  const guide = GUIDES[key];
+function getBiosGuide({ manufacturer, product, checks, brandSystem } = {}) {
+  const oemKeys = brandSystem ? OEM_KEYS.find(([re]) => re.test(String(manufacturer || ''))) : null;
+  const key = brandSystem ? 'generic' : brandFromManufacturer(manufacturer);
+  const guide = oemKeys
+    ? { ...GUIDES.generic, brand: oemKeys[1], keys: oemKeys[2], note: 'En equipos de marca muchas opciones (XMP, Resizable BAR) no aparecen: el fabricante las deja fijas.' }
+    : GUIDES[key];
   let topics = Object.keys(TOPICS);
   if (Array.isArray(checks)) {
     const warned = new Set(checks.filter((c) => c.status === 'warn').map((c) => topicForCheck(c.id)).filter(Boolean));

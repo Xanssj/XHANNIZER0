@@ -27,6 +27,20 @@ function vendorLogoUrl(combinedText) {
     /LOGITECH/.test(s) ? 'logitech.com' :
     /RAZER/.test(s) ? 'razer.com' :
     /CORSAIR/.test(s) ? 'corsair.com' :
+    /QUALCOMM|SNAPDRAGON|ADRENO|ATHEROS/.test(s) ? 'qualcomm.com' :
+    /MEDIATEK/.test(s) ? 'mediatek.com' :
+    /BROADCOM/.test(s) ? 'broadcom.com' :
+    /\bDELL\b|ALIENWARE/.test(s) ? 'dell.com' :
+    /HEWLETT|\bHP\b/.test(s) ? 'hp.com' :
+    /LENOVO/.test(s) ? 'lenovo.com' :
+    /\bACER\b/.test(s) ? 'acer.com' :
+    /HUAWEI/.test(s) ? 'huawei.com' :
+    /SEAGATE/.test(s) ? 'seagate.com' :
+    /TOSHIBA|KIOXIA/.test(s) ? 'kioxia.com' :
+    /SK ?HYNIX/.test(s) ? 'skhynix.com' :
+    /CONEXANT|SYNAPTICS/.test(s) ? 'synaptics.com' :
+    /CIRRUS/.test(s) ? 'cirrus.com' :
+    /GOODIX/.test(s) ? 'goodix.com' :
     'microsoft.com';
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
 }
@@ -192,36 +206,112 @@ function formatNvidiaVersion(raw) {
   return String(raw);
 }
 
+// GPU integrada en el procesador: Intel (HD/UHD/Iris/Arc Graphics de Core Ultra), AMD (Radeon
+// Graphics, Vega, 7xxM/8xxM) y Qualcomm Adreno (Snapdragon). Se comparte con el chequeo de PC.
+const IGPU_RE = /INTEL.*(UHD|HD GRAPHICS|IRIS|INTEGRATED|ARC\(TM\) GRAPHICS|ARC GRAPHICS)|RADEON\(TM\) GRAPHICS|RADEON GRAPHICS|RADEON\(TM\) VEGA|VEGA \d+ GRAPHICS|RADEON(\(TM\))? \d{3}M\b|RADEON \d{3}M GRAPHICS|ADRENO|QUALCOMM/i;
+const DGPU_RE = /NVIDIA|GEFORCE|RTX|GTX|QUADRO|TITAN|RX\s*\d|RADEON PRO|FIREPRO|RADEON VII|FURY|ARC\(TM\)\s*[AB]\d|ARC\s*[AB]\d|MOORE THREADS/i;
+
+function isIntegratedGpuName(name) {
+  const n = String(name || '');
+  return IGPU_RE.test(n) && !DGPU_RE.test(n);
+}
+
+function gpuVendorOf(name) {
+  const s = String(name || '').toUpperCase();
+  if (/NVIDIA|GEFORCE|RTX|GTX|QUADRO|TITAN/.test(s)) return 'NVIDIA';
+  if (/AMD|RADEON|FIREPRO/.test(s)) return 'AMD';
+  if (/INTEL/.test(s)) return 'Intel';
+  if (/QUALCOMM|ADRENO/.test(s)) return 'Qualcomm';
+  return null;
+}
+
 // Clasifica con precisión si una GPU es integrada del CPU (iGPU) o dedicada (dGPU)
 function classifyGpu(gpu, cpuName, allGpus) {
-  const name = String(gpu.Name || '').toUpperCase();
+  const name = String(gpu.Name || '');
   const cpu = String(cpuName || '').toUpperCase();
   const vramGb = Number(gpu.realVramGb || 0);
 
-  // Gráficos integrados AMD (Ryzen 7000/8000/9000 o APU Vega)
-  const isAmdIntegratedName =
-    /^AMD RADEON\(TM\) GRAPHICS$/i.test(gpu.Name?.trim() || '') ||
-    /RADEON\(TM\) VEGA|RADEON\(TM\) \d{3}M|RADEON GRAPHICS$/i.test(name);
-  const isAmdDedicated = /RX\s*\d|RADEON PRO|FIREPRO|VII|FUR[Y]/i.test(name);
+  if (DGPU_RE.test(name)) return { isIntegrated: false, roleLabel: 'GPU Dedicada (dGPU)' };
+  if (isIntegratedGpuName(name)) return { isIntegrated: true, roleLabel: 'GPU Integrada del CPU (iGPU)' };
 
-  // Gráficos integrados Intel (UHD, Iris, HD Graphics — excluyendo Arc dedicada)
-  const isIntelIntegrated = /INTEL.*(UHD|HD GRAPHICS|IRIS|INTEGRATED)/i.test(name) && !/ARC\s*A\d|ARC\s*B\d/i.test(name);
-
-  // Gráficos dedicados NVIDIA
-  const isNvidiaDedicated = /NVIDIA|GEFORCE|RTX|GTX|QUADRO|TITAN/i.test(name);
-
-  const hasDedicatedAlongside = allGpus.some((g) => /NVIDIA|GEFORCE|RTX|GTX|RX\s*\d|ARC\s*[AB]\d/i.test(String(g.Name || '')));
-
-  if (isNvidiaDedicated || isAmdDedicated) {
-    return { isIntegrated: false, roleLabel: 'GPU Dedicada (dGPU)' };
-  }
-  if (isIntelIntegrated || (isAmdIntegratedName && !isAmdDedicated)) {
-    return { isIntegrated: true, roleLabel: 'GPU Integrada del CPU (iGPU)' };
-  }
-  if (hasDedicatedAlongside && vramGb > 0 && vramGb <= 2.5 && (cpu.includes('AMD') || cpu.includes('INTEL'))) {
+  const hasDedicatedAlongside = allGpus.some((g) => DGPU_RE.test(String(g.Name || '')));
+  if (hasDedicatedAlongside && vramGb > 0 && vramGb <= 2.5 && /AMD|INTEL|SNAPDRAGON/.test(cpu)) {
     return { isIntegrated: true, roleLabel: 'GPU Integrada del CPU (iGPU)' };
   }
   return { isIntegrated: false, roleLabel: 'GPU / Gráficos' };
+}
+
+// ---------- Equipos de marca (portátiles y PCs armados de fábrica)
+// En estos equipos los drivers y la BIOS los publica el fabricante del equipo, no el de la placa.
+const PLACEHOLDER_RE = /^(system manufacturer|system product name|to be filled by o\.?e\.?m\.?|default string|o\.?e\.?m\.?|not applicable|none|unknown|\s*)$/i;
+const DIY_BOARD_RE = /MICRO-STAR|\bMSI\b|ASUSTEK|\bASUS\b|GIGABYTE|ASROCK|BIOSTAR|NZXT|EVGA|COLORFUL|MAXSUN|SOYO|JGINYUE|HUANANZHI|MACHINIST/i;
+
+const OEMS = [
+  { re: /ALIENWARE/i, short: 'Alienware', url: 'https://www.dell.com/support/home/', app: 'Alienware Command Center / Dell SupportAssist', appUrl: 'https://www.dell.com/support/home/' },
+  { re: /\bDELL\b/i, short: 'Dell', url: 'https://www.dell.com/support/home/', app: 'Dell SupportAssist / Command Update', appUrl: 'https://www.dell.com/support/home/' },
+  { re: /HEWLETT|\bHP\b/i, short: 'HP', url: 'https://support.hp.com/drivers', app: 'HP Support Assistant', appUrl: 'https://support.hp.com/drivers' },
+  { re: /LENOVO/i, short: 'Lenovo', url: 'https://pcsupport.lenovo.com/', app: 'Lenovo Vantage', appUrl: 'https://pcsupport.lenovo.com/' },
+  { re: /\bACER\b/i, short: 'Acer', url: 'https://www.acer.com/support', app: 'Acer Care Center', appUrl: 'https://www.acer.com/support' },
+  { re: /ASUSTEK|\bASUS\b/i, short: 'ASUS', url: 'https://www.asus.com/support/download-center/', app: 'MyASUS', appUrl: 'https://www.asus.com/support/download-center/' },
+  { re: /MICRO-STAR|\bMSI\b/i, short: 'MSI', url: 'https://www.msi.com/support/download', app: 'MSI Center', appUrl: 'https://www.msi.com/Landing/MSI-Center' },
+  { re: /GIGABYTE|AORUS/i, short: 'GIGABYTE', url: 'https://www.gigabyte.com/Support', app: 'GIGABYTE Control Center', appUrl: 'https://www.gigabyte.com/Support' },
+  { re: /MICROSOFT/i, short: 'Microsoft Surface', url: 'https://support.microsoft.com/surface', app: 'Windows Update', appUrl: 'https://support.microsoft.com/surface' },
+  { re: /SAMSUNG/i, short: 'Samsung', url: 'https://www.samsung.com/support/', app: 'Samsung Update', appUrl: 'https://www.samsung.com/support/' },
+  { re: /HUAWEI/i, short: 'Huawei', url: 'https://consumer.huawei.com/support/', app: 'Huawei PC Manager', appUrl: 'https://consumer.huawei.com/support/' },
+  { re: /HONOR/i, short: 'HONOR', url: 'https://www.honor.com/global/support/', app: 'HONOR PC Manager', appUrl: 'https://www.honor.com/global/support/' },
+  { re: /RAZER/i, short: 'Razer', url: 'https://mysupport.razer.com/', app: 'Razer Synapse', appUrl: 'https://mysupport.razer.com/' },
+  { re: /DYNABOOK|TOSHIBA/i, short: 'Dynabook', url: 'https://support.dynabook.com/', app: 'Dynabook Service Station', appUrl: 'https://support.dynabook.com/' },
+  { re: /\bLG\b|LG ELECTRONICS/i, short: 'LG', url: 'https://www.lg.com/support', app: 'LG Update', appUrl: 'https://www.lg.com/support' },
+  { re: /XIAOMI|TIMI/i, short: 'Xiaomi', url: 'https://www.mi.com/global/support', app: 'Xiaomi PC Manager', appUrl: 'https://www.mi.com/global/support' },
+  { re: /FRAMEWORK/i, short: 'Framework', url: 'https://knowledgebase.frame.work/', app: 'Framework BIOS y drivers', appUrl: 'https://knowledgebase.frame.work/' },
+  { re: /\bVAIO\b|SONY/i, short: 'VAIO', url: 'https://us.vaio.com/pages/support', app: 'VAIO Update', appUrl: 'https://us.vaio.com/pages/support' },
+  { re: /APPLE/i, short: 'Apple (Boot Camp)', url: 'https://support.apple.com/boot-camp', app: 'Apple Software Update', appUrl: 'https://support.apple.com/boot-camp' },
+];
+
+function oemFor(manufacturer) {
+  const m = String(manufacturer || '');
+  if (!m || PLACEHOLDER_RE.test(m.trim())) return null;
+  return OEMS.find((o) => o.re.test(m)) || null;
+}
+
+const LAPTOP_CHASSIS = new Set([8, 9, 10, 11, 12, 14, 18, 21, 30, 31, 32]);
+const VM_RE = /VIRTUAL|VMWARE|VIRTUALBOX|KVM|QEMU|HYPER-V|PARALLELS|XEN|BOCHS/i;
+
+function formFactorOf(cs, chassisTypes, batteryCount) {
+  const model = `${cs?.Manufacturer || ''} ${cs?.Model || ''}`;
+  if (VM_RE.test(model)) return 'vm';
+  const chassis = (Array.isArray(chassisTypes) ? chassisTypes : [chassisTypes]).map(Number).filter(Boolean);
+  if (Number(cs?.PCSystemType) === 2 || chassis.some((c) => LAPTOP_CHASSIS.has(c))) return 'laptop';
+  if (batteryCount > 0 && !chassis.length) return 'laptop';
+  return 'desktop';
+}
+
+// Nombre comercial del equipo: Lenovo guarda el modelo legible en Version («ThinkPad X1 Carbon Gen 10»)
+function friendlyModelOf(cs, csp) {
+  const vendor = String(cs?.Manufacturer || csp?.Vendor || '').trim();
+  const candidates = [csp?.Version, cs?.SystemFamily, cs?.Model, csp?.Name]
+    .map((v) => String(v || '').trim())
+    .filter((v) => v && !PLACEHOLDER_RE.test(v) && !/^\d+$/.test(v));
+  const model = /LENOVO/i.test(vendor) ? candidates[0] : String(cs?.Model || candidates[0] || '').trim();
+  return model || null;
+}
+
+// Cualquier componente sin reglas propias: se compara con Windows Update (WHQL) y se ofrece la web
+// del fabricante del equipo (portátiles) o la de Windows.
+function genericDriver(component, sourceName) {
+  const url = component.oemSupportUrl || 'https://support.microsoft.com/windows';
+  return {
+    ...component,
+    installedVersionDisplay: component.installedVersionDisplay || component.installedVersion || 'Detectado',
+    latestVersion: null,
+    safeVersion: null,
+    sourceName: sourceName || (component.oemSupportUrl ? 'Fabricante del equipo' : 'Windows Update (WHQL)'),
+    officialUrl: url,
+    safeUrl: url,
+    needsUpdate: false,
+    status: 'ok',
+    advisory: null,
+  };
 }
 
 function enrichDriverMetadata(component) {
@@ -236,6 +326,9 @@ function enrichDriverMetadata(component) {
   component = { ...component, ...baseExtras };
 
   // ---------- GPU INTEGRADA (iGPU) ----------
+  if (component.category === 'igpu' && /QUALCOMM|ADRENO/.test(combined)) {
+    return genericDriver({ ...component, vendor: 'Qualcomm' }, 'Qualcomm / fabricante del equipo');
+  }
   if (component.category === 'igpu') {
     const isAmd = combined.includes('AMD') || combined.includes('RADEON');
     return {
@@ -334,6 +427,7 @@ function enrichDriverMetadata(component) {
         advisory: null,
       };
     }
+    return genericDriver(component, null);
   }
 
   // ---------- CPU ----------
@@ -359,9 +453,13 @@ function enrichDriverMetadata(component) {
         },
       };
     }
+    if (!combined.includes('INTEL')) {
+      // Snapdragon u otros: el paquete de sistema lo entrega Windows Update o el fabricante del equipo
+      return genericDriver(component, /QUALCOMM|SNAPDRAGON/.test(combined) ? 'Qualcomm / fabricante del equipo' : null);
+    }
     return {
       ...component,
-      vendor: combined.includes('INTEL') ? 'Intel' : component.vendor || 'Fabricante',
+      vendor: 'Intel',
       latestVersion: null,
       safeVersion: '10.1.19600.8418 WHQL',
       sourceName: 'Intel Chipset Device Software',
@@ -374,6 +472,31 @@ function enrichDriverMetadata(component) {
   }
 
   // ---------- PLACA MADRE / CHIPSET ----------
+  if (component.category === 'motherboard' && component.oem) {
+    // Portátil o PC de marca: BIOS y drivers los publica el fabricante del equipo
+    const oem = component.oem;
+    return {
+      ...component,
+      oem: { short: oem.short, url: oem.url, app: oem.app, appUrl: oem.appUrl },
+      vendorIconUrl: vendorLogoUrl(oem.short),
+      companionApp: { name: oem.app, installed: false, exePath: null, wingetId: null, officialUrl: oem.appUrl },
+      sourceName: `Soporte de ${oem.short}`,
+      officialUrl: oem.url,
+      safeUrl: oem.url,
+      installedVersionDisplay: `BIOS ${component.installedVersion}`,
+      latestVersion: null,
+      safeVersion: null,
+      targetLabel: `Revisa la web de ${oem.short}`,
+      needsUpdate: false,
+      status: 'ok',
+      advisory: {
+        level: 'info',
+        title: `Drivers y BIOS de ${oem.short}`,
+        summary: `En equipos de marca, la BIOS y algunos drivers (touchpad, teclas, batería, audio) los publica ${oem.short}. Usa ${oem.app} o su web con tu modelo exacto, y en portátiles deja el cargador conectado al actualizar la BIOS.`,
+        recommendation: 'oem',
+      },
+    };
+  }
   if (component.category === 'motherboard') {
     let officialUrl = 'https://www.amd.com/es/support/download/drivers.html';
     let sourceName = 'Soporte oficial del fabricante';
@@ -415,13 +538,14 @@ function enrichDriverMetadata(component) {
       latestVersion: null,
       safeVersion: isRealtek ? '6.0.9689.1 WHQL (UAD)' : 'Driver OEM Estable',
       sourceName: isRealtek ? 'Realtek / OEM UAD Oficial' : 'Controlador oficial de audio',
-      officialUrl: isRealtek
+      officialUrl: component.oemSupportUrl || (isRealtek
         ? 'https://www.realtek.com/Download/List?cate_id=593'
-        : 'https://support.microsoft.com/windows',
-      safeUrl: 'https://www.realtek.com/Download/List?cate_id=593',
+        : 'https://support.microsoft.com/windows'),
+      safeUrl: component.oemSupportUrl || 'https://www.realtek.com/Download/List?cate_id=593',
       needsUpdate: false,
-      status: isRealtek ? 'warning' : 'ok',
-      advisory: isRealtek
+      status: isRealtek && !component.oemSupportUrl ? 'warning' : 'ok',
+      // En portátiles el audio Realtek viene personalizado por la marca: se usa el de su web, sin aviso genérico
+      advisory: isRealtek && !component.oemSupportUrl
         ? {
             level: 'warn',
             title: 'Aviso conocido en drivers Realtek UAD',
@@ -430,6 +554,11 @@ function enrichDriverMetadata(component) {
           }
         : null,
     };
+  }
+
+  // ---------- BLUETOOTH, CÁMARA, LECTOR DE HUELLA: driver de Windows Update o del fabricante
+  if (['bluetooth', 'camera', 'biometric'].includes(component.category)) {
+    return genericDriver(component, null);
   }
 
   // ---------- RED ----------
@@ -441,15 +570,17 @@ function enrichDriverMetadata(component) {
       vendor: isIntel ? 'Intel' : isRealtek ? 'Realtek' : component.vendor || 'Red',
       latestVersion: null,
       safeVersion: isIntel ? '23.100.0 WHQL' : isRealtek ? '10.072.0524 WHQL' : 'Estable',
-      sourceName: isIntel ? 'Intel Wired / Wi-Fi Drivers' : isRealtek ? 'Realtek Ethernet / Wi-Fi' : 'Fabricante de Red',
+      sourceName: isIntel ? 'Intel Wired / Wi-Fi Drivers' : isRealtek ? 'Realtek Ethernet / Wi-Fi' : component.oemSupportUrl ? 'Fabricante del equipo' : 'Windows Update (WHQL)',
       officialUrl: isIntel
         ? 'https://www.intel.la/content/www/xl/es/download-center/home.html'
         : isRealtek
         ? 'https://www.realtek.com/Download/List?cate_id=584'
-        : 'https://support.microsoft.com/windows',
+        : component.oemSupportUrl || 'https://support.microsoft.com/windows',
       safeUrl: isIntel
         ? 'https://www.intel.la/content/www/xl/es/support/detect.html'
-        : 'https://www.realtek.com/Download/List?cate_id=584',
+        : isRealtek
+        ? 'https://www.realtek.com/Download/List?cate_id=584'
+        : component.oemSupportUrl || 'https://support.microsoft.com/windows',
       needsUpdate: false,
       status: 'ok',
       advisory: null,
@@ -457,6 +588,7 @@ function enrichDriverMetadata(component) {
   }
 
   // ---------- ALMACENAMIENTO ----------
+  if (component.category !== 'storage') return genericDriver(component, null);
   return {
     ...component,
     sourceName: 'Windows / NVMe Oficial',
@@ -473,7 +605,7 @@ function enrichDriverMetadata(component) {
 async function detectHardwareAndDrivers() {
   const psScript = `
 $ErrorActionPreference = 'SilentlyContinue'
-$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed
+$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed, Architecture
 $gpus = @(Get-CimInstance Win32_VideoController | Select-Object Name, AdapterCompatibility, DriverVersion, DriverDate, AdapterRAM, PNPDeviceID)
 # Leer VRAM real de 64 bits desde el registro (evita el tope de 4GB de Win32_VideoController.AdapterRAM)
 $vramMap = @{}
@@ -494,29 +626,39 @@ $gpusEnriched = $gpus | ForEach-Object {
     PNPDeviceID = $_.PNPDeviceID
   }
 }
+$cs = Get-CimInstance Win32_ComputerSystem | Select-Object -First 1 Manufacturer, Model, SystemFamily, PCSystemType
+$csp = Get-CimInstance Win32_ComputerSystemProduct | Select-Object -First 1 Vendor, Name, Version
+$chassis = @((Get-CimInstance Win32_SystemEnclosure | Select-Object -First 1).ChassisTypes)
+$battery = @(Get-CimInstance Win32_Battery).Count
 $board = Get-CimInstance Win32_BaseBoard | Select-Object -First 1 Manufacturer, Product, Version
 $bios = Get-CimInstance Win32_BIOS | Select-Object -First 1 SMBIOSBIOSVersion, ReleaseDate
 $ramPhysical = (Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum
-$audio = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'MEDIA' -and $_.DeviceName } | Select-Object DeviceName, Manufacturer, DriverVersion, DriverDate, DeviceID)
-$net = @(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true -and $_.Name -notmatch 'Bluetooth|Virtual|TAP|Hyper-V|WAN' } | Select-Object -First 3 Name, Manufacturer, NetConnectionID, Speed, PNPDeviceID)
-$netDrivers = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'NET' -and $_.DeviceName } | Select-Object DeviceName, DriverVersion, DriverDate)
-$disks = @(Get-CimInstance Win32_DiskDrive | Select-Object Model, Size, InterfaceType, MediaType)
-$osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption, Version, BuildNumber, TotalVisibleMemorySize
+# Una sola consulta de drivers firmados para audio, red, Bluetooth, cámaras y lectores de huella
+$signed = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceID -and $_.DeviceName -and $_.DeviceClass -in @('MEDIA','NET','BLUETOOTH','CAMERA','IMAGE','BIOMETRIC') } | Select-Object DeviceName, Manufacturer, DriverVersion, DriverDate, DeviceID, DeviceClass)
+$net = @(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true -and $_.PNPDeviceID } | Select-Object Name, Manufacturer, NetConnectionID, PNPDeviceID)
+$pdisks = @(Get-CimInstance -Namespace root\\Microsoft\\Windows\\Storage -ClassName MSFT_PhysicalDisk | Select-Object DeviceId, FriendlyName, MediaType, BusType, Size)
+$disks = @(Get-CimInstance Win32_DiskDrive | Select-Object Index, Model, Size, InterfaceType, MediaType, PNPDeviceID)
+$osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption, Version, BuildNumber, OSArchitecture
 @{
   cpu = $cpu
   gpus = @($gpusEnriched)
+  cs = $cs
+  csp = $csp
+  chassis = $chassis
+  battery = $battery
   board = $board
   bios = $bios
   ramPhysical = $ramPhysical
-  audio = $audio
+  signed = $signed
   net = $net
-  netDrivers = $netDrivers
+  pdisks = $pdisks
   disks = $disks
   os = $osInfo
 } | ConvertTo-Json -Depth 4 -Compress
 `;
 
-  const result = await runPowerShell(psScript, 20000);
+  // Win32_PnPSignedDriver puede tardar en equipos lentos o recién formateados
+  const result = await runPowerShell(psScript, 60000);
   let parsed = null;
   if (result.ok && result.stdout) {
     try {
@@ -525,6 +667,7 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
       parsed = null;
     }
   }
+  const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
 
   const cpus = os.cpus() || [];
   const usableRamGb = Math.round((os.totalmem() / (1024 ** 3)) * 10) / 10;
@@ -532,15 +675,14 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
     ? Math.round(Number(parsed.ramPhysical) / (1024 ** 3))
     : Math.ceil(usableRamGb);
 
-  const rawGpus = Array.isArray(parsed?.gpus) ? parsed.gpus : parsed?.gpus ? [parsed.gpus] : [];
-  const gpusNormalized = rawGpus
-    .filter((g) => g && g.Name && !/Microsoft Basic|Parsec|Virtual Display|Meta Virtual/i.test(g.Name))
+  const gpusNormalized = list(parsed?.gpus)
+    .filter((g) => g && g.Name && !/Microsoft Basic|Microsoft Remote|Parsec|Virtual Display|Meta Virtual|Citrix|DisplayLink|Mirage|Spacedesk|Splashtop|IddSampleDriver|Remote Display/i.test(g.Name))
     .map((g) => ({
       ...g,
       realVramGb: g.RealVramBytes ? Math.round((Number(g.RealVramBytes) / (1024 ** 3)) * 10) / 10 : 0,
     }));
 
-  const cpuName = parsed?.cpu?.Name?.trim() || cpus[0]?.model?.trim() || 'Procesador x64';
+  const cpuName = parsed?.cpu?.Name?.trim() || cpus[0]?.model?.trim() || 'Procesador';
   const classifiedGpus = gpusNormalized.map((g) => ({
     ...g,
     ...classifyGpu(g, cpuName, gpusNormalized),
@@ -549,11 +691,40 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
   const dedicatedGpu = classifiedGpus.find((g) => !g.isIntegrated) || null;
   const integratedGpu = classifiedGpus.find((g) => g.isIntegrated) || null;
 
+  // ---------- Tipo de equipo y fabricante
+  const cs = parsed?.cs || {};
+  const formFactor = formFactorOf(cs, parsed?.chassis, Number(parsed?.battery || 0));
+  const boardVendor = String(parsed?.board?.Manufacturer || '').trim();
+  const systemVendor = String(cs.Manufacturer || parsed?.csp?.Vendor || '').trim();
+  const oemCandidate = oemFor(systemVendor) || (formFactor === 'laptop' ? oemFor(boardVendor) : null);
+  // PC armado: placa MSI/ASUS/Gigabyte/ASRock en un escritorio. Equipo de marca: portátil o un OEM (Dell, HP, Lenovo…).
+  const isDiyDesktop = formFactor === 'desktop' && (!oemCandidate || DIY_BOARD_RE.test(systemVendor) || PLACEHOLDER_RE.test(systemVendor));
+  const oem = formFactor === 'vm' || isDiyDesktop ? null : oemCandidate;
+  const friendlyModel = friendlyModelOf(cs, parsed?.csp);
+  const deviceModel = oem && friendlyModel
+    ? (new RegExp(`^${oem.short.split(' ')[0]}`, 'i').test(friendlyModel) ? friendlyModel : `${oem.short} ${friendlyModel}`)
+    : null;
+  const cpuArch = Number(parsed?.cpu?.Architecture);
+  const isArm = cpuArch === 12 || cpuArch === 5 || /ARM/i.test(String(parsed?.os?.OSArchitecture || '')) || /SNAPDRAGON|QUALCOMM/i.test(cpuName);
+  const buildNumber = Number(parsed?.os?.BuildNumber || 0);
+  const osCaption = String(parsed?.os?.Caption || '').replace(/^Microsoft\s+/i, '').trim();
+
   const systemSummary = {
     hostname: os.hostname(),
-    osName: parsed?.os?.Caption || `Windows ${os.release()}`,
+    osName: osCaption || `Windows ${os.release()}`,
     osBuild: parsed?.os?.BuildNumber ? `Build ${parsed.os.BuildNumber}` : os.release(),
+    buildNumber,
+    isWindows11: buildNumber >= 22000,
+    architecture: isArm ? 'ARM64' : 'x64',
+    formFactor,
+    isLaptop: formFactor === 'laptop',
+    isVirtualMachine: formFactor === 'vm',
+    manufacturer: oem?.short || systemVendor || boardVendor || null,
+    model: deviceModel || friendlyModel || null,
+    isBrandSystem: Boolean(oem),
+    oemSupportUrl: oem?.url || null,
     cpuName,
+    cpuVendor: /AMD|RYZEN|ATHLON|EPYC|THREADRIPPER/i.test(cpuName) ? 'AMD' : /INTEL|CORE|XEON|CELERON|PENTIUM/i.test(cpuName) ? 'Intel' : isArm ? 'Qualcomm' : 'Otro',
     cores: parsed?.cpu?.NumberOfCores || Math.max(1, Math.floor(cpus.length / 2)),
     threads: parsed?.cpu?.NumberOfLogicalProcessors || cpus.length,
     ramGb: installedRamGb,
@@ -562,20 +733,18 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
     integratedGpuName: integratedGpu ? integratedGpu.Name : null,
     dedicatedGpuName: dedicatedGpu ? dedicatedGpu.Name : null,
     dedicatedGpuVramGb: dedicatedGpu ? Math.round(dedicatedGpu.realVramGb) : 0,
-    gpuVendor: dedicatedGpu
-      ? /NVIDIA/i.test(dedicatedGpu.Name)
-        ? 'NVIDIA'
-        : /AMD|RADEON/i.test(dedicatedGpu.Name)
-        ? 'AMD'
-        : 'Intel'
-      : integratedGpu && /AMD|RADEON/i.test(integratedGpu.Name)
-      ? 'AMD'
-      : 'Intel',
+    gpuVendor: gpuVendorOf(dedicatedGpu?.Name) || gpuVendorOf(integratedGpu?.Name) || 'Otro',
     detectedVia: parsed ? 'WMI / CIM + Registro 64-bit' : 'Detección base del sistema',
     scannedAt: new Date().toISOString(),
   };
 
+  const oemSupportUrl = oem?.url || null;
   const components = [];
+
+  // Drivers firmados por instancia de dispositivo (coincidencia exacta, sin adivinar por nombre)
+  const signed = list(parsed?.signed);
+  const byInstance = new Map(signed.map((d) => [String(d.DeviceID).toUpperCase(), d]));
+  const physicalId = (id) => /^(PCI|USB|HDAUDIO|INTELAUDIO|ACPI|SDIO|SWD\\DRIVERENUM|AMDAUDIO|QCOM|MTK)/i.test(String(id || '')) && !/^SWD\\(?!DRIVERENUM)/i.test(String(id || ''));
 
   // 1. GPUs (primero la dedicada, luego la integrada del CPU)
   const orderedGpus = [
@@ -593,11 +762,12 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
         isIntegratedGpu: gpu.isIntegrated,
         hasDedicatedGpu: Boolean(dedicatedGpu),
         name: gpu.Name,
-        vendor: gpu.AdapterCompatibility || 'GPU',
+        vendor: gpu.AdapterCompatibility || gpuVendorOf(gpu.Name) || 'GPU',
         installedVersion: gpu.DriverVersion || 'Desconocida',
         installedDate: formatDriverDate(gpu.DriverDate),
         hardwareDetail: gpu.isIntegrated ? `Integrada en CPU · ${vramLabel}` : `Dedicada · ${vramLabel}`,
         pnpInstanceIds: gpu.PNPDeviceID ? [gpu.PNPDeviceID] : [],
+        oemSupportUrl,
       })
     );
   });
@@ -610,15 +780,16 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
       category: 'cpu',
       categoryLabel: 'CPU / Procesador',
       name: systemSummary.cpuName,
-      vendor: parsed?.cpu?.Manufacturer || (systemSummary.cpuName.includes('AMD') ? 'AMD' : 'Intel'),
+      vendor: parsed?.cpu?.Manufacturer || systemSummary.cpuVendor,
       installedVersion: `${systemSummary.cores}C / ${systemSummary.threads}T`,
       installedDate: 'Activo',
-      hardwareDetail: `${parsed?.cpu?.MaxClockSpeed ? `${(parsed.cpu.MaxClockSpeed / 1000).toFixed(2)} GHz · ` : ''}${igpuTag}`,
+      hardwareDetail: `${parsed?.cpu?.MaxClockSpeed ? `${(parsed.cpu.MaxClockSpeed / 1000).toFixed(2)} GHz · ` : ''}${isArm ? 'ARM64 · ' : ''}${igpuTag}`,
       pnpScope: 'system-pci',
+      oemSupportUrl,
     })
   );
 
-  // 3. Placa madre / Chipset
+  // 3. Placa madre / Chipset (o el equipo completo si es un portátil o PC de marca)
   const boardName = parsed?.board
     ? `${parsed.board.Manufacturer || ''} ${parsed.board.Product || ''}`.trim()
     : 'Placa madre principal (Chipset)';
@@ -626,89 +797,136 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
     enrichDriverMetadata({
       id: 'drv-mobo-0',
       category: 'motherboard',
-      categoryLabel: 'Placa Madre / Chipset',
-      name: boardName,
-      vendor: parsed?.board?.Manufacturer || 'Fabricante OEM',
+      categoryLabel: oem ? (formFactor === 'laptop' ? 'Portátil / BIOS' : 'Equipo / BIOS') : 'Placa Madre / Chipset',
+      name: oem ? deviceModel || `${oem.short} ${boardName}` : boardName || 'Placa madre',
+      vendor: oem ? oem.short : parsed?.board?.Manufacturer || 'Fabricante OEM',
       installedVersion: parsed?.bios?.SMBIOSBIOSVersion || 'BIOS detectada',
       installedDate: formatDriverDate(parsed?.bios?.ReleaseDate),
-      hardwareDetail: parsed?.board?.Version ? `Rev. ${parsed.board.Version}` : 'Chipset y controladores de sistema',
+      hardwareDetail: oem
+        ? `Placa ${boardName || '—'}`
+        : parsed?.board?.Version && !PLACEHOLDER_RE.test(parsed.board.Version) ? `Rev. ${parsed.board.Version}` : 'Chipset y controladores de sistema',
       pnpScope: 'system-pci',
+      oem,
+      oemSupportUrl,
     })
   );
 
-  // 4. Audio (filtrando webcams virtuales como Iriun/DroidCam/VB-Cable)
-  const audioList = Array.isArray(parsed?.audio) ? parsed.audio : parsed?.audio ? [parsed.audio] : [];
-  const realAudio = audioList.filter(
-    (a) => a && a.DeviceName && !/Iriun|DroidCam|Webcam|Camera|Virtual|Steam Streaming|VB-Audio|Oculus/i.test(a.DeviceName)
-  );
-  const primaryAudio =
-    realAudio.find((a) => /Realtek/i.test(a.DeviceName)) ||
-    realAudio.find((a) => /High Definition Audio|USB Audio|Focusrite|HyperX|Logitech|Razer|SteelSeries/i.test(a.DeviceName)) ||
-    realAudio[0] ||
-    audioList[0];
-
-  if (primaryAudio) {
+  // 4. Audio: todos los dispositivos de sonido reales (sin audio HDMI de la GPU ni virtuales)
+  const VIRTUAL_AUDIO = /Iriun|DroidCam|Virtual|Steam Streaming|VB-Audio|Voicemeeter|Oculus|NVIDIA Broadcast|Nahimic Mirroring|Sonic Studio Virtual|Wave Link|Elgato|OBS|Discord|Camo|Display Audio|HDMI|DisplayPort/i;
+  const audioDevices = signed
+    .filter((a) => a.DeviceClass === 'MEDIA' && physicalId(a.DeviceID) && !/^SWD/i.test(a.DeviceID))
+    .filter((a) => !VIRTUAL_AUDIO.test(a.DeviceName) && !/VEN_10DE|VEN_1002&DEV_AA|VEN_1002&DEV_AB/i.test(a.DeviceID))
+    .sort((a, b) => {
+      const rank = (d) => (/Realtek|Conexant|Cirrus|IDT|Synaptics|High Definition Audio|Intel.*Smart Sound|Smart Sound/i.test(d.DeviceName) ? 0 : /^USB/i.test(d.DeviceID) ? 2 : 1);
+      return rank(a) - rank(b);
+    })
+    .slice(0, 3);
+  audioDevices.forEach((a, i) => {
     components.push(
       enrichDriverMetadata({
-        id: 'drv-audio-0',
+        id: `drv-audio-${i}`,
         category: 'audio',
-        categoryLabel: 'Audio Principal',
-        name: primaryAudio.DeviceName,
-        vendor: primaryAudio.Manufacturer || 'Audio',
-        installedVersion: primaryAudio.DriverVersion || 'Detectado',
-        installedDate: formatDriverDate(primaryAudio.DriverDate),
-        hardwareDetail: 'Controlador de sonido principal',
-        pnpInstanceIds: primaryAudio.DeviceID ? [primaryAudio.DeviceID] : [],
+        categoryLabel: i === 0 ? 'Audio Principal' : 'Audio',
+        name: a.DeviceName,
+        vendor: a.Manufacturer || 'Audio',
+        installedVersion: a.DriverVersion || 'Detectado',
+        installedDate: formatDriverDate(a.DriverDate),
+        hardwareDetail: /^USB/i.test(a.DeviceID) ? 'Dispositivo de audio USB' : 'Controlador de sonido principal',
+        pnpInstanceIds: [a.DeviceID],
+        oemSupportUrl,
       })
     );
-  }
+  });
 
-  // 5. Red
-  const netList = Array.isArray(parsed?.net) ? parsed.net : parsed?.net ? [parsed.net] : [];
-  const netDrivers = Array.isArray(parsed?.netDrivers) ? parsed.netDrivers : [];
-  const primaryNet = netList[0];
-  if (primaryNet) {
-    const matchedNetDrv = netDrivers.find(
-      (d) => d.DeviceName && primaryNet.Name && d.DeviceName.toLowerCase().includes(primaryNet.Name.toLowerCase().slice(0, 14))
-    );
+  // 5. Red: Ethernet y Wi-Fi por separado (sin adaptadores virtuales ni VPN)
+  const isWifi = (n) => /Wi-?Fi|Wireless|WLAN|802\.11|Killer.*(AX|AC|BE)\d|Dual Band|\bAX\d{3}|\bBE\d{3}|MediaTek.*MT79|Qualcomm.*(QCA|WCN|FastConnect)/i.test(n);
+  const netList = list(parsed?.net)
+    .filter((n) => n && n.Name && /^(PCI|USB|SDIO|ACPI|QCOM)/i.test(String(n.PNPDeviceID || '')))
+    .filter((n) => !/Bluetooth|Virtual|TAP|Hyper-V|WAN Miniport|VPN|Npcap|Loopback|ZeroTier|Tailscale|WireGuard|Hamachi|VirtualBox|VMware|Kernel Debug|Wi-Fi Direct/i.test(n.Name));
+  const netOrdered = [...netList.filter((n) => !isWifi(n.Name)), ...netList.filter((n) => isWifi(n.Name))].slice(0, 3);
+  netOrdered.forEach((n, i) => {
+    const drv = byInstance.get(String(n.PNPDeviceID).toUpperCase());
+    const wifi = isWifi(n.Name);
     components.push(
       enrichDriverMetadata({
-        id: 'drv-net-0',
+        id: `drv-net-${i}`,
         category: 'network',
-        categoryLabel: 'Red / Ethernet & Wi-Fi',
-        name: primaryNet.Name,
-        vendor: primaryNet.Manufacturer || 'Red',
-        installedVersion: matchedNetDrv?.DriverVersion || 'Instalado',
-        installedDate: formatDriverDate(matchedNetDrv?.DriverDate),
-        hardwareDetail: primaryNet.NetConnectionID || 'Interfaz de red física',
-        pnpInstanceIds: primaryNet.PNPDeviceID ? [primaryNet.PNPDeviceID] : [],
+        categoryLabel: wifi ? 'Red Wi-Fi' : 'Red Ethernet',
+        name: n.Name,
+        vendor: n.Manufacturer || drv?.Manufacturer || 'Red',
+        installedVersion: drv?.DriverVersion || 'Instalado',
+        installedDate: formatDriverDate(drv?.DriverDate),
+        hardwareDetail: n.NetConnectionID || (wifi ? 'Adaptador inalámbrico' : 'Interfaz de red física'),
+        pnpInstanceIds: [n.PNPDeviceID],
+        oemSupportUrl,
       })
     );
+  });
+
+  // 6. Bluetooth, cámaras y lectores de huella (comunes en portátiles)
+  const extras = [
+    { cls: ['BLUETOOTH'], category: 'bluetooth', label: 'Bluetooth', max: 1, skip: /Enumerator|LE Enumerator|RFCOMM|Personal Area|Device \(|Avrcp|Hands-?Free|A2DP|Microsoft Bluetooth/i, idRe: /^(USB|PCI|SDIO|ACPI|QCOM)/i },
+    { cls: ['CAMERA', 'IMAGE'], category: 'camera', label: 'Cámara', max: 2, skip: /Virtual|OBS|DroidCam|Iriun|Camo|Snap Camera|NVIDIA Broadcast|XSplit|ManyCam|Scanner|Printer|Escáner|Impresora/i, idRe: /^(USB|PCI|ACPI|MIPI|INTELMIPI|QCOM|SWD\\DRIVERENUM)/i },
+    { cls: ['BIOMETRIC'], category: 'biometric', label: 'Lector de huella / Windows Hello', max: 1, skip: /^$/, idRe: /^(USB|PCI|ACPI|SPI)/i },
+  ];
+  for (const ex of extras) {
+    signed
+      .filter((d) => ex.cls.includes(d.DeviceClass) && ex.idRe.test(String(d.DeviceID)) && !ex.skip.test(d.DeviceName))
+      .slice(0, ex.max)
+      .forEach((d, i) => {
+        components.push(
+          enrichDriverMetadata({
+            id: `drv-${ex.category}-${i}`,
+            category: ex.category,
+            categoryLabel: ex.label,
+            name: d.DeviceName,
+            vendor: d.Manufacturer || ex.label,
+            installedVersion: d.DriverVersion || 'Detectado',
+            installedDate: formatDriverDate(d.DriverDate),
+            hardwareDetail: ex.category === 'camera' && /IR\b|Infrared|Infrarroja/i.test(d.DeviceName) ? 'Cámara infrarroja (Windows Hello)' : ex.label,
+            pnpInstanceIds: [d.DeviceID],
+            oemSupportUrl,
+          })
+        );
+      });
   }
 
-  // 6. Almacenamiento principal (excluyendo pendrives USB removibles)
-  const rawDisks = Array.isArray(parsed?.disks) ? parsed.disks : parsed?.disks ? [parsed.disks] : [];
-  const internalDisks = rawDisks.filter(
-    (d) => d && d.Model && !/USB/i.test(String(d.InterfaceType || '')) && !/Removable/i.test(String(d.MediaType || ''))
-  );
-  const primaryDisk = internalDisks[0] || rawDisks[0];
-  if (primaryDisk) {
-    const gb = primaryDisk.Size ? Math.round(Number(primaryDisk.Size) / (1024 ** 3)) : 0;
-    const isNvme = /NVMe|PCIe/i.test(primaryDisk.Model || '') || /SCSI/i.test(primaryDisk.InterfaceType || '');
+  // 7. Almacenamiento interno: todos los discos (sin pendrives ni discos virtuales)
+  const BUS = { 1: 'SCSI', 3: 'ATA', 6: 'Fibre', 7: 'USB', 8: 'RAID', 10: 'SAS', 11: 'SATA', 12: 'SD', 13: 'MMC', 15: 'Virtual', 17: 'NVMe', 18: 'SCM', 19: 'UFS' };
+  const MEDIA = { 3: 'HDD', 4: 'SSD', 5: 'SCM' };
+  const pdisks = new Map(list(parsed?.pdisks).map((p) => [String(p.DeviceId), p]));
+  const internalDisks = list(parsed?.disks)
+    .filter((d) => d && d.Model)
+    .map((d) => {
+      const p = pdisks.get(String(d.Index));
+      const bus = BUS[Number(p?.BusType)] || (/USB/i.test(String(d.InterfaceType || '')) ? 'USB' : null);
+      const media = MEDIA[Number(p?.MediaType)] || null;
+      return { ...d, bus, media };
+    })
+    .filter((d) => d.bus !== 'USB' && d.bus !== 'Virtual' && !/Removable/i.test(String(d.MediaType || '')) && !/Virtual|Msft Virtual|VMware|VBOX/i.test(d.Model))
+    .sort((a, b) => Number(a.Index) - Number(b.Index))
+    .slice(0, 4);
+  internalDisks.forEach((disk, i) => {
+    const gb = disk.Size ? Math.round(Number(disk.Size) / (1024 ** 3)) : 0;
+    const isNvme = disk.bus === 'NVMe' || /NVMe/i.test(disk.Model);
+    const kind = isNvme ? 'NVMe SSD' : disk.media === 'SSD' ? `${disk.bus || 'SATA'} SSD` : disk.media === 'HDD' ? `${disk.bus || 'SATA'} HDD` : disk.bus || disk.InterfaceType || 'Disco';
+    const size = gb >= 1000 ? `${(gb / 1024).toFixed(gb >= 10240 ? 0 : 1)} TB` : `${gb} GB`;
     components.push(
       enrichDriverMetadata({
-        id: 'drv-storage-0',
+        id: `drv-storage-${i}`,
         category: 'storage',
-        categoryLabel: 'Almacenamiento Principal',
-        name: primaryDisk.Model,
-        vendor: isNvme ? 'NVMe / SSD' : 'SATA',
+        categoryLabel: i === 0 ? 'Almacenamiento Principal' : 'Almacenamiento',
+        name: disk.Model,
+        vendor: kind,
         installedVersion: 'Estándar Windows',
         installedDate: 'Verificado',
-        hardwareDetail: gb ? `${gb} GB · ${isNvme ? 'NVMe / SSD interno' : primaryDisk.InterfaceType || 'Disco interno'}` : 'Unidad interna',
-        pnpScope: 'storage-pci',
+        hardwareDetail: gb ? `${size} · ${kind}` : kind,
+        // El controlador de discos (NVMe/SATA) se revisa una sola vez, con el primer disco
+        pnpScope: i === 0 ? 'storage-pci' : null,
+        oemSupportUrl,
       })
     );
-  }
+  });
 
   // La versión más nueva de cada driver la completa después checkDriverUpdates() (Windows Update).
   for (const c of components) {
@@ -735,6 +953,8 @@ function getLastHardwareScan() {
 
 module.exports = {
   formatNvidiaVersion,
+  isIntegratedGpuName,
+  oemFor,
   detectHardwareAndDrivers,
   getLastHardwareScan,
   fetchJson,

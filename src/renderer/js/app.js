@@ -617,7 +617,7 @@
   // Render de Drivers (Sección Principal — con iGPU/dGPU exacto)
   // =========================================================================
   async function scanHardware(notify = false) {
-    $('#hw-scan-meta').textContent = 'Analizando CPU, iGPU/dGPU, placa madre, audio y red…';
+    $('#hw-scan-meta').textContent = 'Analizando CPU, gráficos, placa madre, audio, red, Bluetooth y discos…';
     $('#pop-hw-state').textContent = 'Escaneando…';
     try {
       const data = await api.scanHardware();
@@ -633,7 +633,9 @@
       $('#side-pc-name').textContent = sys.hostname;
       $('#side-os-name').textContent = `${sys.ramGb} GB · ${sys.osBuild}`;
       applySetupToSidebar(state.setup);
-      $('#hw-scan-meta').textContent = `${data.drivers.length} componentes detectados · ${sys.detectedVia}`;
+      const kind = sys.isVirtualMachine ? 'Máquina virtual' : sys.isLaptop ? 'Portátil' : 'PC de escritorio';
+      const brand = sys.isBrandSystem && sys.model ? ` ${sys.model}` : '';
+      $('#hw-scan-meta').textContent = `${kind}${brand} · ${data.drivers.length} componentes detectados · ${sys.detectedVia}`;
       $('#pop-hw-state').textContent = `${data.drivers.length} detectados`;
 
       const drvBadge = $('#badge-drivers');
@@ -785,8 +787,8 @@
               <div class="driver-actions">
                 ${drv.category === 'motherboard'
                   ? `${drv.bios?.canPrepareUsb ? `<button type="button" class="btn-action-small is-primary" data-bios-usb>Preparar USB de BIOS</button>` : ''}
-                     ${drv.officialUrl ? `<button type="button" class="btn-action-small is-safe" data-open-url="${esc(drv.officialUrl)}">Web de la placa</button>` : ''}
-                     <button type="button" class="btn-action-small ${drv.bios?.canPrepareUsb ? 'is-ghost' : 'is-primary'}" data-install-driver="${esc(drv.id)}" data-branch="latest" title="Busca en Windows Update los drivers de chipset de la placa">Drivers de chipset</button>`
+                     ${drv.officialUrl ? `<button type="button" class="btn-action-small is-safe" data-open-url="${esc(drv.officialUrl)}">${drv.oem ? 'Web del fabricante' : 'Web de la placa'}</button>` : ''}
+                     <button type="button" class="btn-action-small ${drv.bios?.canPrepareUsb ? 'is-ghost' : 'is-primary'}" data-install-driver="${esc(drv.id)}" data-branch="latest" title="Busca en Windows Update los drivers de chipset de la placa">${drv.oem ? 'Drivers del sistema' : 'Drivers de chipset'}</button>`
                   : `${drv.advisory?.recommendation === 'safe'
                       ? `<button type="button" class="btn-action-small is-safe" data-install-driver="${esc(drv.id)}" data-branch="safe">Versión segura</button>`
                       : ''}

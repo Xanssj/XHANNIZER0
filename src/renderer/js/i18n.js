@@ -1,7 +1,7 @@
 'use strict';
 
-// Traducción al inglés de toda la interfaz fija (index.html). Los textos se guardan al cargar la
-// página y se cambian en el lugar, así que volver a español restaura exactamente el original.
+// Traducción al inglés de toda la interfaz. Los textos originales se guardan por nodo y se cambian
+// en el lugar, así que volver a español restaura exactamente el original.
 (function () {
   const EN = {
     'Descargas': 'Downloads',
@@ -365,34 +365,102 @@
     'Buscar apps, emuladores, drivers o ajustes de Windows…': 'Search apps, emulators, drivers or Windows settings…',
   };
 
+
+  // ---------- Motor dinámico
+  // Traduce todo lo que aparece en pantalla, también lo que la app pinta después (tarjetas,
+  // avisos, resultados). Guarda el texto original en español de cada nodo, así que volver a
+  // español lo restaura tal cual.
+  const dict = window.XhI18nDict || null;
+  const normKey = (s) => String(s).replace(/\s+/g, ' ').trim();
+  const lookup = (s) => {
+    const k = normKey(s);
+    if (!k) return null;
+    if (EN[k] !== undefined) return EN[k];
+    return dict ? dict.translate(k) : null;
+  };
+
   const ATTRS = ['placeholder', 'title', 'aria-label'];
-  const textNodes = [];
-  const attrNodes = [];
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE', 'NOSCRIPT']);
+  const origText = new WeakMap();
+  const lastText = new WeakMap();
+  const origAttr = new WeakMap();
+  let lang = 'es';
+  const origTitle = document.title;
 
-  // Se capturan los textos originales una sola vez, antes de que la app pinte contenido dinámico
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (n.parentElement && !['SCRIPT', 'STYLE'].includes(n.parentElement.tagName) && EN[n.nodeValue.replace(/\s+/g, ' ').trim()]
-      ? NodeFilter.FILTER_ACCEPT
-      : NodeFilter.FILTER_REJECT),
-  });
-  while (walker.nextNode()) textNodes.push({ node: walker.currentNode, es: walker.currentNode.nodeValue });
-  document.querySelectorAll(ATTRS.map((a) => `[${a}]`).join(',')).forEach((el) => {
-    ATTRS.forEach((a) => {
-      const v = el.getAttribute(a);
-      if (v && EN[v.trim()]) attrNodes.push({ el, attr: a, es: v });
-    });
-  });
+  const skipped = (el) => !el || SKIP.has(el.tagName) || Boolean(el.closest('[data-no-i18n]'));
 
-  function apply(lang) {
-    const en = lang === 'en';
-    for (const t of textNodes) {
-      const key = t.es.replace(/\s+/g, ' ').trim();
-      const lead = t.es.match(/^\s*/)[0];
-      const trail = t.es.match(/\s*$/)[0];
-      t.node.nodeValue = en ? `${lead}${EN[key]}${trail}` : t.es;
+  function processText(node) {
+    if (skipped(node.parentElement)) return;
+    const cur = node.nodeValue;
+    const ours = lastText.has(node) && lastText.get(node) === cur;
+    if (!ours) origText.set(node, cur); // texto nuevo de la app (siempre en español)
+    const es = origText.get(node);
+    if (es == null) return;
+    let next = es;
+    if (lang === 'en') {
+      const tr = lookup(es);
+      if (tr != null) next = es.match(/^\s*/)[0] + tr + es.match(/\s*$/)[0];
     }
-    for (const a of attrNodes) a.el.setAttribute(a.attr, en ? EN[a.es.trim()] : a.es);
+    lastText.set(node, next);
+    if (next !== cur) node.nodeValue = next;
   }
 
-  window.XhI18n = { apply, EN };
+  function processAttr(el, attr) {
+    if (!el || el.closest('[data-no-i18n]')) return;
+    const cur = el.getAttribute(attr);
+    let rec = origAttr.get(el);
+    if (!rec) { rec = {}; origAttr.set(el, rec); }
+    const r = rec[attr];
+    if (cur == null) { delete rec[attr]; return; }
+    if (!r || r.last !== cur) rec[attr] = { es: cur, last: cur };
+    const es = rec[attr].es;
+    let next = es;
+    if (lang === 'en') {
+      const tr = lookup(es);
+      if (tr != null) next = tr;
+    }
+    rec[attr].last = next;
+    if (next !== cur) el.setAttribute(attr, next);
+  }
+
+  function walk(root) {
+    if (!root) return;
+    if (root.nodeType === Node.TEXT_NODE) { processText(root); return; }
+    if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      ATTRS.forEach((a) => { if (root.hasAttribute(a)) processAttr(root, a); });
+      if (skipped(root)) return;
+    }
+    const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    let n = tw.nextNode();
+    while (n) {
+      if (n.nodeType === Node.TEXT_NODE) processText(n);
+      else ATTRS.forEach((a) => { if (n.hasAttribute(a)) processAttr(n, a); });
+      n = tw.nextNode();
+    }
+  }
+
+  const observer = new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === 'characterData') processText(r.target);
+      else if (r.type === 'attributes') processAttr(r.target, r.attributeName);
+      else r.addedNodes.forEach(walk);
+    }
+  });
+  observer.observe(document.body, {
+    subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS,
+  });
+  walk(document.body); // guarda los originales de la página fija
+
+  function apply(next) {
+    lang = next === 'en' ? 'en' : 'es';
+    walk(document.body);
+    document.title = lang === 'en' ? (lookup(origTitle) || origTitle) : origTitle;
+    try { window.xhApi?.setLang?.(lang); } catch { /* sin puente: modo navegador */ }
+  }
+
+  // Para textos que la app arma en código (toasts, confirmaciones)
+  const t = (s) => (lang === 'en' ? (lookup(s) ?? s) : s);
+
+  window.XhI18n = { apply, t, EN, lookup, get lang() { return lang; } };
 })();

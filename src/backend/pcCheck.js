@@ -3,6 +3,7 @@
 // Chequeo de PC recién armado: errores típicos de BIOS / montaje que Windows no avisa.
 // Todo se lee sin permisos de administrador.
 const { runPowerShell } = require('./powershell');
+const { getLastHardwareScan, isIntegratedGpuName } = require('./hardware');
 
 const PROBLEM_CODES = {
   1: 'Dispositivo no configurado correctamente',
@@ -80,7 +81,11 @@ $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
 const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
 const GEN = (n) => (n ? `Gen${n}` : '?');
 
-function analyze(d) {
+function analyze(d, ctx = {}) {
+  // En portátiles la RAM suele venir soldada, sin XMP en la BIOS, y la pantalla interna pasa por la
+  // GPU integrada (gráficos híbridos): esos avisos de PC de escritorio no aplican.
+  const laptop = ctx.formFactor === 'laptop';
+  const vm = ctx.formFactor === 'vm';
   const checks = [];
   const push = (c) => checks.push(c);
 
@@ -92,14 +97,20 @@ function analyze(d) {
     const rated = Math.max(...ram.map((m) => ratedSpeedFromPart(m.part) || 0));
     const totalGb = Math.round(ram.reduce((s, m) => s + m.capacity, 0) / 1024 ** 3);
     const profile = 'XMP (Intel) o EXPO/DOCP (AMD)';
-    if (rated && configured && rated - configured >= 200) {
+    if (laptop && rated && configured && rated - configured >= 200) {
+      push({
+        id: 'ram-xmp', category: 'Memoria RAM', status: 'info',
+        title: `RAM a ${configured} MHz (los módulos admiten ${rated} MHz)`,
+        detail: `${type} · ${totalGb} GB. En portátiles la velocidad la fija el fabricante y casi nunca se puede cambiar en la BIOS.`,
+      });
+    } else if (rated && configured && rated - configured >= 200) {
       push({
         id: 'ram-xmp', category: 'Memoria RAM', status: 'warn',
         title: `Tu RAM funciona a ${configured} MHz, pero es de ${rated} MHz`,
         detail: `Módulos ${ram[0].part} (${type}, ${totalGb} GB). Estás perdiendo rendimiento, sobre todo en juegos.`,
         fix: `Entra a la BIOS y activa el perfil ${profile}.`,
       });
-    } else if (!rated && configured && ((type === 'DDR4' && configured <= 2400) || (type === 'DDR5' && configured <= 4800))) {
+    } else if (!laptop && !rated && configured && ((type === 'DDR4' && configured <= 2400) || (type === 'DDR5' && configured <= 4800))) {
       push({
         id: 'ram-xmp', category: 'Memoria RAM', status: 'info',
         title: `RAM a ${configured} MHz (velocidad base ${type})`,
@@ -120,7 +131,14 @@ function analyze(d) {
       return x ? x[1] : null;
     };
     const channels = new Set(ram.map(channelOf).filter(Boolean));
-    if (ram.length === 1) {
+    if (ram.length === 1 && laptop) {
+      push({
+        id: 'ram-channel', category: 'Memoria RAM', status: 'info',
+        title: 'RAM en un solo módulo',
+        detail: 'Con un solo módulo la memoria rinde menos, sobre todo con gráficos integrados. Muchos portátiles traen la RAM soldada.',
+        fix: 'Si tu portátil tiene una ranura libre, agrega un módulo igual (revisa el manual de tu modelo).',
+      });
+    } else if (ram.length === 1) {
       push({
         id: 'ram-channel', category: 'Memoria RAM', status: 'warn',
         title: 'RAM en un solo canal (single channel)',
@@ -149,10 +167,10 @@ function analyze(d) {
 
   // ---------- Monitor conectado a la placa madre
   const gpus = arr(d.gpus).filter((g) => g && g.name && !/Basic|Virtual|Parsec|Meta/i.test(g.name));
-  const isIgpu = (g) => /Radeon\(TM\) Graphics|Radeon Graphics|Intel\(R\) (UHD|HD|Iris)|Vega \d+ Graphics/i.test(g.name);
+  const isIgpu = (g) => isIntegratedGpuName(g.name);
   const dgpu = gpus.find((g) => !isIgpu(g));
   const igpu = gpus.find(isIgpu);
-  if (dgpu) {
+  if (dgpu && !laptop && !vm) {
     if (!dgpu.res && igpu?.res) {
       push({
         id: 'display-port', category: 'Gráficos', status: 'warn',
@@ -191,7 +209,7 @@ function analyze(d) {
         detail: dev.name,
         fix: slow ? 'Muévelo a la ranura M.2 principal (la más cercana al CPU) o revisa si comparte líneas con otra ranura.' : undefined,
       });
-    } else if (dev.cls === 'Display' && dev.curWidth < dev.maxWidth && dev.maxWidth >= 8) {
+    } else if (dev.cls === 'Display' && !laptop && dev.curWidth < dev.maxWidth && dev.maxWidth >= 8) {
       // La velocidad baja sola en reposo para ahorrar energía; el ancho de enlace no
       push({
         id: `pcie-${dev.id}`, category: 'Gráficos', status: 'warn',
@@ -314,7 +332,7 @@ async function runPcCheck() {
   } catch {
     return { ok: false, error: 'No se pudo analizar el hardware.' };
   }
-  const result = analyze(data);
+  const result = analyze(data, { formFactor: getLastHardwareScan()?.system?.formFactor });
   lastPcCheck = { ...result, scannedAt: new Date().toISOString() };
   return {
     ok: true,

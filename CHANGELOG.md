@@ -1,5 +1,19 @@
 # Cambios
 
+## Sin publicar
+
+### Nuevo
+- **Inglés completo**: al elegir EN se traduce toda la app, también lo que aparece después (tarjetas de drivers, chequeo, avisos, resultados), las ventanas de Windows (confirmaciones, guardar y abrir archivos), el informe PDF y las novedades.
+- **Detecta el hardware de cualquier PC**: portátiles, PCs de marca (Dell, HP, Lenovo, Acer, ASUS, MSI, Surface y más) y máquinas virtuales. Ahora también muestra Wi-Fi, Bluetooth, cámaras, lector de huella, varias tarjetas de audio y red, y todos los discos internos.
+- **PCs de marca y portátiles**: drivers y BIOS apuntan a la web de soporte del fabricante con su app oficial (Dell SupportAssist, HP Support Assistant, Lenovo Vantage…), y el Asistente de BIOS muestra la tecla correcta para entrar.
+- GPUs integradas nuevas reconocidas: Intel Arc integrada, Radeon 780M/890M y Qualcomm Adreno.
+
+### Cambiado
+- En portátiles el plan de energía recomendado es Equilibrado (cuida batería y temperatura) y el Chequeo de PC no marca como problema lo que el fabricante deja fijo (velocidad de la RAM, un solo módulo, salida de video).
+
+### Arreglado
+- La barra lateral ya no se desplaza por debajo de los botones de la ventana: el logo y el pie quedan fijos y solo el menú hace scroll, sin barra gris visible.
+
 ## 2.2.2 — 2026-11-25
 
 ### Nuevo
