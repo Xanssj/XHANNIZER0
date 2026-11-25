@@ -2,7 +2,7 @@
 
 English notes for the "What's new" window. The full history is in CHANGELOG.md (Spanish).
 
-## Unreleased
+## 2.2.3 — 2026-11-25
 
 ### New
 - **Full English**: choosing EN translates the whole app, including what shows up later (driver cards, PC check, notices, results), Windows dialogs (confirmations, save and open), the PDF report and the release notes.

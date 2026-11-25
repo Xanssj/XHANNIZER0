@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 2.2.3 — 2026-11-25
 
 ### Nuevo
 - **Inglés completo**: al elegir EN se traduce toda la app, también lo que aparece después (tarjetas de drivers, chequeo, avisos, resultados), las ventanas de Windows (confirmaciones, guardar y abrir archivos), el informe PDF y las novedades.
