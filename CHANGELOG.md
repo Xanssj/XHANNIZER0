@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 2.2.0 — 2026-11-25
 
 ### Nuevo
 - **Actualización automática**: la app instalada descarga sola las versiones nuevas desde GitHub y arriba aparece «Reiniciar para actualizar»; se instala en segundos sin volver a bajar el `.exe`. La versión portable avisa y abre su descarga.
