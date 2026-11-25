@@ -328,10 +328,13 @@ function enrichDriverMetadata(component) {
         sourceName: 'AMD Official Support',
         officialUrl: 'https://www.amd.com/es/support/download/drivers.html',
         safeUrl: 'https://www.amd.com/es/resources/support-articles/release-notes/RN-RAD-WIN-24-12-1.html',
-        needsUpdate: true,
-        status: 'warning',
+        // Windows informa la versión interna del driver (32.0.x), que no se puede comparar con la de
+        // Adrenalin (25.x): no se marca como desactualizado sin poder demostrarlo.
+        targetLabel: 'Revisa AMD Adrenalin',
+        needsUpdate: false,
+        status: 'ok',
         advisory: {
-          level: 'warn',
+          level: 'info',
           title: 'Recomendación oficial de instalación limpia (GPU AMD)',
           summary: 'AMD recomienda instalar primero el controlador de Chipset antes de Adrenalin y evitar mezclar versiones de Windows Update para prevenir reinicios TDR.',
           recommendation: 'safe',
@@ -367,8 +370,10 @@ function enrichDriverMetadata(component) {
         sourceName: 'AMD Ryzen Chipset Drivers',
         officialUrl: 'https://www.amd.com/es/support/download/drivers.html',
         safeUrl: 'https://www.amd.com/es/support/download/drivers.html',
-        needsUpdate: true,
-        status: 'available',
+        // Windows no expone la versión instalada del paquete de chipset AMD: no se puede afirmar que falte.
+        targetLabel: 'Revisa el chipset en AMD',
+        needsUpdate: false,
+        status: 'ok',
         advisory: {
           level: 'info',
           title: 'Plan de energía y programación de núcleos',
@@ -408,21 +413,19 @@ function enrichDriverMetadata(component) {
       officialUrl = 'https://www.asrock.com/support/index.asp';
       sourceName = 'ASRock Official Support';
     }
+    // La última BIOS disponible la completa applyBiosLookup() con datos reales del fabricante.
     return {
       ...component,
       sourceName,
       officialUrl,
       safeUrl: officialUrl,
-      latestVersion: 'Chipset / BIOS Oficial',
-      safeVersion: 'Rama WHQL Estable',
-      needsUpdate: true,
-      status: 'warning',
-      advisory: {
-        level: 'warn',
-        title: 'Precaución en placa madre y chipset',
-        summary: 'Evita instalar utilidades RGB/bloatware del fabricante (Armoury Crate, MSI Center, GCC) si solo necesitas el driver limpio de chipset. Verifica la revisión exacta de tu placa antes de actualizar BIOS.',
-        recommendation: 'safe',
-      },
+      installedVersionDisplay: `BIOS ${component.installedVersion}`,
+      latestVersion: null,
+      safeVersion: null,
+      targetLabel: 'Revisa la web del fabricante',
+      needsUpdate: false,
+      status: 'ok',
+      advisory: null,
     };
   }
 

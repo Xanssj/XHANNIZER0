@@ -43,6 +43,7 @@ const { initActionLog, logAction, readActionLog } = require('./src/backend/actio
 const { restartExplorer } = require('./src/backend/windowsAudit');
 const { compareVersions } = require('./src/backend/semver');
 const bios = require('./src/backend/bios');
+const biosUpdate = require('./src/backend/biosUpdate');
 const cleanup = require('./src/backend/cleanup');
 const benchmark = require('./src/backend/benchmark');
 const stability = require('./src/backend/stability');
@@ -245,8 +246,55 @@ ipcMain.on('xh:set-theme', (_event, theme) => {
 
 // ---------- Hardware y Drivers
 ipcMain.handle('xh:scan-hardware', async () => {
-  return detectHardwareAndDrivers();
+  const scan = await detectHardwareAndDrivers();
+  try {
+    await applyBiosLookup(scan);
+  } catch {
+    // Sin conexión o web del fabricante caída: la tarjeta queda con el enlace a su web.
+  }
+  return scan;
 });
+
+// Última BIOS publicada por el fabricante para la placa detectada (se guarda aquí: la interfaz
+// nunca envía URLs ni huellas de descarga).
+let lastBiosLookup = null;
+async function applyBiosLookup(scan) {
+  const board = scan?.drivers?.find((d) => d.category === 'motherboard');
+  if (!board) return;
+  const info = motherboardInfo();
+  const look = await biosUpdate.lookupLatestBios({ ...info, biosVersion: board.installedVersion });
+  const { boardCode } = biosUpdate.parseMsiProduct(info.product);
+  lastBiosLookup = { ...look, boardCode };
+  const inst = biosUpdate.parseMsiVersion(board.installedVersion);
+  if (look.supported && boardCode && inst) {
+    board.installedVersionDisplay = `BIOS ${board.installedVersion} (${boardCode}v${inst.major}${inst.rev}${inst.minor || ''})`;
+  }
+  if (look.supportUrl) board.officialUrl = board.safeUrl = look.supportUrl;
+  board.bios = {
+    supported: look.supported,
+    latestVersion: look.latest?.version || null,
+    latestDate: look.latest?.date || null,
+    isNewer: Boolean(look.isNewer),
+    canPrepareUsb: Boolean(look.isNewer && look.latest?.sha256 && boardCode),
+    supportUrl: look.supportUrl,
+    flashTool: look.flashTool,
+    error: look.error || null,
+  };
+  if (!look.latest) return;
+  board.latestVersion = look.latest.version;
+  board.targetLabel = look.isNewer
+    ? `${look.latest.version}${look.latest.date ? ` (${look.latest.date})` : ''}`
+    : `${look.latest.version} · al día`;
+  board.status = look.isNewer ? 'available' : 'ok';
+  board.advisory = look.isNewer
+    ? {
+        level: 'info',
+        title: `BIOS nueva disponible: ${look.latest.version}`,
+        summary: `${look.latest.notes.join(' · ')}${look.latest.notes.length ? '. ' : ''}La BIOS no se actualiza desde Windows: XHANNIZER0 copia el archivo oficial verificado a una USB y tú la instalas con ${look.flashTool} desde la BIOS.`,
+        recommendation: 'bios-usb',
+      }
+    : null;
+}
 
 // ---------- Chequeo de PC armado (BIOS, RAM, PCIe, Secure Boot, dispositivos sin driver)
 ipcMain.handle('xh:pc-check', async () => runPcCheck());
@@ -803,6 +851,63 @@ const motherboardInfo = () => {
 ipcMain.handle('xh:bios-guide', async (_event, payload) => {
   const checks = payload?.all ? undefined : getLastPcCheck()?.checks || [];
   return { ok: true, ...bios.getBiosGuide({ ...motherboardInfo(), checks }) };
+});
+
+// Prepara una USB con la última BIOS oficial (descarga + SHA-256 + copia). Nunca flashea desde Windows.
+let biosUsbBusy = false;
+ipcMain.handle('xh:bios-usb', async () => {
+  if (biosUsbBusy) return { ok: false, error: 'Ya se está preparando la USB.' };
+  const look = lastBiosLookup;
+  if (!look?.isNewer || !look.latest?.sha256 || !look.boardCode) {
+    return { ok: false, error: 'No hay una BIOS nueva verificada para tu placa. Vuelve a escanear el hardware.' };
+  }
+  const drives = await biosUpdate.listUsbDrives();
+  if (!drives.length) {
+    return { ok: false, error: 'Conecta una memoria USB en FAT32 y vuelve a intentarlo.' };
+  }
+  const shown = drives.slice(0, 4);
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: [...shown.map((d) => `${d.letter} ${d.label} (${d.sizeGb} GB, ${d.fileSystem || '?'})`), 'Cancelar'],
+    defaultId: shown.length,
+    cancelId: shown.length,
+    title: 'BIOS por USB — XHANNIZER0',
+    message: `¿En qué memoria USB copio la BIOS ${look.latest.version}?`,
+    detail: 'Se descarga desde el servidor oficial de MSI, se verifica su huella SHA-256 y se copia a la raíz de la USB. No se borra nada de la USB ni se toca la BIOS desde Windows. La USB debe estar en FAT32.',
+  });
+  if (response >= shown.length) return { ok: false, canceled: true };
+  biosUsbBusy = true;
+  const emit = (detail) => {
+    if (win && !win.isDestroyed()) win.webContents.send('xh:bios-usb-progress', { detail });
+  };
+  try {
+    const res = await biosUpdate.prepareBiosUsb({ latest: look.latest, boardCode: look.boardCode, drive: shown[response].letter, onProgress: emit });
+    logAction('bios', { label: `BIOS ${look.latest.version} copiada a USB`, ok: res.ok, detail: res.error || res.file });
+    if (!res.ok) return res;
+    const steps = await dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['Reiniciar a la BIOS', 'Más tarde'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'USB lista — XHANNIZER0',
+      message: `La BIOS ${res.version} está en la USB ${res.drive} (${res.file}).`,
+      detail: [
+        'Para instalarla de forma segura:',
+        '1. Deja la USB conectada (mejor en un puerto trasero de la placa).',
+        `2. Entra a la BIOS y abre ${look.flashTool}.`,
+        `3. Elige el archivo ${res.file} y confirma.`,
+        '4. No apagues ni reinicies el PC mientras se actualiza; puede reiniciarse varias veces solo.',
+        '5. Al terminar, la BIOS vuelve a valores de fábrica: reactiva XMP/EXPO y revisa el arranque.',
+      ].join('\n'),
+    });
+    if (steps.response === 0) {
+      const reboot = await bios.rebootToFirmware();
+      return { ...res, reboot };
+    }
+    return res;
+  } finally {
+    biosUsbBusy = false;
+  }
 });
 
 ipcMain.handle('xh:reboot-to-bios', async () => {

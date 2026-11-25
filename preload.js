@@ -120,6 +120,12 @@ contextBridge.exposeInMainWorld('xhApi', {
   // Asistente de BIOS
   biosGuide: (payload) => ipcRenderer.invoke('xh:bios-guide', payload),
   rebootToBios: () => ipcRenderer.invoke('xh:reboot-to-bios'),
+  prepareBiosUsb: () => ipcRenderer.invoke('xh:bios-usb'),
+  onBiosUsbProgress: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('xh:bios-usb-progress', handler);
+    return () => ipcRenderer.removeListener('xh:bios-usb-progress', handler);
+  },
 
   // Limpieza post-formateo
   cleanupScan: () => ipcRenderer.invoke('xh:cleanup-scan'),

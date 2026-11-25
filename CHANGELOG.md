@@ -1,5 +1,16 @@
 # Cambios
 
+## Sin publicar
+
+### Nuevo
+- **BIOS por USB (MSI)**: la tarjeta de la placa madre muestra la BIOS instalada con su nombre de MSI (ej. `1.L0` = `7D43v1L`) y la última publicada por MSI. «Preparar USB de BIOS» descarga el archivo oficial, verifica su SHA-256 contra el publicado por MSI y lo copia a una USB en FAT32 para instalarlo con M-Flash. La app nunca actualiza la BIOS desde Windows.
+
+### Arreglado
+- La placa madre, la GPU AMD y el chipset AMD ya no aparecen siempre como «por actualizar»: solo se marca una actualización cuando se puede comparar la versión instalada.
+- La placa madre ya no muestra «Rama WHQL Estable» (eso es de drivers de GPU) ni el botón «Versión segura».
+- Los drivers al día dicen «Buscar actualización» en vez de «Instalar última».
+- Filtro Archivos / Video / Audio en Compresores y listas desplegables legibles en tema oscuro.
+
 ## 2.1.0 — 2026-11-22
 
 ### Nuevo

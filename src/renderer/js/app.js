@@ -686,6 +686,10 @@
           badgeHtml = `<span class="pill-badge is-warn">Aviso de estabilidad</span>`;
         } else if (drv.needsUpdate) {
           badgeHtml = `<span class="pill-badge is-recommended">Actualización oficial</span>`;
+        } else if (drv.bios?.isNewer) {
+          badgeHtml = `<span class="pill-badge is-recommended">BIOS nueva</span>`;
+        } else if (drv.targetLabel && !drv.bios?.latestVersion) {
+          badgeHtml = `<span class="pill-badge is-neutral">Sin comparar</span>`;
         } else {
           badgeHtml = `<span class="pill-badge is-ok">Al día</span>`;
         }
@@ -722,7 +726,7 @@
           ? drv.advisory?.recommendation === 'safe'
             ? drv.safeVersion
             : drv.latestVersion
-          : 'Actualizado';
+          : drv.targetLabel || 'Actualizado';
 
         const companionBadge = drv.companionApp?.installed
           ? `<span class="pill-badge is-ok">App oficial detectada: ${esc(drv.companionApp.name)}</span>`
@@ -760,10 +764,14 @@
                 </div>
               </div>
               <div class="driver-actions">
-                ${drv.advisory?.recommendation === 'safe'
-                  ? `<button type="button" class="btn-action-small is-safe" data-install-driver="${esc(drv.id)}" data-branch="safe">Versión segura</button>`
-                  : ''}
-                <button type="button" class="btn-action-small is-primary" data-install-driver="${esc(drv.id)}" data-branch="latest">Instalar última</button>
+                ${drv.category === 'motherboard'
+                  ? `${drv.bios?.canPrepareUsb ? `<button type="button" class="btn-action-small is-primary" data-bios-usb>Preparar USB de BIOS</button>` : ''}
+                     ${drv.officialUrl ? `<button type="button" class="btn-action-small is-safe" data-open-url="${esc(drv.officialUrl)}">Web de la placa</button>` : ''}
+                     <button type="button" class="btn-action-small ${drv.bios?.canPrepareUsb ? 'is-ghost' : 'is-primary'}" data-install-driver="${esc(drv.id)}" data-branch="latest" title="Busca en Windows Update los drivers de chipset de la placa">Drivers de chipset</button>`
+                  : `${drv.advisory?.recommendation === 'safe'
+                      ? `<button type="button" class="btn-action-small is-safe" data-install-driver="${esc(drv.id)}" data-branch="safe">Versión segura</button>`
+                      : ''}
+                     <button type="button" class="btn-action-small is-primary" data-install-driver="${esc(drv.id)}" data-branch="latest">${drv.needsUpdate ? 'Instalar última' : 'Buscar actualización'}</button>`}
                 <button type="button" class="btn-action-small is-ghost" data-omit-driver="${esc(drv.id)}">${isOmitted ? 'Restaurar' : 'Omitir'}</button>
               </div>
             </div>
@@ -2300,6 +2308,25 @@
             await loadCleanerAndNet(false);
           },
         });
+        return;
+      }
+
+      // BIOS nueva: descarga oficial verificada a una USB (se instala desde la BIOS, nunca desde Windows)
+      if (btn.hasAttribute('data-bios-usb')) {
+        btn.disabled = true;
+        const stop = api.onBiosUsbProgress((p) => {
+          if (p?.detail) btn.textContent = p.detail;
+        });
+        try {
+          const res = await api.prepareBiosUsb();
+          if (!res?.canceled) {
+            showToast(res?.ok ? `BIOS ${res.version} lista en la USB ${res.drive}.` : res?.error || 'No se pudo preparar la USB.');
+          }
+        } finally {
+          stop();
+          btn.disabled = false;
+          btn.textContent = 'Preparar USB de BIOS';
+        }
         return;
       }
 
