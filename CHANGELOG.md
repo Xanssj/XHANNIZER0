@@ -1,6 +1,6 @@
 # Cambios
 
-## Sin publicar
+## 2.2.2 — 2026-11-25
 
 ### Nuevo
 - **Asistente de bienvenida** al abrir la app por primera vez: idioma, datos del PC (detectados automáticamente o escritos a mano: Windows, CPU, GPU y RAM) y para qué usas el PC. Al terminar abre el preset recomendado para ese uso.
