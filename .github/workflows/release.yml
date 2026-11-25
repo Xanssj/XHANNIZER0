@@ -32,6 +32,17 @@ jobs:
       - run: npm ci
       - run: npm test
 
+      # Pre-crea la release una sola vez para evitar releases duplicadas por subida en paralelo en electron-builder 26
+      - name: Crear release en GitHub
+        shell: pwsh
+        run: |
+          gh release view "${{ github.ref_name }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Firma de código: si existen los secretos CSC_LINK (certificado .pfx en base64 o URL) y
       # CSC_KEY_PASSWORD, electron-builder firma el instalador. Sin ellos, publica sin firmar.
       - name: Compilar y publicar
