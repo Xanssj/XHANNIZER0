@@ -199,19 +199,19 @@ function createWindow() {
     }
   });
 
-  // Menú contextual limpio en español
+  // Menú contextual limpio (se traduce al idioma activo)
   contents.on('context-menu', (_event, params) => {
     const items = [];
     if (params.isEditable) {
       items.push(
-        { role: 'cut', label: 'Cortar' },
-        { role: 'copy', label: 'Copiar' },
-        { role: 'paste', label: 'Pegar' },
+        { role: 'cut', label: trText('Cortar') },
+        { role: 'copy', label: trText('Copiar') },
+        { role: 'paste', label: trText('Pegar') },
         { type: 'separator' },
-        { role: 'selectAll', label: 'Seleccionar todo' }
+        { role: 'selectAll', label: trText('Seleccionar todo') }
       );
     } else if (params.selectionText) {
-      items.push({ role: 'copy', label: 'Copiar' });
+      items.push({ role: 'copy', label: trText('Copiar') });
     }
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
@@ -534,13 +534,17 @@ ipcMain.handle('xh:install-batch', async (_event, payload) => {
   if (installBusy) {
     return { ok: false, error: 'Ya hay una cola de instalación en curso.' };
   }
-  // Los drivers toman su Hardware ID del último escaneo del proceso principal, nunca de la interfaz
+  // Los drivers toman su Hardware ID y paquete WinGet del último escaneo del proceso principal, nunca de la interfaz
   const scan = getLastHardwareScan();
   const tasks = (Array.isArray(payload?.tasks) ? payload.tasks : []).map((t) => {
     const { pnpTarget: _ignored, ...rest } = t || {};
     if (rest.type !== 'driver') return rest;
     const drv = scan?.drivers?.find((d) => d.id === rest.id);
-    return { ...rest, pnpTarget: drv ? { instanceIds: drv.pnpInstanceIds || [], scope: drv.pnpScope || null } : {} };
+    return {
+      ...rest,
+      wingetId: drv?.wingetId || null,
+      pnpTarget: drv ? { instanceIds: drv.pnpInstanceIds || [], scope: drv.pnpScope || null } : {},
+    };
   });
   const hasDrivers = tasks.some((t) => t.type === 'driver');
   if (hasDrivers) {
@@ -566,9 +570,19 @@ ipcMain.handle('xh:install-batch', async (_event, payload) => {
 });
 
 // ---------- Abrir app instalada / URL oficial / Carpeta local
+const LOCAL_DRIVE_PATH_RE = /^[A-Za-z]:\\/;
 ipcMain.handle('xh:open-app', async (_event, exePath) => {
   if (!exePath || typeof exePath !== 'string') return { ok: false };
-  const err = await shell.openPath(exePath);
+  const resolved = path.resolve(exePath);
+  if (!LOCAL_DRIVE_PATH_RE.test(resolved) || !/\.exe$/i.test(resolved)) {
+    return { ok: false, error: 'Ruta de aplicación no permitida.' };
+  }
+  try {
+    if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'Archivo no encontrado.' };
+  } catch {
+    return { ok: false, error: 'Archivo no encontrado.' };
+  }
+  const err = await shell.openPath(resolved);
   return { ok: !err, error: err || null };
 });
 
@@ -578,11 +592,25 @@ ipcMain.handle('xh:open-external', async (_event, url) => {
 });
 
 ipcMain.handle('xh:open-path', async (_event, localPath) => {
-  const target = localPath || BACKUP_ROOT;
+  const isDefaultBackup = !localPath;
+  const target = isDefaultBackup ? BACKUP_ROOT : (typeof localPath === 'string' ? path.resolve(localPath) : '');
+  if (!LOCAL_DRIVE_PATH_RE.test(target)) return { ok: false, error: 'Ruta no permitida.' };
+  if (isDefaultBackup) {
+    try {
+      fs.mkdirSync(target, { recursive: true });
+    } catch {
+      // Ignorar
+    }
+  }
+  let stat;
   try {
-    fs.mkdirSync(target, { recursive: true });
+    stat = fs.statSync(target);
   } catch {
-    // Ignorar si es archivo
+    return { ok: false, error: 'Ruta no encontrada.' };
+  }
+  // Permite abrir carpetas locales o informes/imágenes generadas (.pdf / .png), nunca ejecutables
+  if (!stat.isDirectory() && !(stat.isFile() && /\.(pdf|png)$/i.test(target))) {
+    return { ok: false, error: 'Tipo de archivo no permitido.' };
   }
   const err = await shell.openPath(target);
   return { ok: !err, error: err || null };
@@ -731,18 +759,24 @@ function checkLatestRelease() {
           return;
         }
         let raw = '';
-        res.on('data', (c) => { raw += c; });
+        res.on('data', (c) => {
+          raw += c;
+          if (raw.length > 512 * 1024) req.destroy();
+        });
         res.on('end', () => {
           try {
             const data = JSON.parse(raw);
             const latestTag = String(data.tag_name || '').replace(/^v/i, '');
             const hasUpdate = Boolean(latestTag && compareVersions(latestTag, currentVersion) > 0);
+            const safeUrl = typeof data.html_url === 'string' && data.html_url.startsWith('https://github.com/Xanssj/XHANNIZER0/')
+              ? data.html_url
+              : 'https://github.com/Xanssj/XHANNIZER0/releases';
             resolve({
               ok: true,
               currentVersion,
               latestVersion: latestTag || currentVersion,
               hasUpdate,
-              url: data.html_url || 'https://github.com/Xanssj/XHANNIZER0/releases',
+              url: safeUrl,
             });
           } catch {
             resolve({ ok: false, currentVersion, hasUpdate: false });
@@ -1004,10 +1038,15 @@ ipcMain.handle('xh:migration-restore-folders', async (_event, payload) => {
 });
 
 // ---------- Crear Kit USB Post-Formateo (script offline + manifiesto)
+const KIT_WINGET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9.+_-]{1,120}$/;
 ipcMain.handle('xh:create-usb-kit', async (_event, payload) => {
-  const destBase = payload?.destDir;
-  const wingetIds = Array.isArray(payload?.wingetIds) ? payload.wingetIds.filter(Boolean) : [];
-  if (!destBase) return { ok: false, error: 'Selecciona una carpeta o unidad USB de destino.' };
+  const destBase = typeof payload?.destDir === 'string' ? path.resolve(payload.destDir) : '';
+  const wingetIds = Array.isArray(payload?.wingetIds)
+    ? Array.from(new Set(payload.wingetIds.map(String).filter((id) => KIT_WINGET_ID_RE.test(id)))).slice(0, 200)
+    : [];
+  if (!destBase || !LOCAL_DRIVE_PATH_RE.test(destBase)) {
+    return { ok: false, error: 'Selecciona una carpeta o unidad USB de destino.' };
+  }
 
   const kitDir = path.join(destBase, 'XHANNIZER0_USB_Kit');
   fs.mkdirSync(kitDir, { recursive: true });
@@ -1020,7 +1059,7 @@ ipcMain.handle('xh:create-usb-kit', async (_event, payload) => {
     '# XHANNIZER0 — Kit Post-Formateo USB (Xhanni Studios)',
     '# Ejecuta este script en PowerShell tras formatear Windows para instalar tu seleccion en lote.',
     '$packages = @(',
-    ...list.map((id) => `  '${String(id).replace(/'/g, '')}'`),
+    ...list.map((id) => `  '${id}'`),
     ')',
     'foreach ($pkg in $packages) {',
     '  Write-Host "Instalando $pkg..." -ForegroundColor Cyan',

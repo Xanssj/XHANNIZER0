@@ -211,3 +211,116 @@ test('prueba de estabilidad: corre unos segundos sin errores de memoria', async 
   assert.strictEqual(res.errors, 0);
   assert.ok(res.threads >= 1);
 });
+
+test('biosUpdate: interpreta placas MSI, compara versiones y genera URLs oficiales', () => {
+  const bu = backend('biosUpdate');
+  assert.deepStrictEqual(bu.parseMsiProduct('PRO B660M-A WIFI DDR4 (MS-7D43)'), {
+    slug: 'PRO-B660M-A-WIFI-DDR4',
+    boardCode: '7D43',
+  });
+  const vOld = bu.parseMsiVersion('1.L0');
+  const vSame = bu.parseMsiVersion('7D43v1L');
+  const vNew = bu.parseMsiVersion('7D43v1P1');
+  assert.strictEqual(bu.compareMsiVersions(vOld, vSame), 0);
+  assert.ok(bu.compareMsiVersions(vNew, vOld) > 0);
+  assert.ok(bu.compareMsiVersions(vOld, vNew) < 0);
+  assert.strictEqual(bu.parseMsiVersion('invalida'), null);
+  assert.strictEqual(bu.supportUrlFor('Micro-Star International', 'PRO B660M-A (MS-7D43)'), 'https://www.msi.com/Motherboard/PRO-B660M-A/support#bios');
+  assert.match(bu.supportUrlFor('ASUSTeK COMPUTER INC.', 'ROG STRIX B650E-F'), /^https:\/\/www\.asus\.com\//);
+  assert.match(bu.supportUrlFor('Gigabyte Technology', 'B650 AORUS ELITE'), /^https:\/\/www\.gigabyte\.com\//);
+  assert.match(bu.supportUrlFor('ASRock', 'B650M Pro RS'), /^https:\/\/www\.asrock\.com\//);
+  assert.strictEqual(bu.supportUrlFor('Desconocido', 'XYZ'), null);
+});
+
+test('windowsMedia: solo acepta descargas HTTPS de dominios oficiales de Microsoft', () => {
+  const { isAllowedMicrosoftUrl } = backend('windowsMedia');
+  assert.strictEqual(isAllowedMicrosoftUrl('https://go.microsoft.com/fwlink/?linkid=2156295'), true);
+  assert.strictEqual(isAllowedMicrosoftUrl('https://download.microsoft.com/download/a/b/MCT.exe'), true);
+  assert.strictEqual(isAllowedMicrosoftUrl('https://software-static.download.prss.microsoft.com/dbazure/MCT.exe'), true);
+  assert.strictEqual(isAllowedMicrosoftUrl('http://download.microsoft.com/MCT.exe'), false);
+  assert.strictEqual(isAllowedMicrosoftUrl('https://microsoft.com.evil.example/MCT.exe'), false);
+  assert.strictEqual(isAllowedMicrosoftUrl('https://fakemicrosoft.com/MCT.exe'), false);
+  assert.strictEqual(isAllowedMicrosoftUrl('notaurl'), false);
+});
+
+test('hardware: reconoce OEMs, GPUs integradas modernas y versiones NVIDIA', () => {
+  const hw = backend('hardware');
+  assert.strictEqual(hw.oemFor('Dell Inc.', 'XPS 15')?.short, 'Dell');
+  assert.strictEqual(hw.oemFor('LENOVO', 'ThinkPad T14')?.short, 'Lenovo');
+  assert.strictEqual(hw.isIntegratedGpuName('Intel(R) Arc(TM) Graphics'), true);
+  assert.strictEqual(hw.isIntegratedGpuName('Intel(R) Arc(TM) A770 Graphics'), false);
+  assert.strictEqual(hw.isIntegratedGpuName('AMD Radeon 780M Graphics'), true);
+  assert.strictEqual(hw.isIntegratedGpuName('Qualcomm(R) Adreno(TM) X1-85 GPU'), true);
+  assert.strictEqual(hw.isIntegratedGpuName('NVIDIA GeForce RTX 4070'), false);
+  assert.strictEqual(hw.formatNvidiaVersion('32.0.15.6636'), '566.36');
+});
+
+test('pcCheck y bios: adaptan avisos y teclas en portátiles y equipos de marca', () => {
+  const { analyze } = backend('pcCheck')._internals;
+  const laptopCheck = analyze(
+    {
+      ram: [{ capacity: 16 * 1024 ** 3, configured: 4800, speed: 4800, type: 34, part: 'KF552C40BBK2', slot: 'DIMM_A1', bank: '' }],
+      gpus: [{ name: 'NVIDIA GeForce RTX 4060 Laptop GPU', res: null }, { name: 'AMD Radeon 780M Graphics', res: 2560 }],
+      pci: [],
+      secureBoot: 1,
+      firmware: 'UEFI',
+      tpm: '2.0',
+      virt: true,
+      hyperv: false,
+      problems: [],
+    },
+    { formFactor: 'laptop' }
+  );
+  const st = Object.fromEntries(laptopCheck.checks.map((c) => [c.id, c.status]));
+  assert.notStrictEqual(st['ram-xmp'], 'warn');
+  assert.notStrictEqual(st['ram-channel'], 'warn');
+  assert.notStrictEqual(st['display-port'], 'warn');
+
+  const { getBiosGuide } = backend('bios');
+  const dellGuide = getBiosGuide({ manufacturer: 'Dell Inc.', product: 'XPS 15', brandSystem: true });
+  assert.strictEqual(dellGuide.brand, 'Dell');
+  assert.match(dellGuide.keys, /F2/);
+});
+
+test('i18n-en: traduce textos exactos, menú contextual y plantillas con parámetros', () => {
+  const i18n = require(path.join(__dirname, '..', 'src', 'renderer', 'js', 'i18n-en.js'));
+  assert.strictEqual(i18n.translate('Cortar'), 'Cut');
+  assert.strictEqual(i18n.translate('Copiar'), 'Copy');
+  assert.strictEqual(i18n.translate('Pegar'), 'Paste');
+  assert.strictEqual(i18n.translate('Seleccionar todo'), 'Select all');
+  assert.strictEqual(i18n.translate('Al día'), 'Up to date');
+  assert.strictEqual(
+    i18n.translate('Probando 8 GB de RAM en 16 hilos…'),
+    'Testing 8 GB of RAM on 16 threads…'
+  );
+  assert.strictEqual(i18n.translate('12345'), null);
+});
+
+test('seguridad: postFormatTools bloquea inyección en bloatware y wingetId', async () => {
+  const pft = backend('postFormatTools');
+  const r1 = await pft.removeBloatware({
+    backupId: 'b1',
+    packageFullNames: ['Microsoft.BingNews; calc.exe', 'Microsoft.BingNewsEvil_1.0', 'Microsoft.WindowsStore_1.0'],
+  });
+  assert.strictEqual(r1.ok, false);
+  const r2 = await pft.runWingetUpgrade({ wingetId: '--override calc.exe' });
+  assert.strictEqual(r2.ok, false);
+  const r3 = await pft.runWingetUpgrade({ wingetId: 'Brave.Brave; calc' });
+  assert.strictEqual(r3.ok, false);
+});
+
+test('seguridad: biosUpdate rechaza descargas sin SHA-256 o fuera de download.msi.com', async () => {
+  const bu = backend('biosUpdate');
+  const noSha = await bu.prepareBiosUsb({
+    latest: { url: 'https://download.msi.com/bos_exe/mb/7D43v1P.zip', sha256: null, version: '7D43v1P' },
+    boardCode: '7D43',
+    drive: 'E:',
+  });
+  assert.strictEqual(noSha.ok, false);
+  const badHost = await bu.prepareBiosUsb({
+    latest: { url: 'https://evil.example/7D43v1P.zip', sha256: 'a'.repeat(64), version: '7D43v1P' },
+    boardCode: '7D43',
+    drive: 'E:',
+  });
+  assert.strictEqual(badHost.ok, false);
+});

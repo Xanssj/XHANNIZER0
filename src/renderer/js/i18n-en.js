@@ -6,6 +6,10 @@
 (function (root) {
   const EXACT = {
     // ---------- Barra lateral y generales
+    'Cortar': 'Cut',
+    'Copiar': 'Copy',
+    'Pegar': 'Paste',
+    'Seleccionar todo': 'Select all',
     'Sin descargas recientes': 'No recent downloads',
     'Cuando instales apps, drivers o emuladores verás aquí su canal oficial, URL/ID exacto y progreso en tiempo real.': 'When you install apps, drivers or emulators, their official source, exact URL/ID and live progress show up here.',
     'Gestor de Inicio de Windows': 'Windows Startup Manager',
@@ -769,6 +773,7 @@
     'Emulador no encontrado': 'Emulator not found',
     'Sin asset automático disponible; usa "Repo GitHub" para descarga manual': 'No automatic asset available; use "GitHub repo" to download manually',
     'Ya instalado desde Microsoft Store': 'Already installed from Microsoft Store',
+    'ID de Microsoft Store inválido': 'Invalid Microsoft Store ID',
     'Requiere abrir ficha en Microsoft Store (botón «Abrir en Store»)': 'Needs the Microsoft Store page (“Open in Store” button)',
     'Controlador / paquete oficial instalado automáticamente': 'Official driver / package installed automatically',
     'Buscando e instalando controlador oficial WHQL en segundo plano…': 'Finding and installing the official WHQL driver in the background…',
@@ -1285,6 +1290,8 @@
     ['Instalando {0} driver(s) WHQL (se pedirán permisos de administrador)…', 'Installing {0} WHQL driver(s) (administrator rights will be requested)…'],
     ['Consultando último release en GitHub ({0})…', 'Checking the latest release on GitHub ({0})…'],
     ['Descargado {0} en Descargas\\XHANNIZER0_Emuladores', 'Downloaded {0} to Downloads\\XHANNIZER0_Emuladores'],
+    ['Descargado {0} en Descargas\\XHANNIZER0_Emuladores (sin firma: revisa antes de ejecutar)', 'Downloaded {0} to Downloads\\XHANNIZER0_Emuladores (unsigned: review before running)'],
+    ['Instalador verificado {0} iniciado desde Descargas\\XHANNIZER0_Emuladores', 'Verified installer {0} launched from Downloads\\XHANNIZER0_Emuladores'],
     ['Instalando vía WinGet ({0})…', 'Installing via WinGet ({0})…'],
     ['Driver WHQL instalado ({0}). Reinicia Windows para finalizar.', 'WHQL driver installed ({0}). Restart Windows to finish.'],
     ['Driver WHQL instalado automáticamente ({0}).', 'WHQL driver installed automatically ({0}).'],

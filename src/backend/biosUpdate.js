@@ -252,10 +252,13 @@ async function prepareBiosUsb({ latest, boardCode, drive, onProgress = () => {} 
     return { ok: false, error: 'La huella SHA-256 no coincide con la publicada por MSI. Se descartó el archivo por seguridad.' };
   }
 
-  const work = path.join(WORK_DIR, latest.version);
+  const safeVer = String(latest.version || '').replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '') || 'bios';
+  const work = path.resolve(WORK_DIR, safeVer);
+  const workRoot = path.resolve(WORK_DIR) + path.sep;
+  if (!work.startsWith(workRoot)) return { ok: false, error: 'Nombre de versión de BIOS no válido.' };
   fs.rmSync(work, { recursive: true, force: true });
   fs.mkdirSync(work, { recursive: true });
-  const zipPath = path.join(work, `${latest.version}.zip`);
+  const zipPath = path.join(work, `${safeVer}.zip`);
   fs.writeFileSync(zipPath, buf);
 
   onProgress('Descomprimiendo…');

@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFile } = require('child_process');
+const { psData } = require('./powershell');
 
 function runPowerShell(script, timeout = 15000) {
   return new Promise((resolve) => {
@@ -89,27 +90,29 @@ async function toggleStartupApp({ name, enable, backupId }) {
   if (!backupId) {
     return { ok: false, error: 'Se requiere una copia de seguridad vigente antes de modificar el inicio de Windows.' };
   }
-  const safeName = String(name || '').replace(/'/g, "''");
-  if (!safeName) return { ok: false, error: 'Nombre de entrada inválido.' };
+  const rawName = String(name || '');
+  if (!rawName || rawName.length > 256) return { ok: false, error: 'Nombre de entrada inválido.' };
 
   const ps = enable
     ? `
 $ErrorActionPreference = 'Stop'
+$n = ${psData(rawName)}
 $src = 'HKCU:\\Software\\XHANNIZER0\\DisabledStartup'
 $dst = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-$val = (Get-ItemProperty -Path $src -Name '${safeName}').'${safeName}'
-Set-ItemProperty -Path $dst -Name '${safeName}' -Value $val
-Remove-ItemProperty -Path $src -Name '${safeName}'
+$val = (Get-ItemProperty -LiteralPath $src -Name $n).$n
+Set-ItemProperty -LiteralPath $dst -Name $n -Value $val
+Remove-ItemProperty -LiteralPath $src -Name $n
 Write-Output 'Aplicación reactivada en el inicio de Windows.'
 `
     : `
 $ErrorActionPreference = 'Stop'
+$n = ${psData(rawName)}
 $src = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
 $dst = 'HKCU:\\Software\\XHANNIZER0\\DisabledStartup'
-if (-not (Test-Path -Path $dst)) { New-Item -Path $dst -Force | Out-Null }
-$val = (Get-ItemProperty -Path $src -Name '${safeName}').'${safeName}'
-Set-ItemProperty -Path $dst -Name '${safeName}' -Value $val
-Remove-ItemProperty -Path $src -Name '${safeName}'
+if (-not (Test-Path -LiteralPath $dst)) { New-Item -Path $dst -Force | Out-Null }
+$val = (Get-ItemProperty -LiteralPath $src -Name $n).$n
+Set-ItemProperty -LiteralPath $dst -Name $n -Value $val
+Remove-ItemProperty -LiteralPath $src -Name $n
 Write-Output 'Aplicación desactivada del inicio de Windows (reversible en cualquier momento).'
 `;
 

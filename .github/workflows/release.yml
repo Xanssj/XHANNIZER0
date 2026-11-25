@@ -33,9 +33,9 @@ jobs:
       - run: npm test
 
       # Firma de código: si existen los secretos CSC_LINK (certificado .pfx en base64 o URL) y
-      # CSC_KEY_PASSWORD, electron-builder firma el instalador y el portable. Sin ellos, publica sin firmar.
+      # CSC_KEY_PASSWORD, electron-builder firma el instalador. Sin ellos, publica sin firmar.
       - name: Compilar y publicar
-        run: npx electron-builder --win nsis portable --publish always
+        run: npx electron-builder --win nsis --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}

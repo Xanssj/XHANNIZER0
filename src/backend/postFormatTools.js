@@ -1,7 +1,9 @@
 'use strict';
 
 const { execFile } = require('child_process');
-const { runElevated } = require('./powershell');
+const { runElevated, psData } = require('./powershell');
+const WINGET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9.+_-]{1,120}$/;
+const APPX_FULLNAME_RE = /^[A-Za-z0-9._-]+$/;
 
 function runExec(file, args, timeout = 25000) {
   return new Promise((resolve) => {
@@ -73,11 +75,12 @@ async function removeBloatware({ packageFullNames, backupId }) {
   const list = Array.isArray(packageFullNames) ? packageFullNames.filter(Boolean) : [];
   if (!list.length) return { ok: false, error: 'No se seleccionaron paquetes para eliminar.' };
 
-  // Validar que solo se eliminen paquetes de nuestra lista blanca segura
-  const allowedPrefixes = SAFE_BLOATWARE_LIST.map((b) => b.appxPattern.toLowerCase());
-  const safeList = list.filter((fullName) =>
-    allowedPrefixes.some((prefix) => String(fullName).toLowerCase().startsWith(prefix))
-  );
+  // Validar que solo se eliminen paquetes de nuestra lista blanca segura y con formato válido
+  const allowedPrefixes = SAFE_BLOATWARE_LIST.map((b) => `${b.appxPattern.toLowerCase()}_`);
+  const safeList = list.filter((fullName) => {
+    const s = String(fullName);
+    return APPX_FULLNAME_RE.test(s) && allowedPrefixes.some((prefix) => s.toLowerCase().startsWith(prefix));
+  });
 
   if (!safeList.length) {
     return { ok: false, error: 'Paquete bloqueado: solo se permite eliminar bloatware reversible autorizado.' };
@@ -85,8 +88,7 @@ async function removeBloatware({ packageFullNames, backupId }) {
 
   let removed = 0;
   for (const fullName of safeList) {
-    const safe = String(fullName).replace(/'/g, "''");
-    const r = await runPowerShell(`Remove-AppxPackage -Package '${safe}' -ErrorAction Stop`, 15000);
+    const r = await runPowerShell(`Remove-AppxPackage -Package ${psData(String(fullName))} -ErrorAction Stop`, 15000);
     if (r.ok) removed += 1;
   }
 
@@ -140,10 +142,11 @@ async function scanWingetUpgrades() {
 }
 
 async function runWingetUpgrade({ wingetId }) {
-  if (!wingetId) return { ok: false, error: 'ID inválido' };
-  const args = wingetId === '__ALL__'
+  const id = String(wingetId || '');
+  if (!id || (id !== '__ALL__' && !WINGET_ID_RE.test(id))) return { ok: false, error: 'ID inválido' };
+  const args = id === '__ALL__'
     ? ['upgrade', '--all', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity']
-    : ['upgrade', '--id', String(wingetId), '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'];
+    : ['upgrade', '--id', id, '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'];
 
   const res = await runExec('winget.exe', args, 120000);
   return {
@@ -206,21 +209,21 @@ async function applyNetworkAction({ action, adapterName, backupId }) {
     return { ok: r.ok, message: r.ok ? 'Caché DNS vaciada correctamente.' : 'No se pudo vaciar la caché DNS.' };
   }
 
-  const safeAdapter = String(adapterName || '').replace(/'/g, "''");
-  if (!safeAdapter || safeAdapter === 'Sin adaptador activo') {
+  const adapter = String(adapterName || '').trim();
+  if (!adapter || adapter === 'Sin adaptador activo' || adapter.length > 160) {
     return { ok: false, error: 'No se encontró un adaptador de red activo.' };
   }
 
   let innerCmd = '';
   let label = '';
   if (action === 'dns-cloudflare') {
-    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias '${safeAdapter}' -ServerAddresses ('1.1.1.1','1.0.0.1'); ipconfig /flushdns`;
+    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias ${psData(adapter)} -ServerAddresses ('1.1.1.1','1.0.0.1'); ipconfig /flushdns`;
     label = 'DNS Cloudflare (1.1.1.1) aplicado';
   } else if (action === 'dns-google') {
-    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias '${safeAdapter}' -ServerAddresses ('8.8.8.8','8.8.4.4'); ipconfig /flushdns`;
+    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias ${psData(adapter)} -ServerAddresses ('8.8.8.8','8.8.4.4'); ipconfig /flushdns`;
     label = 'DNS Google (8.8.8.8) aplicado';
   } else if (action === 'dns-dhcp') {
-    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias '${safeAdapter}' -ResetServerAddresses; ipconfig /flushdns`;
+    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias ${psData(adapter)} -ResetServerAddresses; ipconfig /flushdns`;
     label = 'DNS restaurado a Automático (DHCP)';
   } else {
     return { ok: false, error: 'Acción de red desconocida.' };

@@ -32,8 +32,7 @@ function checkAuthenticodeSignature(filePath) {
       resolve({ status: 'Archivo comprimido', signer: null });
       return;
     }
-    const quoted = String(filePath).replace(/'/g, "''");
-    const ps = `$s = Get-AuthenticodeSignature -FilePath '${quoted}'; @{ status = [string]$s.Status; signer = if ($s.SignerCertificate) { [string]$s.SignerCertificate.Subject } else { '' } } | ConvertTo-Json -Compress`;
+    const ps = `$s = Get-AuthenticodeSignature -LiteralPath ${psData(String(filePath))}; @{ status = [string]$s.Status; signer = if ($s.SignerCertificate) { [string]$s.SignerCertificate.Subject } else { '' } } | ConvertTo-Json -Compress`;
     execFile(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps],
@@ -91,9 +90,20 @@ function downloadFile(url, destPath, onProgress) {
         reject(new Error('Demasiadas redirecciones al descargar.'));
         return;
       }
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(currentUrl);
+      } catch {
+        reject(new Error('URL de descarga inválida.'));
+        return;
+      }
+      if (parsedUrl.protocol !== 'https:') {
+        reject(new Error('Solo se permiten descargas por HTTPS.'));
+        return;
+      }
       const req = https.get(
-        currentUrl,
-        { headers: { 'User-Agent': 'XHANNIZER0/1.3 (Xhanni Studios)' }, timeout: 25000 },
+        parsedUrl.toString(),
+        { headers: { 'User-Agent': 'XHANNIZER0/2.2 (Xhanni Studios)' }, timeout: 25000 },
         (res) => {
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
             res.resume();
@@ -151,6 +161,18 @@ function runWingetInstall(wingetId, onProgress, source = null) {
     let phase = 'downloading';
     let fakePct = 18;
     let output = '';
+    let settled = false;
+    const finish = (res) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(timer);
+      clearTimeout(killTimer);
+      resolve(res);
+    };
+    const killTimer = setTimeout(() => {
+      try { child.kill(); } catch { /* ignorar */ }
+      finish({ ok: false, code: -2, output: 'Tiempo de espera agotado en WinGet.' });
+    }, 15 * 60 * 1000);
 
     const timer = setInterval(() => {
       if (phase === 'downloading' && fakePct < 68) {
@@ -188,14 +210,12 @@ function runWingetInstall(wingetId, onProgress, source = null) {
     child.stderr.on('data', inspectChunk);
 
     child.on('error', (err) => {
-      clearInterval(timer);
-      resolve({ ok: false, code: -1, output: err.message });
+      finish({ ok: false, code: -1, output: err.message });
     });
 
     child.on('close', (code) => {
-      clearInterval(timer);
       const alreadyLatest = code === -1978335189 || /already installed|ya está instalado/i.test(output);
-      resolve({ ok: code === 0 || alreadyLatest, alreadyLatest, code, output });
+      finish({ ok: code === 0 || alreadyLatest, alreadyLatest, code, output });
     });
   });
 }
@@ -329,12 +349,17 @@ async function installSingleItem(task, emit) {
     const release = await resolveGithubLatestRelease(emu.githubRepo);
 
     if (release.ok && release.asset?.url) {
-      const dest = path.join(EMULATOR_DOWNLOAD_DIR, release.asset.name);
+      const safeAssetName = path.basename(String(release.asset.name || '')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
+      const dest = safeAssetName && safeAssetName !== '.' && safeAssetName !== '..'
+        ? path.resolve(EMULATOR_DOWNLOAD_DIR, safeAssetName)
+        : null;
+      const emuRoot = path.resolve(EMULATOR_DOWNLOAD_DIR) + path.sep;
+      if (dest && dest.startsWith(emuRoot)) {
       try {
         emitAudit({
           state: 'downloading',
           progress: 20,
-          detail: `Descargando ${release.tag} (${release.asset.name})…`,
+          detail: `Descargando ${release.tag} (${safeAssetName})…`,
           sourceType: 'GitHub Releases',
           sourceOrigin: release.asset.url,
         });
@@ -355,7 +380,10 @@ async function installSingleItem(task, emit) {
           sourceOrigin: release.asset.url,
         });
         const cryptoInfo = await verifyDownloadedFile(dest);
-        if (/\.(exe|msi)$/i.test(dest)) {
+        // Solo se inicia automáticamente un instalador si tiene firma Authenticode válida;
+        // si no está firmado (habitual en proyectos open-source), se muestra la carpeta al usuario.
+        const autoLaunched = /\.(exe|msi)$/i.test(dest) && cryptoInfo.signatureStatus === 'Firma válida';
+        if (autoLaunched) {
           await shell.openPath(dest);
         } else {
           shell.showItemInFolder(dest);
@@ -363,7 +391,9 @@ async function installSingleItem(task, emit) {
         emitAudit({
           state: 'done',
           progress: 100,
-          detail: `Descargado ${release.tag} en Descargas\\XHANNIZER0_Emuladores`,
+          detail: autoLaunched
+            ? `Instalador verificado ${release.tag} iniciado desde Descargas\\XHANNIZER0_Emuladores`
+            : `Descargado ${release.tag} en Descargas\\XHANNIZER0_Emuladores (sin firma: revisa antes de ejecutar)`,
           sourceType: 'GitHub Releases',
           sourceOrigin: release.asset.url,
           ...cryptoInfo,
@@ -371,6 +401,7 @@ async function installSingleItem(task, emit) {
         return { id, ok: true };
       } catch {
         // Fallback a winget
+      }
       }
     }
 
@@ -409,18 +440,23 @@ async function installSingleItem(task, emit) {
 
   // Caso 2: Microsoft Store (instala directo con winget --source msstore)
   if (type === 'msstore' && storeId) {
-    const origin = `msstore: ${storeId}`;
+    const cleanStoreId = String(storeId).trim();
+    const origin = `msstore: ${cleanStoreId}`;
+    if (!/^[A-Z0-9]{8,20}$/i.test(cleanStoreId)) {
+      emitAudit({ state: 'warning', progress: 100, detail: 'ID de Microsoft Store inválido', sourceType: 'Microsoft Store', sourceOrigin: origin });
+      return { id, ok: false };
+    }
     const wingetAvailable = await hasWinget();
     if (wingetAvailable) {
       emitAudit({
         state: 'downloading',
         progress: 15,
-        detail: `Descargando desde Microsoft Store (${storeId})…`,
+        detail: `Descargando desde Microsoft Store (${cleanStoreId})…`,
         sourceType: 'Microsoft Store',
         sourceOrigin: origin,
       });
       const res = await runWingetInstall(
-        storeId,
+        cleanStoreId,
         (upd) => emitAudit({ ...upd, sourceType: 'Microsoft Store', sourceOrigin: origin }),
         'msstore'
       );

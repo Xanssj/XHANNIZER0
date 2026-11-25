@@ -11,7 +11,18 @@ const { shell } = require('electron');
 const { runPowerShell, psData } = require('./powershell');
 
 const MCT_URL = 'https://go.microsoft.com/fwlink/?linkid=2156295';
-const ALLOWED_HOSTS = ['go.microsoft.com', 'download.microsoft.com'];
+const DOWNLOAD_TIMEOUT_MS = 120000;
+
+function isAllowedMicrosoftUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase();
+    return h === 'microsoft.com' || h.endsWith('.microsoft.com');
+  } catch {
+    return false;
+  }
+}
 
 async function verifyMicrosoftSignature(filePath) {
   const r = await runPowerShell(
@@ -30,19 +41,16 @@ async function launchMediaCreationTool(onProgress = () => {}) {
   const { net } = require('electron');
   onProgress('Descargando la herramienta oficial de Microsoft…');
   let res;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DOWNLOAD_TIMEOUT_MS);
   try {
-    res = await net.fetch(MCT_URL);
+    res = await net.fetch(MCT_URL, { signal: ctrl.signal });
   } catch (err) {
     return { ok: false, error: `No se pudo descargar (${err.message}).` };
+  } finally {
+    clearTimeout(timer);
   }
-  const finalHost = (() => {
-    try {
-      return new URL(res.url).hostname;
-    } catch {
-      return '';
-    }
-  })();
-  if (!res.ok || !ALLOWED_HOSTS.includes(finalHost)) {
+  if (!res.ok || !isAllowedMicrosoftUrl(res.url)) {
     return { ok: false, error: 'La descarga no vino de los servidores de Microsoft.' };
   }
   const buf = Buffer.from(await res.arrayBuffer());
@@ -61,4 +69,4 @@ async function launchMediaCreationTool(onProgress = () => {}) {
   return err ? { ok: false, error: err } : { ok: true };
 }
 
-module.exports = { launchMediaCreationTool };
+module.exports = { launchMediaCreationTool, isAllowedMicrosoftUrl };

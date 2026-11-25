@@ -8,7 +8,7 @@
 
 Una app gratuita de [xhanni (Xhanni Studios)](https://xhannistudios.org).
 
-![Versión](https://img.shields.io/badge/Versi%C3%B3n-2.1.0-0071E3?style=for-the-badge)
+![Versión](https://img.shields.io/badge/Versi%C3%B3n-2.2.3-0071E3?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/Windows-11%20%2F%2010%20x64-1C1C1E?style=for-the-badge)
 ![Licencia](https://img.shields.io/badge/Licencia-MIT-6E6E73?style=for-the-badge)
 [![Pruebas](https://img.shields.io/github/actions/workflow/status/Xanssj/XHANNIZER0/tests.yml?label=Pruebas&style=for-the-badge)](https://github.com/Xanssj/XHANNIZER0/actions/workflows/tests.yml)
@@ -42,8 +42,7 @@ Una app gratuita de [xhanni (Xhanni Studios)](https://xhannistudios.org).
 ## Descargar e instalar
 
 1. Baja la última versión desde **[Releases](https://github.com/Xanssj/XHANNIZER0/releases/latest)**:
-   - `XHANNIZER0-x.x.x-x64-nsis.exe`: instalador.
-   - `XHANNIZER0-x.x.x-Portable.exe`: sin instalar, ideal para llevar en un USB (guarda sus datos junto al `.exe`).
+   - `XHANNIZER0-x.x.x-x64-nsis.exe`: instalador de Windows (con actualizaciones automáticas).
 2. Si Windows muestra **«Windows protegió su PC»**, toca **Más información → Ejecutar de todas formas**. Aparece mientras la app no tenga firma de código.
 
 Necesitas Windows 10 u 11 de 64 bits. Algunas acciones piden permiso de administrador (UAC).

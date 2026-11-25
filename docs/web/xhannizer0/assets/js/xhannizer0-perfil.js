@@ -4,7 +4,12 @@
 (function () {
   'use strict';
 
-  var code = decodeURIComponent((location.hash || '').slice(1)).replace(/\s+/g, '');
+  var code = '';
+  try {
+    code = decodeURIComponent((location.hash || '').slice(1)).replace(/\s+/g, '');
+  } catch (e) {
+    code = '';
+  }
   var valid = /^XHZ1-[A-Za-z0-9_-]{4,12000}$/.test(code);
   var open = document.getElementById('xz-profile-open');
   var copy = document.getElementById('xz-profile-copy');
