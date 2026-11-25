@@ -990,6 +990,7 @@
           </div>
           <div class="section-actions">
             <button type="button" class="btn-secondary" id="btn-about-update">Buscar actualización</button>
+            <button type="button" class="btn-secondary" id="btn-about-setup">Configuración inicial</button>
           </div>
         </header>
         <p class="section-subtitle">Una app gratuita de <strong>xhanni (Xhanni Studios)</strong>, un estudio pequeño de software en Chile. Hacemos herramientas simples, rápidas y bonitas, y detrás de cada una hay alguien que responde.</p>
@@ -1159,6 +1160,128 @@
 
       <div class="backup-sheet-actions">
         <button type="button" class="btn-secondary" id="btn-drv-confirm-cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Asistente de bienvenida (primera vez que se abre la app) -->
+  <div class="xh-overlay" id="xh-setup" role="dialog" aria-modal="true" aria-labelledby="setup-title" hidden>
+    <div class="xh-overlay-sheet setup-sheet">
+      <ol class="setup-steps" aria-hidden="true">
+        <li data-step-dot="1"></li><li data-step-dot="2"></li><li data-step-dot="3"></li>
+      </ol>
+
+      <!-- Paso 1: bienvenida -->
+      <section class="setup-step" data-step="1">
+        <img class="setup-logo" src="../../assets/icon.svg" width="64" height="64" alt="">
+        <h2 id="setup-title">Bienvenido a XHANNIZER0</h2>
+        <p class="setup-lead">Deja Windows listo después de formatear: drivers oficiales, tus programas, ajustes y limpieza en un solo lugar.</p>
+        <ul class="setup-points">
+          <li>Todo sale de fuentes oficiales y verificadas.</li>
+          <li>Antes de cambiar algo se crea un respaldo que puedes deshacer.</li>
+          <li>Sin cuentas, sin publicidad y sin telemetría.</li>
+        </ul>
+        <div class="setup-lang">
+          <span>Idioma</span>
+          <div class="owner-filter-chips" role="group" aria-label="Idioma">
+            <button type="button" class="owner-filter-chip" data-setup-lang="es">Español</button>
+            <button type="button" class="owner-filter-chip" data-setup-lang="en">English</button>
+          </div>
+        </div>
+        <div class="setup-actions">
+          <button type="button" class="btn-primary" data-setup-next="2">Empezar</button>
+        </div>
+      </section>
+
+      <!-- Paso 2: datos del PC -->
+      <section class="setup-step" data-step="2" hidden>
+        <h2>Tu PC</h2>
+        <p class="setup-lead">XHANNIZER0 puede detectarlo solo, o puedes escribirlo tú si ya lo sabes.</p>
+        <div class="setup-mode" role="radiogroup" aria-label="Cómo cargar los datos del PC">
+          <button type="button" class="setup-mode-card" data-setup-mode="auto" role="radio">
+            <strong>Detectar automáticamente</strong>
+            <small>Lee el procesador, la tarjeta de video, la RAM y Windows de tu PC.</small>
+            <span class="pill-badge is-recommended">Recomendado</span>
+          </button>
+          <button type="button" class="setup-mode-card" data-setup-mode="manual" role="radio">
+            <strong>Escribirlo yo</strong>
+            <small>Para cuando conoces tus piezas o la detección no las reconoce bien.</small>
+          </button>
+        </div>
+        <div class="setup-form" id="setup-form">
+          <p class="setup-detect-status" id="setup-detect-status" hidden></p>
+          <label>Windows
+            <select class="xh-input" id="setup-windows">
+              <option>Windows 11</option>
+              <option>Windows 10</option>
+            </select>
+          </label>
+          <label>Procesador (CPU)
+            <input class="xh-input" id="setup-cpu" type="text" maxlength="80" placeholder="Ej. AMD Ryzen 5 7600" autocomplete="off" spellcheck="false">
+          </label>
+          <label>Tarjeta de video (GPU)
+            <input class="xh-input" id="setup-gpu" type="text" maxlength="80" placeholder="Ej. NVIDIA GeForce RTX 3070" autocomplete="off" spellcheck="false">
+          </label>
+          <label>Memoria RAM
+            <select class="xh-input" id="setup-ram">
+              <option value="">No sé</option>
+              <option value="4">4 GB</option>
+              <option value="8">8 GB</option>
+              <option value="16">16 GB</option>
+              <option value="32">32 GB</option>
+              <option value="64">64 GB</option>
+              <option value="128">128 GB</option>
+            </select>
+          </label>
+        </div>
+        <p class="setup-note">Los drivers siempre se buscan con la detección real del hardware, para no instalar uno equivocado.</p>
+        <div class="setup-actions">
+          <button type="button" class="btn-secondary" data-setup-next="1">Atrás</button>
+          <button type="button" class="btn-primary" data-setup-next="3" id="setup-step2-next">Continuar</button>
+        </div>
+      </section>
+
+      <!-- Paso 3: uso del PC -->
+      <section class="setup-step" data-step="3" hidden>
+        <h2>¿Para qué usas el PC?</h2>
+        <p class="setup-lead">Te recomendamos los programas que más se usan para eso. Puedes cambiarlo cuando quieras.</p>
+        <div class="setup-uses" role="radiogroup" aria-label="Uso del PC">
+          <button type="button" class="setup-use" data-setup-use="gaming" role="radio"><strong>Juegos</strong><small>Launchers, Discord y lo necesario para jugar.</small></button>
+          <button type="button" class="setup-use" data-setup-use="office" role="radio"><strong>Trabajo u oficina</strong><small>Ofimática, PDF y productividad.</small></button>
+          <button type="button" class="setup-use" data-setup-use="school" role="radio"><strong>Estudios</strong><small>Clases, documentos y videollamadas.</small></button>
+          <button type="button" class="setup-use" data-setup-use="dev" role="radio"><strong>Programación</strong><small>Editores, Git y entornos de desarrollo.</small></button>
+          <button type="button" class="setup-use" data-setup-use="general" role="radio"><strong>Uso general</strong><small>Navegar, música y videos.</small></button>
+        </div>
+        <div class="setup-actions">
+          <button type="button" class="btn-secondary" data-setup-next="2">Atrás</button>
+          <button type="button" class="btn-primary" id="setup-finish">Terminar</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Actualización: ventana superpuesta mientras se instala la versión nueva -->
+  <div class="xh-overlay" id="xh-update-overlay" role="dialog" aria-modal="true" aria-labelledby="update-ov-title" hidden>
+    <div class="xh-overlay-sheet update-sheet">
+      <div class="update-spinner" id="update-ov-spinner" aria-hidden="true"></div>
+      <h2 id="update-ov-title">Actualización lista</h2>
+      <p class="setup-lead" id="update-ov-desc">La versión nueva ya se descargó.</p>
+      <div class="progress-track" id="update-ov-track" hidden><div class="progress-bar" id="update-ov-bar" style="width:0%"></div></div>
+      <div class="setup-actions" id="update-ov-actions">
+        <button type="button" class="btn-secondary" id="update-ov-later">Más tarde</button>
+        <button type="button" class="btn-primary" id="update-ov-now">Reiniciar y actualizar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Novedades después de actualizar -->
+  <div class="xh-overlay" id="xh-whats-new" role="dialog" aria-modal="true" aria-labelledby="whats-new-title" hidden>
+    <div class="xh-overlay-sheet whats-new-sheet">
+      <span class="pill-badge is-ok" id="whats-new-badge">Actualizado</span>
+      <h2 id="whats-new-title">Novedades de XHANNIZER0</h2>
+      <ul class="whats-new-list" id="whats-new-list"></ul>
+      <div class="setup-actions">
+        <button type="button" class="btn-primary" id="whats-new-close">Entendido</button>
       </div>
     </div>
   </div>

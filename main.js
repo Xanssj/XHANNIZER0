@@ -248,6 +248,78 @@ ipcMain.on('xh:set-theme', (_event, theme) => {
   nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark';
 });
 
+// ---------- Configuración inicial (asistente de bienvenida)
+// Lo que el usuario confirma o escribe a mano sobre su PC. Los drivers siempre usan la detección
+// real del hardware; estos datos personalizan la app (resumen, recomendaciones y presets).
+const SETUP_FILE = () => path.join(app.getPath('userData'), 'configuracion-inicial.json');
+const SETUP_USES = ['gaming', 'dev', 'school', 'office', 'general'];
+const cleanText = (v, max = 80) => String(v || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max);
+ipcMain.handle('xh:setup-get', async () => {
+  try {
+    return JSON.parse(fs.readFileSync(SETUP_FILE(), 'utf8'));
+  } catch {
+    return { completed: false };
+  }
+});
+ipcMain.handle('xh:setup-save', async (_event, payload) => {
+  const p = payload || {};
+  const ram = Number(p.pc?.ramGb);
+  const data = {
+    completed: true,
+    mode: p.mode === 'manual' ? 'manual' : 'auto',
+    pc: {
+      windows: ['Windows 11', 'Windows 10'].includes(p.pc?.windows) ? p.pc.windows : 'Windows 11',
+      cpu: cleanText(p.pc?.cpu),
+      gpu: cleanText(p.pc?.gpu),
+      ramGb: Number.isFinite(ram) && ram > 0 && ram <= 2048 ? Math.round(ram) : null,
+    },
+    use: SETUP_USES.includes(p.use) ? p.use : 'general',
+    savedAt: new Date().toISOString(),
+  };
+  fs.mkdirSync(path.dirname(SETUP_FILE()), { recursive: true });
+  fs.writeFileSync(SETUP_FILE(), JSON.stringify(data, null, 2), 'utf8');
+  return { ok: true, ...data };
+});
+
+// ---------- Novedades después de actualizar
+// Compara la versión que se abrió la última vez con la actual; si cambió, muestra las notas
+// de esta versión (del CHANGELOG.md que va dentro de la app) una sola vez.
+const VERSION_FILE = () => path.join(app.getPath('userData'), 'ultima-version.json');
+function changelogFor(version) {
+  try {
+    const text = fs.readFileSync(path.join(__dirname, 'CHANGELOG.md'), 'utf8');
+    const start = text.indexOf(`## ${version}`);
+    if (start < 0) return [];
+    const next = text.indexOf('\n## ', start + 3);
+    return text
+      .slice(start, next < 0 ? undefined : next)
+      .split(/\r?\n/)
+      .filter((l) => /^- /.test(l))
+      .map((l) => l.slice(2).replace(/\*\*/g, '').replace(/`/g, '').trim())
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+ipcMain.handle('xh:whats-new', async () => {
+  const current = app.getVersion();
+  let previous = null;
+  try {
+    previous = JSON.parse(fs.readFileSync(VERSION_FILE(), 'utf8')).version || null;
+  } catch {
+    previous = null;
+  }
+  try {
+    fs.mkdirSync(path.dirname(VERSION_FILE()), { recursive: true });
+    fs.writeFileSync(VERSION_FILE(), JSON.stringify({ version: current }), 'utf8');
+  } catch {
+    // Sin escritura: se volvería a mostrar, no es grave
+  }
+  // Instalación nueva (sin versión previa) o misma versión: no hay novedades que mostrar
+  if (!previous || previous === current) return { show: false, version: current };
+  return { show: true, version: current, previous, notes: changelogFor(current) };
+});
+
 // ---------- Hardware y Drivers
 ipcMain.handle('xh:scan-hardware', async () => {
   const scan = await detectHardwareAndDrivers();

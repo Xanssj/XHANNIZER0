@@ -30,7 +30,8 @@
       "main.js",
       "preload.js",
       "assets/**/*",
-      "src/**/*"
+      "src/**/*",
+      "CHANGELOG.md"
     ],
     "win": {
       "target": [

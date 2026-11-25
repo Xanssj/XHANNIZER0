@@ -1644,3 +1644,125 @@ select option:checked {
 .profile-share-copy { min-width: 0; }
 .profile-share-copy p { margin: 4px 0 10px; }
 @media (max-width: 720px) { .profile-share { flex-direction: column; align-items: flex-start; } }
+
+/* ==========================================================================
+   Ventanas superpuestas: asistente de bienvenida, actualización y novedades
+   ========================================================================== */
+.xh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  animation: xh-overlay-in 220ms var(--ease) both;
+}
+.xh-overlay[hidden] { display: none; }
+#xh-update-overlay { z-index: 1300; }
+@keyframes xh-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+.xh-overlay-sheet {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 28px;
+  border-radius: 24px;
+  background: var(--glass-pop);
+  -webkit-backdrop-filter: saturate(180%) blur(28px);
+  backdrop-filter: saturate(180%) blur(28px);
+  border: 0.5px solid var(--sep-strong);
+  box-shadow: var(--shadow-float);
+  animation: xh-sheet-in 260ms var(--ease) both;
+}
+@keyframes xh-sheet-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+.xh-overlay-sheet h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.setup-lead { margin: 0 0 18px; color: var(--label-2); font-size: 14px; line-height: 1.5; }
+.setup-note { margin: 14px 0 0; color: var(--label-3); font-size: 12px; line-height: 1.45; }
+.setup-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.setup-actions[hidden] { display: none; }
+
+/* Puntos de progreso */
+.setup-steps { display: flex; gap: 6px; margin: 0 0 20px; padding: 0; list-style: none; }
+.setup-steps li { width: 22px; height: 4px; border-radius: 99px; background: var(--fill); transition: background-color 200ms var(--ease); }
+.setup-steps li.is-done { background: var(--accent); }
+
+.setup-step[hidden] { display: none; }
+.setup-logo { display: block; margin-bottom: 14px; border-radius: 16px; }
+.setup-points { margin: 0 0 18px; padding-left: 18px; color: var(--label); font-size: 13.5px; line-height: 1.7; }
+.setup-lang { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--card-2); font-size: 13px; color: var(--label-2); }
+
+/* Tarjetas de elección (modo y uso) */
+.setup-mode, .setup-uses { display: grid; gap: 10px; }
+.setup-mode { grid-template-columns: 1fr 1fr; margin-bottom: 16px; }
+.setup-uses { grid-template-columns: 1fr 1fr; }
+.setup-mode-card, .setup-use {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  justify-items: start;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--sep-strong);
+  background: var(--card-2);
+  color: var(--label);
+  text-align: left;
+  font: inherit;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.setup-mode-card:hover, .setup-use:hover { background: var(--card-hover); }
+.setup-mode-card.is-active, .setup-use.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.setup-mode-card strong, .setup-use strong { font-size: 14px; font-weight: 650; }
+.setup-mode-card small, .setup-use small { color: var(--label-2); font-size: 12px; line-height: 1.4; }
+.setup-mode-card .pill-badge { margin-top: 4px; }
+
+.setup-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.setup-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--label-2); }
+.setup-form label:nth-of-type(2), .setup-form label:nth-of-type(3) { grid-column: span 2; }
+.setup-form .xh-input:disabled { opacity: 0.6; }
+.setup-detect-status { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--card-2); color: var(--label-2); font-size: 12.5px; }
+.setup-detect-status[hidden] { display: none; }
+
+/* Actualización */
+.update-sheet { width: min(440px, 100%); text-align: center; }
+.update-sheet .setup-actions { justify-content: center; }
+.update-sheet .progress-track { margin-top: 6px; }
+.update-sheet .progress-track[hidden] { display: none; }
+.update-spinner {
+  width: 44px;
+  height: 44px;
+  margin: 4px auto 16px;
+  border-radius: 50%;
+  border: 3px solid var(--fill);
+  border-top-color: var(--accent);
+}
+.update-spinner.is-spinning { animation: xh-spin 900ms linear infinite; }
+@keyframes xh-spin { to { transform: rotate(360deg); } }
+
+/* Novedades */
+.whats-new-sheet .pill-badge { margin-bottom: 10px; }
+.whats-new-list { margin: 8px 0 0; padding-left: 18px; color: var(--label); font-size: 13.5px; line-height: 1.6; }
+.whats-new-list li + li { margin-top: 6px; }
+
+@media (max-width: 620px) {
+  .setup-mode, .setup-uses, .setup-form { grid-template-columns: 1fr; }
+  .setup-form label:nth-of-type(2), .setup-form label:nth-of-type(3) { grid-column: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xh-overlay, .xh-overlay-sheet { animation: none; }
+  .update-spinner.is-spinning { animation-duration: 2.4s; }
+}
+
+/* Preset recomendado por el asistente de bienvenida */
+.is-recommended-preset { box-shadow: 0 0 0 2px var(--accent), var(--shadow-float); }
+html.xh-overlay-open .console-side,
+html.xh-overlay-open #xh-status-wrap { filter: blur(6px); transition: filter 200ms var(--ease); }

@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('xhApi', {
 
   // Hardware y Drivers
   scanHardware: () => ipcRenderer.invoke('xh:scan-hardware'),
+  setupGet: () => ipcRenderer.invoke('xh:setup-get'),
+  setupSave: (payload) => ipcRenderer.invoke('xh:setup-save', payload),
+  whatsNew: () => ipcRenderer.invoke('xh:whats-new'),
   driversLiveCheck: () => ipcRenderer.invoke('xh:drivers-live-check'),
 
   // Catálogo e instalaciones

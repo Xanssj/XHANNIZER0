@@ -364,6 +364,7 @@
       if (window.XhI18n) window.XhI18n.apply(state.lang);
     };
     applyLanguage(state.lang);
+    state.applyLanguage = applyLanguage;
     $('#xh-lang-btn').addEventListener('click', () => {
       applyLanguage(state.lang === 'es' ? 'en' : 'es');
       showToast(state.lang === 'en' ? 'Language switched to English.' : 'Idioma cambiado a Español.');
@@ -631,6 +632,7 @@
       $('#m-advisories').textContent = String(data.advisoriesCount);
       $('#side-pc-name').textContent = sys.hostname;
       $('#side-os-name').textContent = `${sys.ramGb} GB · ${sys.osBuild}`;
+      applySetupToSidebar(state.setup);
       $('#hw-scan-meta').textContent = `${data.drivers.length} componentes detectados · ${sys.detectedVia}`;
       $('#pop-hw-state').textContent = `${data.drivers.length} detectados`;
 
@@ -2705,22 +2707,246 @@
     if (text) label.textContent = text;
   }
 
+  // Ventana superpuesta (con desenfoque) para instalar la actualización descargada
+  function isAppBusy() {
+    const busyStates = ['pending', 'downloading', 'installing'];
+    return Array.from(state.itemStatus?.values?.() || []).some((s) => busyStates.includes(s?.state))
+      || !$('#xh-setup')?.hidden;
+  }
+
+  function openUpdateOverlay() {
+    const v = updateInfo.version ? `v${updateInfo.version}` : 'la versión nueva';
+    $('#update-ov-spinner').classList.remove('is-spinning');
+    $('#update-ov-title').textContent = 'Actualización lista';
+    $('#update-ov-desc').textContent = `XHANNIZER0 ${v} ya se descargó. Se instala en unos segundos y la app se vuelve a abrir sola. Si prefieres seguir ahora, se instalará cuando cierres la app.`;
+    $('#update-ov-track').hidden = true;
+    $('#update-ov-actions').hidden = false;
+    $('#xh-update-overlay').hidden = false;
+    $('#update-ov-now').focus();
+  }
+
+  async function runUpdateInstall() {
+    const v = updateInfo.version ? ` v${updateInfo.version}` : '';
+    $('#update-ov-actions').hidden = true;
+    $('#update-ov-spinner').classList.add('is-spinning');
+    $('#update-ov-title').textContent = `Actualizando XHANNIZER0${v}…`;
+    $('#update-ov-desc').textContent = 'No apagues el PC. La app se cerrará un momento y se volverá a abrir sola cuando esté lista.';
+    $('#xh-update-overlay').hidden = false;
+    // Un instante para que se vea el aviso antes de que la app se cierre
+    await new Promise((r) => setTimeout(r, 1400));
+    const res = await api.updateInstall();
+    if (!res?.ok) {
+      $('#xh-update-overlay').hidden = true;
+      showToast(res?.error || 'No se pudo instalar la actualización.');
+    }
+  }
+
   function initAppUpdates() {
     api.onUpdateState((st) => {
       const wasReady = updateInfo.state === 'ready';
       renderUpdateButton(st);
-      if (st?.state === 'ready' && !wasReady) showToast(`XHANNIZER0 v${st.version} está lista. Toca «Reiniciar para actualizar» arriba.`);
+      if (st?.state === 'ready' && !wasReady) {
+        // Si estás instalando algo o en el asistente, no se interrumpe: queda el botón de arriba
+        if (isAppBusy()) showToast(`XHANNIZER0 v${st.version} está lista. Toca «Reiniciar para actualizar» arriba cuando termines.`);
+        else openUpdateOverlay();
+      }
     });
     api.updateState().then(renderUpdateButton).catch(() => {});
-    $('#xh-update-btn')?.addEventListener('click', async () => {
+    $('#xh-update-btn')?.addEventListener('click', () => {
       if (updateInfo.state === 'portable') {
         api.openExternal(updateInfo.url);
         return;
       }
-      if (updateInfo.state !== 'ready') return;
-      const res = await api.updateInstall();
-      if (!res?.ok) showToast(res?.error || 'No se pudo instalar la actualización.');
+      if (updateInfo.state === 'ready') openUpdateOverlay();
     });
+    $('#update-ov-later').addEventListener('click', () => {
+      $('#xh-update-overlay').hidden = true;
+      showToast('Se instalará cuando cierres XHANNIZER0. También puedes usar el botón de arriba.');
+    });
+    $('#update-ov-now').addEventListener('click', runUpdateInstall);
+  }
+
+  // Novedades: se muestran una vez, la primera vez que se abre una versión nueva
+  async function showWhatsNewIfUpdated() {
+    try {
+      const res = await api.whatsNew();
+      if (!res?.show) return;
+      $('#whats-new-badge').textContent = `Actualizado a v${res.version}`;
+      $('#whats-new-title').textContent = `Novedades de XHANNIZER0 ${res.version}`;
+      const notes = res.notes?.length ? res.notes : ['Mejoras de estabilidad y correcciones.'];
+      $('#whats-new-list').innerHTML = notes.map((n) => `<li>${esc(n)}</li>`).join('');
+      $('#xh-whats-new').hidden = false;
+    } catch {
+      // Sin novedades que mostrar
+    }
+  }
+
+  // =========================================================================
+  // Asistente de bienvenida (primera vez)
+  // =========================================================================
+  const setup = { step: 1, mode: 'auto', use: null };
+  const PRESET_FOR_USE = { gaming: 'preset-gaming', office: 'preset-office', school: 'preset-school', dev: 'preset-dev' };
+
+  function showSetupStep(n) {
+    setup.step = n;
+    $$('#xh-setup .setup-step').forEach((sec) => {
+      sec.hidden = Number(sec.dataset.step) !== n;
+    });
+    $$('#xh-setup [data-step-dot]').forEach((dot) => dot.classList.toggle('is-done', Number(dot.dataset.stepDot) <= n));
+    const first = $(`#xh-setup .setup-step[data-step="${n}"] button, #xh-setup .setup-step[data-step="${n}"] input`);
+    first?.focus();
+  }
+
+  function syncSetupLang() {
+    $$('[data-setup-lang]').forEach((b) => b.classList.toggle('is-active', b.dataset.setupLang === state.lang));
+  }
+
+  async function waitForHardware(timeoutMs = 30000) {
+    const t0 = Date.now();
+    while (!state.hardware && Date.now() - t0 < timeoutMs) await new Promise((r) => setTimeout(r, 400));
+    return state.hardware;
+  }
+
+  async function setSetupMode(mode) {
+    setup.mode = mode;
+    $$('[data-setup-mode]').forEach((b) => {
+      const on = b.dataset.setupMode === mode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', String(on));
+    });
+    const status = $('#setup-detect-status');
+    if (mode === 'manual') {
+      status.hidden = true;
+      $('#setup-cpu').focus();
+      return;
+    }
+    status.hidden = false;
+    status.textContent = 'Detectando tu PC…';
+    $('#setup-step2-next').disabled = true;
+    const hw = await waitForHardware();
+    $('#setup-step2-next').disabled = false;
+    if (setup.mode !== 'auto') return;
+    if (!hw?.system) {
+      status.textContent = 'No se pudo detectar tu PC. Escribe los datos a mano o continúa sin ellos.';
+      return;
+    }
+    const sys = hw.system;
+    $('#setup-windows').value = /Windows 10/i.test(sys.osName || '') ? 'Windows 10' : 'Windows 11';
+    $('#setup-cpu').value = String(sys.cpuName || '').replace(/\s+/g, ' ').trim();
+    $('#setup-gpu').value = sys.dedicatedGpuName || sys.integratedGpuName || '';
+    const ram = String(sys.ramGb || '');
+    $('#setup-ram').value = $(`#setup-ram option[value="${ram}"]`) ? ram : '';
+    status.textContent = 'Listo: revisa que esté bien. Si algo no coincide, corrígelo aquí mismo.';
+  }
+
+  function setSetupUse(use) {
+    setup.use = use;
+    $$('[data-setup-use]').forEach((b) => {
+      const on = b.dataset.setupUse === use;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-checked', String(on));
+    });
+  }
+
+  function applySetupToSidebar(cfg) {
+    if (!cfg?.completed || !cfg.pc) return;
+    const parts = [cfg.pc.ramGb ? `${cfg.pc.ramGb} GB` : null, cfg.pc.windows].filter(Boolean);
+    if (cfg.mode === 'manual' && parts.length) $('#side-os-name').textContent = parts.join(' · ');
+  }
+
+  async function finishSetup() {
+    const btn = $('#setup-finish');
+    btn.disabled = true;
+    const res = await api.setupSave({
+      mode: setup.mode,
+      use: setup.use || 'general',
+      pc: {
+        windows: $('#setup-windows').value,
+        cpu: $('#setup-cpu').value,
+        gpu: $('#setup-gpu').value,
+        ramGb: $('#setup-ram').value,
+      },
+    });
+    btn.disabled = false;
+    if (!res?.ok) {
+      showToast('No se pudo guardar la configuración.');
+      return;
+    }
+    state.setup = res;
+    applySetupToSidebar(res);
+    $('#xh-setup').hidden = true;
+    const presetId = PRESET_FOR_USE[res.use];
+    if (presetId) {
+      activateTab('presets');
+      setTimeout(() => {
+        const card = $(`[data-preset-select="${presetId}"]`)?.closest('article');
+        if (card) {
+          card.classList.add('is-recommended-preset');
+          card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }, 300);
+      showToast('Listo. Te marcamos el preset recomendado: toca «Cargar al lote» para revisar sus apps.');
+    } else {
+      activateTab('piloto');
+      showToast('Listo. Cuando quieras, el Piloto automático deja tu PC configurado con un botón.');
+    }
+  }
+
+  // Desenfoca también la barra lateral mientras haya una ventana superpuesta abierta
+  function watchOverlays() {
+    const overlays = $$('.xh-overlay');
+    const sync = () => document.documentElement.classList.toggle('xh-overlay-open', overlays.some((o) => !o.hidden));
+    const mo = new MutationObserver(sync);
+    overlays.forEach((o) => mo.observe(o, { attributes: true, attributeFilter: ['hidden'] }));
+    sync();
+  }
+
+  function initSetup() {
+    watchOverlays();
+    $$('[data-setup-next]').forEach((b) => b.addEventListener('click', () => showSetupStep(Number(b.dataset.setupNext))));
+    $$('[data-setup-mode]').forEach((b) => b.addEventListener('click', () => setSetupMode(b.dataset.setupMode)));
+    $$('[data-setup-use]').forEach((b) => b.addEventListener('click', () => setSetupUse(b.dataset.setupUse)));
+    $$('[data-setup-lang]').forEach((b) => b.addEventListener('click', () => {
+      state.applyLanguage?.(b.dataset.setupLang);
+      syncSetupLang();
+    }));
+    $('#setup-finish').addEventListener('click', finishSetup);
+    $('#whats-new-close').addEventListener('click', () => {
+      $('#xh-whats-new').hidden = true;
+    });
+    $('#btn-about-setup')?.addEventListener('click', () => openSetup());
+  }
+
+  async function openSetup() {
+    syncSetupLang();
+    const cfg = state.setup;
+    if (cfg?.completed) {
+      $('#setup-windows').value = cfg.pc?.windows || 'Windows 11';
+      $('#setup-cpu').value = cfg.pc?.cpu || '';
+      $('#setup-gpu').value = cfg.pc?.gpu || '';
+      $('#setup-ram').value = cfg.pc?.ramGb ? String(cfg.pc.ramGb) : '';
+      setSetupUse(cfg.use);
+    }
+    $('#xh-setup').hidden = false;
+    showSetupStep(1);
+    if (cfg?.mode === 'manual') setSetupMode('manual');
+    else setSetupMode('auto');
+  }
+
+  // Primera vez: asistente. Si ya se configuró, se aplica y, si hubo actualización, se muestran las novedades.
+  async function startOnboarding() {
+    try {
+      state.setup = await api.setupGet();
+    } catch {
+      state.setup = { completed: false };
+    }
+    if (!state.setup?.completed) {
+      openSetup();
+      api.whatsNew().catch(() => {}); // registra la versión para no mostrar «novedades» en la primera instalación
+      return;
+    }
+    applySetupToSidebar(state.setup);
+    showWhatsNewIfUpdated();
   }
 
   // =========================================================================
@@ -3903,6 +4129,8 @@
     initNewFeatures();
     initExtraFeatures();
     initAbout();
+    initSetup();
+    startOnboarding();
     await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
     renderPostFormatChecklist();
     initAppUpdates();

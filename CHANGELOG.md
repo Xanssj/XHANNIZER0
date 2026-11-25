@@ -1,5 +1,13 @@
 # Cambios
 
+## Sin publicar
+
+### Nuevo
+- **Asistente de bienvenida** al abrir la app por primera vez: idioma, datos del PC (detectados automáticamente o escritos a mano: Windows, CPU, GPU y RAM) y para qué usas el PC. Al terminar abre el preset recomendado para ese uso.
+- **Ventana de actualización**: cuando la versión nueva termina de descargarse, la app se desenfoca y aparece una ventana «Actualización lista». Al aceptar muestra «Actualizando…», instala y se vuelve a abrir sola.
+- **Novedades** después de actualizar: la app muestra qué cambió en la versión nueva.
+- Botón **Configuración inicial** en «Acerca de» para volver a abrir el asistente.
+
 ## 2.2.1 — 2026-11-25
 
 - Versión de prueba de la actualización automática: si tenías la 2.2.0, esta llegó sola con «Reiniciar para actualizar».
