@@ -2,6 +2,12 @@
 
 English notes for the "What's new" window. The full history is in CHANGELOG.md (Spanish).
 
+## 2.2.5 — 2026-11-25
+
+### Changed
+- **Windows-order window controls**: the circular window buttons now follow Windows order — Minimize (left), Maximize (middle), and Close (right).
+- Updated the packager (`electron-builder` 26) for cleaner, more secure builds.
+
 ## 2.2.4 — 2026-11-25
 
 ### Security & quality

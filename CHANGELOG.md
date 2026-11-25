@@ -1,5 +1,11 @@
 # Cambios
 
+## 2.2.5 — 2026-11-25
+
+### Cambiado
+- **Controles de ventana en orden de Windows**: los botones circulares ahora siguen el orden Minimizar (izquierda), Maximizar (medio) y Cerrar (derecha).
+- Actualizado el empaquetador (`electron-builder` 26) para mejorar la seguridad de las compilaciones.
+
 ## 2.2.4 — 2026-11-25
 
 ### Seguridad y calidad

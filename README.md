@@ -8,7 +8,7 @@
 
 Una app gratuita de [xhanni (Xhanni Studios)](https://xhannistudios.org).
 
-![Versión](https://img.shields.io/badge/Versi%C3%B3n-2.2.4-0071E3?style=for-the-badge)
+![Versión](https://img.shields.io/badge/Versi%C3%B3n-2.2.5-0071E3?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/Windows-11%20%2F%2010%20x64-1C1C1E?style=for-the-badge)
 ![Licencia](https://img.shields.io/badge/Licencia-MIT-6E6E73?style=for-the-badge)
 [![Pruebas](https://img.shields.io/github/actions/workflow/status/Xanssj/XHANNIZER0/tests.yml?label=Pruebas&style=for-the-badge)](https://github.com/Xanssj/XHANNIZER0/actions/workflows/tests.yml)

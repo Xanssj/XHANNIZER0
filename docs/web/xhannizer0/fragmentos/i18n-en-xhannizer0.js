@@ -17,7 +17,7 @@
     'Drivers, programas, ajustes y limpieza en un solo lugar. Gratis, sin cuentas y sin publicidad.': 'Drivers, apps, settings and cleanup in one place. Free, no account and no ads.',
     'Descargar para Windows': 'Download for Windows',
     'Ver qué hace': 'See what it does',
-    'Versión 2.2.4 · Windows 10 y 11 de 64 bits · Código abierto (MIT)': 'Version 2.2.4 · Windows 10 and 11, 64-bit · Open source (MIT)',
+    'Versión 2.2.5 · Windows 10 y 11 de 64 bits · Código abierto (MIT)': 'Version 2.2.5 · Windows 10 and 11, 64-bit · Open source (MIT)',
     'Qué hace': 'What it does',
     'Un botón y tu PC queda listo.': 'One button and your PC is ready.',
     'Todo lo que haces a mano después de formatear o armar un PC, en orden y desde fuentes oficiales.': 'Everything you do by hand after a clean install or a new build, in order and from official sources.',
