@@ -91,4 +91,13 @@
     'Sin anuncios, sin cuentas y sin telemetría': 'No ads, no accounts and no telemetry',
     'Ver la app': 'See the app',
     '¿Sin instalar? Descarga la versión portable': 'No install? Get the portable version',
+    // Página /xhannizer0/perfil
+    'Perfil compartido · XHANNIZER0': 'Shared profile · XHANNIZER0',
+    'Te compartieron un perfil': 'Someone shared a profile with you',
+    'Trae una lista de apps y ajustes de Windows. Al abrirlo, XHANNIZER0 te los muestra para que elijas qué aplicar: nada se instala ni se cambia sin tu confirmación.': 'It contains a list of apps and Windows settings. When you open it, XHANNIZER0 shows them so you choose what to apply: nothing is installed or changed without your confirmation.',
+    'Abrir en XHANNIZER0': 'Open in XHANNIZER0',
+    'Copiar código': 'Copy code',
+    '¿No tienes la app?': "Don't have the app?",
+    'Descárgala gratis': 'Download it for free',
+    ', instálala y vuelve a abrir este enlace.': ', install it and open this link again.',
     'Nuevo': 'New', // solo si no existe ya en el diccionario

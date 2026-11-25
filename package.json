@@ -70,7 +70,19 @@
         "repo": "XHANNIZER0",
         "releaseType": "release"
       }
+    ],
+    "protocols": [
+      {
+        "name": "Perfil de XHANNIZER0",
+        "schemes": [
+          "xhannizer0"
+        ]
+      }
     ]
   },
-  "homepage": "https://xhannistudios.org"
+  "homepage": "https://xhannistudios.org",
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "qrcode": "^1.5.4"
+  }
 }

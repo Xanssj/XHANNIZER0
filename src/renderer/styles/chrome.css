@@ -105,6 +105,7 @@
   -webkit-app-region: no-drag;
 }
 
+.xh-update-btn,
 .xh-downloads-btn,
 .xh-chrome-icon-btn {
   all: unset;
@@ -128,12 +129,22 @@
   transition: transform 100ms ease-out, background-color 140ms ease;
 }
 
+.xh-update-btn:hover,
 .xh-downloads-btn:hover,
 .xh-chrome-icon-btn:hover { background: var(--card-hover); }
 .xh-downloads-btn:active,
 .xh-chrome-icon-btn:active { transform: scale(0.97); }
+.xh-update-btn svg,
 .xh-downloads-btn svg,
 .xh-chrome-icon-btn svg { width: 14px; height: 14px; color: var(--link); }
+
+/* Actualización automática: discreto mientras descarga, destacado cuando está lista */
+.xh-update-btn[hidden] { display: none; }
+.xh-update-btn { font-variant-numeric: tabular-nums; }
+.xh-update-btn:disabled { opacity: 0.85; }
+.xh-update-btn.is-ready { background: var(--accent); color: #fff; }
+.xh-update-btn.is-ready:hover { background: var(--accent-hover); }
+.xh-update-btn.is-ready svg { color: #fff; }
 
 .xh-downloads-badge {
   min-width: 17px;

@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-const { detectHardwareAndDrivers, getLastHardwareScan } = require('./src/backend/hardware');
+const { detectHardwareAndDrivers, getLastHardwareScan, formatNvidiaVersion } = require('./src/backend/hardware');
+const { checkDriverUpdates } = require('./src/backend/driverCheck');
 const { getCatalogWithStatusAsync, setCatalogOverrides } = require('./src/backend/catalog');
 const { getEmulatorsCatalog, resolveGithubLatestRelease } = require('./src/backend/emulators');
 const { hasWinget, runBatchInstall } = require('./src/backend/installer');
@@ -44,10 +45,13 @@ const { restartExplorer } = require('./src/backend/windowsAudit');
 const { compareVersions } = require('./src/backend/semver');
 const bios = require('./src/backend/bios');
 const biosUpdate = require('./src/backend/biosUpdate');
+const appUpdater = require('./src/backend/appUpdater');
+const windowsMedia = require('./src/backend/windowsMedia');
 const cleanup = require('./src/backend/cleanup');
 const benchmark = require('./src/backend/benchmark');
 const stability = require('./src/backend/stability');
 const { encodeProfileCode, decodeProfileCode } = require('./src/backend/profileCode');
+const QRCode = require('qrcode');
 const { buildReportHtml } = require('./src/backend/report');
 const autopilot = require('./src/backend/autopilot');
 const os = require('os');
@@ -255,6 +259,51 @@ ipcMain.handle('xh:scan-hardware', async () => {
   return scan;
 });
 
+// Versiones en vivo: pregunta a Windows Update qué driver más nuevo existe para cada componente
+// del último escaneo. Solo consulta (sin admin, sin instalar) y actualiza el escaneo guardado.
+let liveCheckBusy = null;
+ipcMain.handle('xh:drivers-live-check', async () => {
+  const scan = getLastHardwareScan();
+  if (!scan) return { ok: false, error: 'Primero escanea el hardware.' };
+  if (!liveCheckBusy) {
+    liveCheckBusy = (async () => {
+      const targets = scan.drivers
+        .filter((d) => d.category !== 'motherboard' && (d.pnpInstanceIds?.length || d.pnpScope))
+        .map((d) => ({ id: d.id, instanceIds: d.pnpInstanceIds || [], scope: d.pnpScope || null }));
+      const res = await checkDriverUpdates(targets);
+      for (const d of scan.drivers) {
+        if (d.category === 'motherboard') continue;
+        if (!res.ok) {
+          d.liveCheck = 'error';
+          d.targetLabel = 'Sin respuesta de Windows Update';
+          continue;
+        }
+        const found = res.byId[d.id] || [];
+        d.liveCheck = 'done';
+        if (found.length) {
+          const best = found[0];
+          const ver = best.version ? (d.vendor === 'NVIDIA' ? formatNvidiaVersion(best.version) : best.version) : null;
+          d.needsUpdate = true;
+          d.latestVersion = ver || best.title;
+          d.latestDate = best.date;
+          d.latestTitle = best.title;
+          d.targetLabel = null;
+          if (d.status === 'ok') d.status = 'available';
+        } else {
+          d.needsUpdate = false;
+          d.latestVersion = null;
+          d.targetLabel = 'Al día en Windows Update';
+        }
+      }
+      scan.updatesCount = scan.drivers.filter((d) => d.needsUpdate).length;
+      return { ok: res.ok, drivers: scan.drivers, updatesCount: scan.updatesCount };
+    })().finally(() => {
+      liveCheckBusy = null;
+    });
+  }
+  return liveCheckBusy;
+});
+
 // Última BIOS publicada por el fabricante para la placa detectada (se guarda aquí: la interfaz
 // nunca envía URLs ni huellas de descarga).
 let lastBiosLookup = null;
@@ -280,6 +329,16 @@ async function applyBiosLookup(scan) {
     flashTool: look.flashTool,
     error: look.error || null,
   };
+  if (!look.supported && look.supportUrl) {
+    board.targetLabel = 'Revisa la última en «Web de la placa»';
+    board.advisory = {
+      level: 'info',
+      title: 'Cómo actualizar la BIOS de forma segura',
+      summary: `Descarga la BIOS de tu modelo exacto desde «Web de la placa», cópiala a una USB en FAT32 e instálala con ${look.flashTool} desde la BIOS. No la actualices desde Windows.`,
+      recommendation: 'bios-usb',
+    };
+    return;
+  }
   if (!look.latest) return;
   board.latestVersion = look.latest.version;
   board.targetLabel = look.isNewer
@@ -518,7 +577,17 @@ ipcMain.handle('xh:import-profile', async () => {
 });
 
 // ---------- Auto-actualizador vía GitHub Releases (Xanssj/XHANNIZER0)
-ipcMain.handle('xh:check-app-update', async () => {
+ipcMain.handle('xh:check-app-update', async () => checkLatestRelease());
+
+// Actualización automática: descarga en segundo plano y se instala al reiniciar (ver appUpdater.js)
+ipcMain.handle('xh:update-state', async () => appUpdater.getState());
+ipcMain.handle('xh:update-check', async () => appUpdater.checkNow(checkLatestRelease));
+ipcMain.handle('xh:update-install', async () => {
+  logAction('update', { label: `Actualización a v${appUpdater.getState().version || '?'}` });
+  return appUpdater.installNow();
+});
+
+function checkLatestRelease() {
   const currentVersion = app.getVersion();
   return new Promise((resolve) => {
     const req = https.get(
@@ -553,7 +622,7 @@ ipcMain.handle('xh:check-app-update', async () => {
     req.on('error', () => resolve({ ok: false, currentVersion, hasUpdate: false }));
     req.on('timeout', () => { req.destroy(); resolve({ ok: false, currentVersion, hasUpdate: false }); });
   });
-});
+}
 
 // ---------- Eliminar un respaldo antiguo (estrictamente limitado a BACKUP_ROOT)
 ipcMain.handle('xh:delete-backup', async (_event, backupId) => {
@@ -750,12 +819,16 @@ ipcMain.handle('xh:migration-export', async (_event, payload) => {
   const catalog = await getCatalogWithStatusAsync();
   migrationBusy = true;
   try {
+    sendMigrationProgress({ step: 'Midiendo el rendimiento actual («antes»)…', percent: 2 });
+    const snap = await benchmark.takeSnapshot({ startupEnabled: await countStartupEnabled() });
+    const before = snap.ok ? benchmark.sanitizeSnapshot({ ...snap.snapshot, pcName: require('os').hostname() }) : null;
     return await migration.exportMigration({
       destDir: payload?.destDir,
       folders,
       settingIds,
       catalog,
       profile: payload?.profile || null,
+      before,
       onProgress: sendMigrationProgress,
     });
   } finally {
@@ -773,11 +846,14 @@ ipcMain.handle('xh:migration-open', async () => {
   if (res.canceled || !res.filePaths?.[0]) return { canceled: true };
   const mig = migration.readMigration(res.filePaths[0]);
   if (!mig.ok) return mig;
+  const importedBaseline = mig.before ? benchmark.importBaseline(mig.before).imported : false;
+  delete mig.before;
   const catalog = await getCatalogWithStatusAsync();
   const installedIds = new Set(catalog.filter((c) => c.installed && c.wingetId).map((c) => c.wingetId.toLowerCase()));
   return {
     ...mig,
     packages: mig.packages.map((p) => ({ ...p, installed: installedIds.has(p.wingetId.toLowerCase()) })),
+    importedBaseline,
   };
 });
 
@@ -873,15 +949,43 @@ ipcMain.handle('xh:bios-usb', async () => {
     cancelId: shown.length,
     title: 'BIOS por USB — XHANNIZER0',
     message: `¿En qué memoria USB copio la BIOS ${look.latest.version}?`,
-    detail: 'Se descarga desde el servidor oficial de MSI, se verifica su huella SHA-256 y se copia a la raíz de la USB. No se borra nada de la USB ni se toca la BIOS desde Windows. La USB debe estar en FAT32.',
+    detail: 'Se descarga desde el servidor oficial de MSI, se verifica su huella SHA-256 y se copia a la raíz de la USB. No se toca la BIOS desde Windows. Si la USB no está en FAT32 te preguntaré antes de formatearla.',
   });
   if (response >= shown.length) return { ok: false, canceled: true };
+  const chosen = shown[response];
+
+  // M-Flash solo lee FAT32: si no lo está, se ofrece formatear con doble confirmación (borra todo).
+  if (!/^FAT32$/i.test(chosen.fileSystem)) {
+    const first = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Formatear en FAT32', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'La USB no está en FAT32 — XHANNIZER0',
+      message: `La USB ${chosen.letter} «${chosen.label}» está en ${chosen.fileSystem || 'formato desconocido'}.`,
+      detail: 'La BIOS solo lee memorias en FAT32. Puedo formatearla, pero eso BORRA TODO lo que tiene. Si tienes archivos ahí, cancela y cópialos antes.',
+    });
+    if (first.response !== 0) return { ok: false, canceled: true };
+    const second = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: [`Sí, borrar ${chosen.letter} y formatear`, 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Confirmar formateo — XHANNIZER0',
+      message: `¿Seguro? Se borrará todo en ${chosen.letter} «${chosen.label}» (${chosen.sizeGb} GB).`,
+      detail: 'Esto no se puede deshacer.',
+    });
+    if (second.response !== 0) return { ok: false, canceled: true };
+    const fmt = await biosUpdate.formatUsbFat32(chosen.letter);
+    logAction('bios', { label: `USB ${chosen.letter} formateada en FAT32`, ok: fmt.ok, detail: fmt.error });
+    if (!fmt.ok) return fmt;
+  }
   biosUsbBusy = true;
   const emit = (detail) => {
     if (win && !win.isDestroyed()) win.webContents.send('xh:bios-usb-progress', { detail });
   };
   try {
-    const res = await biosUpdate.prepareBiosUsb({ latest: look.latest, boardCode: look.boardCode, drive: shown[response].letter, onProgress: emit });
+    const res = await biosUpdate.prepareBiosUsb({ latest: look.latest, boardCode: look.boardCode, drive: chosen.letter, onProgress: emit });
     logAction('bios', { label: `BIOS ${look.latest.version} copiada a USB`, ok: res.ok, detail: res.error || res.file });
     if (!res.ok) return res;
     const steps = await dialog.showMessageBox(win, {
@@ -907,6 +1011,22 @@ ipcMain.handle('xh:bios-usb', async () => {
     return res;
   } finally {
     biosUsbBusy = false;
+  }
+});
+
+// USB de instalación de Windows: abre la Media Creation Tool oficial (verificada por firma)
+let mediaBusy = false;
+ipcMain.handle('xh:windows-usb', async () => {
+  if (mediaBusy) return { ok: false, error: 'Ya se está abriendo la herramienta.' };
+  mediaBusy = true;
+  try {
+    const res = await windowsMedia.launchMediaCreationTool((detail) => {
+      if (win && !win.isDestroyed()) win.webContents.send('xh:windows-usb-progress', { detail });
+    });
+    logAction('windows-usb', { label: 'Media Creation Tool de Microsoft', ok: res.ok, detail: res.error });
+    return res;
+  } finally {
+    mediaBusy = false;
   }
 });
 
@@ -958,10 +1078,13 @@ ipcMain.handle('xh:cleanup-run', async (_event, payload) => {
 
 // ---------- Antes y después
 ipcMain.handle('xh:benchmark-get', async () => benchmark.getBenchmark());
-ipcMain.handle('xh:benchmark-take', async (_event, payload) => {
+async function countStartupEnabled() {
   const startup = await listStartupApps();
-  const startupEnabled = (startup.items || []).filter((s) => s.enabled !== false).length;
-  const res = await benchmark.takeSnapshot({ startupEnabled });
+  return (startup.items || []).filter((s) => s.enabled !== false).length;
+}
+
+ipcMain.handle('xh:benchmark-take', async (_event, payload) => {
+  const res = await benchmark.takeSnapshot({ startupEnabled: await countStartupEnabled() });
   if (!res.ok) return res;
   return benchmark.saveSnapshot(res.snapshot, Boolean(payload?.asBaseline));
 });
@@ -996,10 +1119,53 @@ ipcMain.handle('xh:stability-run', async (_event, payload) => {
 ipcMain.handle('xh:stability-stop', async () => stability.stopStabilityTest());
 
 // ---------- Perfiles con código
+// El código viaja en el #fragmento: la web nunca lo recibe (los navegadores no envían el fragmento).
+const PROFILE_WEB = 'https://xhannistudios.org/xhannizer0/perfil#';
 ipcMain.handle('xh:profile-code-encode', async (_event, payload) => {
   const res = encodeProfileCode(payload || {});
-  if (res.ok) clipboard.writeText(res.code);
-  return res;
+  if (!res.ok) return res;
+  clipboard.writeText(res.code);
+  const link = PROFILE_WEB + res.code;
+  let qrSvg = null;
+  // Un QR con más de ~1500 caracteres ya no se lee bien con el celular
+  if (link.length <= 1500) {
+    try {
+      qrSvg = await QRCode.toString(link, { type: 'svg', errorCorrectionLevel: 'L', margin: 1 });
+    } catch {
+      qrSvg = null;
+    }
+  }
+  return { ...res, link, qrSvg };
+});
+ipcMain.handle('xh:copy-text', async (_event, text) => {
+  if (typeof text !== 'string' || text.length > 20000) return { ok: false };
+  clipboard.writeText(text);
+  return { ok: true };
+});
+
+// Enlaces xhannizer0://perfil/XHZ1-… (desde la web o un QR): se cargan para revisar, nunca se aplican solos
+const PROFILE_LINK_RE = /^xhannizer0:\/\/perfil\/?(XHZ1-[A-Za-z0-9_-]{4,12000})/i;
+function profileCodeFromArgv(argv) {
+  for (const a of argv || []) {
+    const m = String(a).match(PROFILE_LINK_RE);
+    if (m) return m[1];
+  }
+  return null;
+}
+let pendingProfileCode = profileCodeFromArgv(process.argv);
+function deliverProfileCode(code) {
+  if (!code) return;
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    win.webContents.send('xh:profile-link', { code });
+    pendingProfileCode = null;
+  } else {
+    pendingProfileCode = code;
+  }
+}
+ipcMain.handle('xh:profile-link-pending', async () => {
+  const code = pendingProfileCode;
+  pendingProfileCode = null;
+  return code ? { code } : null;
 });
 ipcMain.handle('xh:profile-code-decode', async (_event, code) => decodeProfileCode(code));
 
@@ -1069,10 +1235,11 @@ ipcMain.handle('xh:autopilot-reboot', async () => {
 });
 ipcMain.handle('xh:autopilot-cancel-reboot', async () => autopilot.cancelResume());
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
   if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.focus();
+  deliverProfileCode(profileCodeFromArgv(argv));
 });
 
 // ---------- Catálogo remoto (correcciones sin publicar una versión nueva)
@@ -1117,6 +1284,13 @@ function refreshRemoteCatalog() {
 app.whenReady().then(() => {
   loadCachedCatalogOverrides();
   refreshRemoteCatalog();
+  if (app.isPackaged) app.setAsDefaultProtocolClient('xhannizer0');
   createWindow();
+  appUpdater.init({
+    checkLatest: checkLatestRelease,
+    onState: (st) => {
+      if (win && !win.isDestroyed()) win.webContents.send('xh:update-state', st);
+    },
+  });
 });
 app.on('window-all-closed', () => app.quit());

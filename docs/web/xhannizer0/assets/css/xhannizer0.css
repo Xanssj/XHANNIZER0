@@ -76,3 +76,9 @@
   color: var(--label-2);
   line-height: 1.55;
 }
+
+/* ==================== /xhannizer0/perfil ==================== */
+.xz-profile { text-align: center; min-height: 60vh; display: grid; align-items: center; }
+.xz-profile .hero-actions { justify-content: center; }
+.xz-profile-copy { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.xz-profile-copy[hidden] { display: none; }

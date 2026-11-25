@@ -101,4 +101,32 @@ function saveSnapshot(snapshot, asBaseline) {
   return getBenchmark();
 }
 
-module.exports = { initBenchmark, takeSnapshot, saveSnapshot, getBenchmark, compareSnapshots, METRICS };
+// Deja solo números conocidos: la foto puede venir de un archivo de migración (USB).
+function sanitizeSnapshot(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  for (const m of METRICS) if (Number.isFinite(raw[m.key])) out[m.key] = raw[m.key];
+  if (Number.isFinite(raw.ramTotalMb)) out.ramTotalMb = raw.ramTotalMb;
+  if (!Object.keys(out).length) return null;
+  const at = new Date(raw.takenAt);
+  out.takenAt = Number.isNaN(at.getTime()) ? null : at.toISOString();
+  if (typeof raw.pcName === 'string') out.pcName = raw.pcName.slice(0, 64);
+  return out;
+}
+
+// «Antes» traído desde la USB de migración: lo que se midió en el PC antes de formatear.
+// Solo reemplaza una línea base más vieja (o inexistente).
+function importBaseline(raw) {
+  const snap = sanitizeSnapshot(raw);
+  if (!snap) return { imported: false };
+  const store = readStore();
+  const current = store.baseline?.takenAt ? new Date(store.baseline.takenAt).getTime() : 0;
+  const incoming = snap.takenAt ? new Date(snap.takenAt).getTime() : 0;
+  if (store.baseline && current >= incoming) return { imported: false };
+  store.baseline = { ...snap, fromMigration: true };
+  store.latest = null;
+  writeStore(store);
+  return { imported: true };
+}
+
+module.exports = { initBenchmark, takeSnapshot, saveSnapshot, getBenchmark, compareSnapshots, importBaseline, sanitizeSnapshot, METRICS };

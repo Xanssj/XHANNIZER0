@@ -10,7 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { runPowerShell, psData } = require('./powershell');
+const { runPowerShell, runElevated, psData } = require('./powershell');
 
 const MSI_DOWNLOAD_HOST = 'download.msi.com';
 const WORK_DIR = path.join(os.tmpdir(), 'XHANNIZER0_bios');
@@ -71,10 +71,12 @@ function supportUrlFor(manufacturer, product) {
     const { slug } = parseMsiProduct(product);
     return slug ? `https://www.msi.com/Motherboard/${slug}/support#bios` : 'https://www.msi.com/support/download/';
   }
+  // ASUS, Gigabyte y ASRock no tienen una API pública de BIOS: se abre la búsqueda oficial del modelo.
   const m = String(manufacturer || '').toUpperCase();
-  if (/ASUS/.test(m)) return 'https://www.asus.com/support/download-center/';
-  if (/GIGABYTE/.test(m)) return 'https://www.gigabyte.com/Support';
-  if (/ASROCK/.test(m)) return 'https://www.asrock.com/support/index.asp';
+  const model = encodeURIComponent(String(product || '').replace(/\(.*?\)/g, '').trim());
+  if (/ASUS/.test(m)) return model ? `https://www.asus.com/support/search-results/?keyword=${model}` : 'https://www.asus.com/support/download-center/';
+  if (/GIGABYTE/.test(m)) return model ? `https://www.gigabyte.com/Search?kw=${model}` : 'https://www.gigabyte.com/Support';
+  if (/ASROCK/.test(m)) return model ? `https://www.asrock.com/search/index.asp?Keyword=${model}` : 'https://www.asrock.com/support/index.asp';
   return null;
 }
 
@@ -188,6 +190,28 @@ async function listUsbDrives() {
     }));
 }
 
+// Formatea una memoria USB extraíble en FAT32 (borra todo su contenido). Solo unidades
+// extraíbles (DriveType=2) de hasta 32 GB: Windows no crea FAT32 en volúmenes más grandes.
+async function formatUsbFat32(letter) {
+  const drives = await listUsbDrives();
+  const usb = drives.find((d) => d.letter === String(letter || '').toUpperCase());
+  if (!usb) return { ok: false, error: 'No encuentro esa memoria USB.' };
+  if (usb.sizeGb > 32.5) {
+    return { ok: false, error: `La USB ${usb.letter} tiene ${usb.sizeGb} GB y Windows solo formatea en FAT32 hasta 32 GB. Usa una USB de 32 GB o menos.` };
+  }
+  const elev = await runElevated(
+    `$l = ${psData(usb.letter.slice(0, 1))}
+$v = Get-Volume -DriveLetter $l
+if ((Get-Partition -DriveLetter $l | Get-Disk).BusType -ne 'USB') { exit 3 }
+Format-Volume -DriveLetter $l -FileSystem FAT32 -NewFileSystemLabel 'BIOS' -Force -Confirm:$false | Out-Null`,
+    5 * 60 * 1000
+  );
+  if (elev.cancelled) return { ok: false, error: 'Formateo cancelado: Windows pidió permisos de administrador.' };
+  const after = (await listUsbDrives()).find((d) => d.letter === usb.letter);
+  if (!after || !/^FAT32$/i.test(after.fileSystem)) return { ok: false, error: 'Windows no pudo formatear la USB en FAT32.' };
+  return { ok: true, drive: after };
+}
+
 function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -273,6 +297,7 @@ async function prepareBiosUsb({ latest, boardCode, drive, onProgress = () => {} 
 module.exports = {
   lookupLatestBios,
   listUsbDrives,
+  formatUsbFat32,
   prepareBiosUsb,
   parseMsiProduct,
   parseMsiVersion,

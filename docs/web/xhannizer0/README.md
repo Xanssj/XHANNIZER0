@@ -23,6 +23,14 @@ Los botones «Descargar» apuntan a `xhannizer0/descargar` (y el enlace portable
 
 La versión 2.1.0 ya está publicada, así que la ruta funciona desde hoy y toma sola cada versión nueva.
 
+### Página de perfiles compartidos (`/xhannizer0/perfil`)
+
+La app genera enlaces como `https://xhannistudios.org/xhannizer0/perfil#XHZ1-…` (y su QR). Sirve `perfil.html` en la ruta `/xhannizer0/perfil` y copia `assets/js/xhannizer0-perfil.js` a `assets/js/`. La página usa rutas absolutas (`/assets/…`), así que funciona aunque esté dentro de `/xhannizer0/`.
+
+- El código va después del `#`: el navegador nunca lo envía al servidor y no hay que guardar nada.
+- El botón «Abrir en XHANNIZER0» lleva a `xhannizer0://perfil/XHZ1-…`; la app (desde la próxima versión) lo recibe y muestra el perfil para revisarlo antes de aplicar nada.
+- Si la CSP del sitio bloquea el esquema `xhannizer0:` en enlaces, no hace falta cambiarla: es una navegación normal, no una petición.
+
 ## Paso a paso
 
 1. **Copia los archivos nuevos** a la carpeta del sitio:

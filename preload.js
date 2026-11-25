@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('xhApi', {
 
   // Hardware y Drivers
   scanHardware: () => ipcRenderer.invoke('xh:scan-hardware'),
+  driversLiveCheck: () => ipcRenderer.invoke('xh:drivers-live-check'),
 
   // Catálogo e instalaciones
   getCatalog: () => ipcRenderer.invoke('xh:get-catalog'),
@@ -76,6 +77,14 @@ contextBridge.exposeInMainWorld('xhApi', {
 
   // Auto-actualizador, Gestión de Respaldos y Kit USB
   checkAppUpdate: () => ipcRenderer.invoke('xh:check-app-update'),
+  updateState: () => ipcRenderer.invoke('xh:update-state'),
+  updateCheck: () => ipcRenderer.invoke('xh:update-check'),
+  updateInstall: () => ipcRenderer.invoke('xh:update-install'),
+  onUpdateState: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('xh:update-state', handler);
+    return () => ipcRenderer.removeListener('xh:update-state', handler);
+  },
   deleteBackup: (backupId) => ipcRenderer.invoke('xh:delete-backup', backupId),
   restoreBackup: (backupId) => ipcRenderer.invoke('xh:restore-backup', backupId),
   createUsbKit: (payload) => ipcRenderer.invoke('xh:create-usb-kit', payload),
@@ -121,6 +130,12 @@ contextBridge.exposeInMainWorld('xhApi', {
   biosGuide: (payload) => ipcRenderer.invoke('xh:bios-guide', payload),
   rebootToBios: () => ipcRenderer.invoke('xh:reboot-to-bios'),
   prepareBiosUsb: () => ipcRenderer.invoke('xh:bios-usb'),
+  windowsUsb: () => ipcRenderer.invoke('xh:windows-usb'),
+  onWindowsUsbProgress: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('xh:windows-usb-progress', handler);
+    return () => ipcRenderer.removeListener('xh:windows-usb-progress', handler);
+  },
   onBiosUsbProgress: (cb) => {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on('xh:bios-usb-progress', handler);
@@ -151,6 +166,13 @@ contextBridge.exposeInMainWorld('xhApi', {
   // Perfiles con código e informe técnico
   profileCodeEncode: (payload) => ipcRenderer.invoke('xh:profile-code-encode', payload),
   profileCodeDecode: (code) => ipcRenderer.invoke('xh:profile-code-decode', code),
+  copyText: (text) => ipcRenderer.invoke('xh:copy-text', text),
+  profileLinkPending: () => ipcRenderer.invoke('xh:profile-link-pending'),
+  onProfileLink: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('xh:profile-link', handler);
+    return () => ipcRenderer.removeListener('xh:profile-link', handler);
+  },
   reportPdf: (payload) => ipcRenderer.invoke('xh:report-pdf', payload),
 
   // Piloto automático

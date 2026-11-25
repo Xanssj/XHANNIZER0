@@ -571,15 +571,13 @@
       const btn = e.currentTarget;
       btn.disabled = true;
       try {
-        const upd = await api.checkAppUpdate();
-        if (upd?.hasUpdate) {
-          showToast(`Hay una versión nueva (v${upd.latestVersion}). Se abre la página de descarga.`);
-          api.openExternal('https://github.com/Xanssj/XHANNIZER0/releases/latest');
-        } else if (!upd?.ok) {
-          showToast('No se pudo revisar: sin conexión o GitHub no respondió.');
-        } else {
-          showToast('Ya tienes la última versión.');
-        }
+        const st = await api.updateCheck();
+        if (st?.state === 'downloading') showToast(`Descargando v${st.version || ''} en segundo plano. Te avisamos arriba cuando esté lista.`);
+        else if (st?.state === 'ready') showToast('La actualización ya está lista: toca «Reiniciar para actualizar» arriba.');
+        else if (st?.state === 'portable') showToast(`Hay una versión nueva (v${st.version}). Toca el botón de arriba para descargar la portable.`);
+        else if (st?.state === 'dev') showToast('Modo desarrollo: las actualizaciones automáticas solo funcionan en la app instalada.');
+        else if (st?.state === 'error') showToast('No se pudo revisar: sin conexión o GitHub no respondió.');
+        else showToast('Ya tienes la última versión.');
       } catch {
         showToast('No se pudo revisar: sin conexión o GitHub no respondió.');
       } finally {
@@ -650,9 +648,27 @@
       renderPostFormatChecklist();
       updateStatusPill();
       if (notify) showToast('Escaneo de hardware actualizado.');
+      liveCheckDrivers();
     } catch (err) {
       $('#hw-scan-meta').textContent = 'Error al escanear hardware.';
       showToast(`Error al detectar hardware: ${err.message}`);
+    }
+  }
+
+  // Pregunta a Windows Update por versiones más nuevas (tarda: corre después de mostrar el escaneo)
+  async function liveCheckDrivers() {
+    const scanned = state.hardware;
+    try {
+      const res = await api.driversLiveCheck();
+      if (!res?.drivers || state.hardware !== scanned) return;
+      state.hardware.drivers = res.drivers;
+      state.hardware.updatesCount = res.updatesCount;
+      $('#m-updates').textContent = String(res.updatesCount);
+      renderDrivers();
+      renderPostFormatChecklist();
+      updateStatusPill();
+    } catch {
+      // Sin Windows Update: las tarjetas quedan con su enlace oficial
     }
   }
 
@@ -688,7 +704,9 @@
           badgeHtml = `<span class="pill-badge is-recommended">Actualización oficial</span>`;
         } else if (drv.bios?.isNewer) {
           badgeHtml = `<span class="pill-badge is-recommended">BIOS nueva</span>`;
-        } else if (drv.targetLabel && !drv.bios?.latestVersion) {
+        } else if (drv.liveCheck === 'pending') {
+          badgeHtml = `<span class="pill-badge is-neutral">Consultando…</span>`;
+        } else if (drv.liveCheck === 'error' || (drv.category === 'motherboard' && !drv.bios?.latestVersion)) {
           badgeHtml = `<span class="pill-badge is-neutral">Sin comparar</span>`;
         } else {
           badgeHtml = `<span class="pill-badge is-ok">Al día</span>`;
@@ -723,9 +741,7 @@
           : '';
 
         const targetVersionLabel = drv.needsUpdate
-          ? drv.advisory?.recommendation === 'safe'
-            ? drv.safeVersion
-            : drv.latestVersion
+          ? `${drv.latestVersion || drv.safeVersion}${drv.latestDate ? ` (${drv.latestDate})` : ''}`
           : drv.targetLabel || 'Actualizado';
 
         const companionBadge = drv.companionApp?.installed
@@ -759,7 +775,8 @@
                     <span class="ver-arrow">→</span>
                     <span class="ver-new">${esc(targetVersionLabel)}</span>
                   </span>
-                  <span>Fuente: ${esc(drv.sourceName)}</span>
+                  <span>Fuente: ${esc(drv.needsUpdate && drv.latestTitle ? 'Windows Update (WHQL)' : drv.sourceName)}</span>
+                  ${drv.vendorHint && !drv.needsUpdate && drv.liveCheck === 'done' ? `<span>${esc(drv.vendorHint)}</span>` : ''}
                   <span>${esc(drv.hardwareDetail)}</span>
                 </div>
               </div>
@@ -2664,15 +2681,46 @@
     });
   }
 
-  async function checkAppUpdateSilently() {
-    try {
-      const upd = await api.checkAppUpdate();
-      if (upd?.hasUpdate) {
-        showToast(`Nueva versión de XHANNIZER0 disponible (v${upd.latestVersion}) en GitHub.`);
+  // Actualización automática: el proceso principal descarga la versión nueva en segundo plano
+  // y aquí solo se muestra el botón de arriba («Reiniciar para actualizar»).
+  let updateInfo = { state: 'idle' };
+  function renderUpdateButton(st) {
+    updateInfo = st || updateInfo;
+    const btn = $('#xh-update-btn');
+    const label = $('#xh-update-label');
+    if (!btn || !label) return;
+    const v = updateInfo.version ? ` v${updateInfo.version}` : '';
+    let text = null;
+    if (updateInfo.state === 'downloading') text = `Descargando${v} · ${Number(updateInfo.percent) || 0}%`;
+    else if (updateInfo.state === 'ready') text = `Reiniciar para actualizar${v}`;
+    else if (updateInfo.state === 'portable') text = `Nueva versión${v}`;
+    btn.hidden = !text;
+    btn.classList.toggle('is-ready', updateInfo.state === 'ready' || updateInfo.state === 'portable');
+    btn.disabled = updateInfo.state === 'downloading';
+    btn.title = updateInfo.state === 'ready'
+      ? 'La actualización ya se descargó. Se instala en segundos y la app se vuelve a abrir sola.'
+      : updateInfo.state === 'portable'
+      ? 'La versión portable no se actualiza sola: descarga la nueva y reemplaza el archivo.'
+      : 'Descargando la actualización en segundo plano.';
+    if (text) label.textContent = text;
+  }
+
+  function initAppUpdates() {
+    api.onUpdateState((st) => {
+      const wasReady = updateInfo.state === 'ready';
+      renderUpdateButton(st);
+      if (st?.state === 'ready' && !wasReady) showToast(`XHANNIZER0 v${st.version} está lista. Toca «Reiniciar para actualizar» arriba.`);
+    });
+    api.updateState().then(renderUpdateButton).catch(() => {});
+    $('#xh-update-btn')?.addEventListener('click', async () => {
+      if (updateInfo.state === 'portable') {
+        api.openExternal(updateInfo.url);
+        return;
       }
-    } catch {
-      // Silencioso si no hay conexión
-    }
+      if (updateInfo.state !== 'ready') return;
+      const res = await api.updateInstall();
+      if (!res?.ok) showToast(res?.error || 'No se pudo instalar la actualización.');
+    });
   }
 
   // =========================================================================
@@ -2872,6 +2920,10 @@
     if (!res?.ok) {
       showToast(res?.error || 'No se pudo abrir la migración.');
       return;
+    }
+    if (res.importedBaseline) {
+      showToast('Se cargó la medición «Antes» de tu PC anterior. Mide el «Después» en Rendimiento e informe.');
+      state.bench = await api.benchmarkGet().catch(() => state.bench);
     }
     if (!state.winAudit) await loadWindowsAudit(false);
     state.migration = {
@@ -3093,6 +3145,22 @@
       loadScheduledUpdate();
     });
     $('#btn-actionlog-refresh').addEventListener('click', loadActionLog);
+    $('#btn-windows-usb')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const stop = api.onWindowsUsbProgress((p) => {
+        if (p?.detail) btn.textContent = p.detail;
+      });
+      try {
+        const res = await api.windowsUsb();
+        showToast(res?.ok ? 'Se abrió la herramienta de Microsoft: elige «Unidad flash USB» y sigue los pasos.' : res?.error || 'No se pudo abrir la herramienta.');
+      } finally {
+        stop();
+        btn.disabled = false;
+        btn.textContent = 'Crear USB de Windows';
+      }
+    });
+
     $('#btn-export-diagnostics').addEventListener('click', async () => {
       const res = await api.exportDiagnostics();
       if (res?.canceled) return;
@@ -3259,7 +3327,7 @@
       const s = b.baseline;
       card.innerHTML = `
         <div class="bench-headline">Medición «Antes» guardada</div>
-        <p class="section-subtitle">${esc(fmtDate(s.takenAt))}. Optimiza tu PC y luego toca «Medir “Después”».</p>
+        <p class="section-subtitle">${esc(fmtDate(s.takenAt))}${s.fromMigration ? ` · traída desde la migración${s.pcName ? ` de ${esc(s.pcName)}` : ''} (antes de formatear)` : ''}. Optimiza tu PC y luego toca «Medir “Después”».</p>
         <div class="bench-grid">
           <div class="bench-metric"><span>RAM usada en reposo</span><strong>${(s.ramUsedMb / 1024).toFixed(1)} GB</strong></div>
           <div class="bench-metric"><span>Procesos</span><strong>${esc(s.processes)}</strong></div>
@@ -3271,7 +3339,7 @@
     }
     card.innerHTML = `
       <div class="bench-headline">${esc(benchHeadline(b.comparison))}</div>
-      <p class="section-subtitle">Antes: ${esc(fmtDate(b.baseline.takenAt))} · Después: ${esc(fmtDate(b.latest.takenAt))} · XHANNIZER0</p>
+      <p class="section-subtitle">Antes: ${esc(fmtDate(b.baseline.takenAt))}${b.baseline.fromMigration ? ' (antes de formatear)' : ''} · Después: ${esc(fmtDate(b.latest.takenAt))} · XHANNIZER0</p>
       <div class="bench-grid">
         ${b.comparison
           .map(
@@ -3365,6 +3433,17 @@
       return;
     }
     $('#code-output').value = res.code;
+    state.profileLink = res.link;
+    const qr = $('#profile-qr');
+    // El SVG lo genera el proceso principal con la librería qrcode (solo rect/path, sin scripts)
+    if (res.qrSvg && /^<svg[\s\S]*<\/svg>\s*$/.test(res.qrSvg) && !/<script|on\w+=/i.test(res.qrSvg)) {
+      qr.innerHTML = res.qrSvg;
+      qr.classList.remove('is-empty');
+    } else {
+      qr.textContent = 'Perfil muy grande para QR: usa el enlace';
+      qr.classList.add('is-empty');
+    }
+    $('#profile-share').hidden = false;
     showToast(`Código copiado: ${res.apps} apps y ${res.settings} ajustes.`);
   }
 
@@ -3751,6 +3830,20 @@
 
     $('#btn-code-generate').addEventListener('click', generateProfileCode);
     $('#btn-code-import').addEventListener('click', importProfileCode);
+    $('#btn-code-copy-link')?.addEventListener('click', async () => {
+      if (!state.profileLink) return;
+      const res = await api.copyText(state.profileLink);
+      showToast(res?.ok ? 'Enlace copiado. Pégalo en Discord, WhatsApp o donde quieras.' : 'No se pudo copiar el enlace.');
+    });
+    // Perfil recibido por enlace o QR: se deja listo para revisar, nunca se aplica solo
+    const receiveProfile = (data) => {
+      if (!data?.code) return;
+      activateTab('migracion');
+      $('#code-input').value = data.code;
+      showToast('Recibiste un perfil por enlace. Revísalo y toca «Importar código» para agregarlo.');
+    };
+    api.onProfileLink(receiveProfile);
+    api.profileLinkPending().then(receiveProfile).catch(() => {});
 
     $('#btn-pilot-start').addEventListener('click', () => {
       if (state.pilot && !['running', 'awaiting-reboot'].includes(state.pilot.status)) {
@@ -3812,7 +3905,7 @@
     initAbout();
     await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
     renderPostFormatChecklist();
-    checkAppUpdateSilently();
+    initAppUpdates();
     resumePilotIfNeeded();
   }
 

@@ -3,6 +3,14 @@
 ## Sin publicar
 
 ### Nuevo
+- **Actualización automática**: la app instalada descarga sola las versiones nuevas desde GitHub y arriba aparece «Reiniciar para actualizar»; se instala en segundos sin volver a bajar el `.exe`. La versión portable avisa y abre su descarga.
+- **Drivers con versiones en vivo**: cada componente se compara con lo que Windows Update tiene para su Hardware ID exacto, en lugar de versiones escritas a mano que quedaban viejas.
+- **BIOS de ASUS, Gigabyte y ASRock**: «Web de la placa» abre la búsqueda oficial de tu modelo y la tarjeta explica cómo actualizar con EZ Flash, Q-Flash o Instant Flash.
+- **Formatear la USB en FAT32** dentro del flujo de BIOS, con doble confirmación (solo memorias USB de hasta 32 GB).
+- **Chequeo de PC**: estado de cada disco (temperatura, desgaste y horas cuando el disco los informa) y temperatura de la GPU NVIDIA en reposo.
+- **USB de instalación de Windows 11** con la Media Creation Tool oficial, verificada por su firma de Microsoft.
+- **Antes y después entre formateos**: la migración guarda la medición «Antes» en la USB y el PC formateado la carga sola.
+- **Perfiles por enlace y QR**: `xhannistudios.org/xhannizer0/perfil#XHZ1-…` y el esquema `xhannizer0://` abren el perfil en la app para revisarlo antes de aplicar nada.
 - **BIOS por USB (MSI)**: la tarjeta de la placa madre muestra la BIOS instalada con su nombre de MSI (ej. `1.L0` = `7D43v1L`) y la última publicada por MSI. «Preparar USB de BIOS» descarga el archivo oficial, verifica su SHA-256 contra el publicado por MSI y lo copia a una USB en FAT32 para instalarlo con M-Flash. La app nunca actualiza la BIOS desde Windows.
 
 ### Arreglado

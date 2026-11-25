@@ -192,19 +192,6 @@ function formatNvidiaVersion(raw) {
   return String(raw);
 }
 
-function compareVersions(a, b) {
-  const pa = String(a || '0').replace(/[^0-9.]/g, '').split('.').map(Number);
-  const pb = String(b || '0').replace(/[^0-9.]/g, '').split('.').map(Number);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i += 1) {
-    const va = pa[i] || 0;
-    const vb = pb[i] || 0;
-    if (va > vb) return 1;
-    if (va < vb) return -1;
-  }
-  return 0;
-}
-
 // Clasifica con precisión si una GPU es integrada del CPU (iGPU) o dedicada (dGPU)
 function classifyGpu(gpu, cpuName, allGpus) {
   const name = String(gpu.Name || '').toUpperCase();
@@ -255,7 +242,7 @@ function enrichDriverMetadata(component) {
       ...component,
       vendor: isAmd ? 'AMD' : 'Intel',
       installedVersionDisplay: component.installedVersion || 'Detectado',
-      latestVersion: isAmd ? 'Adrenalin / Chipset iGPU' : '32.0.101.6647',
+      latestVersion: null,
       safeVersion: isAmd ? 'Driver iGPU Estable (Solo Driver)' : '32.0.101.6559 WHQL',
       sourceName: isAmd ? 'AMD iGPU / Chipset Oficial' : 'Intel Graphics Oficial',
       officialUrl: isAmd
@@ -281,23 +268,21 @@ function enrichDriverMetadata(component) {
   if (component.category === 'gpu') {
     if (combined.includes('NVIDIA') || combined.includes('GEFORCE') || combined.includes('RTX') || combined.includes('GTX')) {
       const displayInstalled = formatNvidiaVersion(component.installedVersion);
-      const latestVersion = '576.28';
       const safeVersion = '566.36 WHQL';
-      const cmp = compareVersions(displayInstalled, latestVersion);
-      const isOutdated = cmp < 0;
       const isIn572Branch = /^572\./.test(displayInstalled);
       return {
         ...component,
         vendor: 'NVIDIA',
         installedVersionDisplay: displayInstalled,
-        latestVersion: isOutdated ? latestVersion : displayInstalled,
+        latestVersion: null,
         safeVersion,
         sourceName: 'NVIDIA Official Drivers',
         officialUrl: 'https://www.nvidia.com/es-la/drivers/',
         safeUrl: 'https://www.nvidia.com/es-la/drivers/details/237719/',
         wingetId: null, // NVIDIA App ya no está en WinGet: se instala desde su sitio oficial
-        needsUpdate: isOutdated,
-        status: isIn572Branch ? 'warning' : isOutdated ? 'available' : 'ok',
+        vendorHint: 'Las versiones Game Ready más nuevas salen primero en NVIDIA App.',
+        needsUpdate: false,
+        status: isIn572Branch ? 'warning' : 'ok',
         advisory: isIn572Branch
           ? {
               level: 'warn',
@@ -305,25 +290,17 @@ function enrichDriverMetadata(component) {
               summary: 'Notas oficiales de NVIDIA reportan pantallas negras intermitentes con G-SYNC/DisplayPort en la rama 572.xx. Se recomienda actualizar o usar la versión segura 566.36 WHQL.',
               recommendation: 'safe',
             }
-          : isOutdated
-          ? {
-              level: 'info',
-              title: 'Rama estable WHQL disponible',
-              summary: 'Si prefieres máxima estabilidad tras formatear en lugar de la última rama Game Ready, puedes elegir la versión segura 566.36 WHQL.',
-              recommendation: 'safe',
-            }
           : null,
       };
     }
 
     if (combined.includes('AMD') || combined.includes('RADEON')) {
-      const latestVersion = '25.3.1';
       const safeVersion = '24.12.1 WHQL';
       return {
         ...component,
         vendor: 'AMD',
         installedVersionDisplay: component.installedVersion || 'Detectado',
-        latestVersion,
+        latestVersion: null,
         safeVersion,
         sourceName: 'AMD Official Support',
         officialUrl: 'https://www.amd.com/es/support/download/drivers.html',
@@ -347,13 +324,13 @@ function enrichDriverMetadata(component) {
         ...component,
         vendor: 'Intel',
         installedVersionDisplay: component.installedVersion || 'Detectado',
-        latestVersion: '32.0.101.6647',
+        latestVersion: null,
         safeVersion: '32.0.101.6559 WHQL',
         sourceName: 'Intel Download Center',
         officialUrl: 'https://www.intel.la/content/www/xl/es/download-center/home.html',
         safeUrl: 'https://www.intel.la/content/www/xl/es/support/detect.html',
-        needsUpdate: compareVersions(component.installedVersion, '32.0.101.6559') < 0,
-        status: compareVersions(component.installedVersion, '32.0.101.6559') < 0 ? 'available' : 'ok',
+        needsUpdate: false,
+        status: 'ok',
         advisory: null,
       };
     }
@@ -365,7 +342,7 @@ function enrichDriverMetadata(component) {
       return {
         ...component,
         vendor: 'AMD',
-        latestVersion: '7.02.13.148',
+        latestVersion: null,
         safeVersion: '6.10.17.152 WHQL',
         sourceName: 'AMD Ryzen Chipset Drivers',
         officialUrl: 'https://www.amd.com/es/support/download/drivers.html',
@@ -385,7 +362,7 @@ function enrichDriverMetadata(component) {
     return {
       ...component,
       vendor: combined.includes('INTEL') ? 'Intel' : component.vendor || 'Fabricante',
-      latestVersion: '10.1.19913.8607',
+      latestVersion: null,
       safeVersion: '10.1.19600.8418 WHQL',
       sourceName: 'Intel Chipset Device Software',
       officialUrl: 'https://www.intel.la/content/www/xl/es/support/detect.html',
@@ -435,14 +412,14 @@ function enrichDriverMetadata(component) {
     return {
       ...component,
       vendor: isRealtek ? 'Realtek' : component.vendor || 'Audio',
-      latestVersion: isRealtek ? '6.0.9733.1' : 'Última WHQL',
+      latestVersion: null,
       safeVersion: isRealtek ? '6.0.9689.1 WHQL (UAD)' : 'Driver OEM Estable',
       sourceName: isRealtek ? 'Realtek / OEM UAD Oficial' : 'Controlador oficial de audio',
       officialUrl: isRealtek
         ? 'https://www.realtek.com/Download/List?cate_id=593'
         : 'https://support.microsoft.com/windows',
       safeUrl: 'https://www.realtek.com/Download/List?cate_id=593',
-      needsUpdate: isRealtek && compareVersions(component.installedVersion, '6.0.9689.1') < 0,
+      needsUpdate: false,
       status: isRealtek ? 'warning' : 'ok',
       advisory: isRealtek
         ? {
@@ -462,7 +439,7 @@ function enrichDriverMetadata(component) {
     return {
       ...component,
       vendor: isIntel ? 'Intel' : isRealtek ? 'Realtek' : component.vendor || 'Red',
-      latestVersion: isIntel ? '23.110.0' : isRealtek ? '10.073.0815' : 'Oficial',
+      latestVersion: null,
       safeVersion: isIntel ? '23.100.0 WHQL' : isRealtek ? '10.072.0524 WHQL' : 'Estable',
       sourceName: isIntel ? 'Intel Wired / Wi-Fi Drivers' : isRealtek ? 'Realtek Ethernet / Wi-Fi' : 'Fabricante de Red',
       officialUrl: isIntel
@@ -485,7 +462,7 @@ function enrichDriverMetadata(component) {
     sourceName: 'Windows / NVMe Oficial',
     officialUrl: 'https://support.microsoft.com/windows',
     safeUrl: 'https://support.microsoft.com/windows',
-    latestVersion: 'NVMe Estable',
+    latestVersion: null,
     safeVersion: 'Estándar Microsoft WHQL',
     needsUpdate: false,
     status: 'ok',
@@ -733,6 +710,13 @@ $osInfo = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1 Caption
     );
   }
 
+  // La versión más nueva de cada driver la completa después checkDriverUpdates() (Windows Update).
+  for (const c of components) {
+    if (c.category === 'motherboard') continue;
+    c.liveCheck = 'pending';
+    c.targetLabel = 'Consultando Windows Update…';
+  }
+
   lastScan = {
     system: systemSummary,
     drivers: components,
@@ -750,6 +734,7 @@ function getLastHardwareScan() {
 }
 
 module.exports = {
+  formatNvidiaVersion,
   detectHardwareAndDrivers,
   getLastHardwareScan,
   fetchJson,

@@ -78,7 +78,7 @@ function safeName(name) {
 }
 
 // ---------- Exportar (PC viejo)
-async function exportMigration({ destDir, folders = [], settingIds = [], catalog = [], profile = null, onProgress = () => {} }) {
+async function exportMigration({ destDir, folders = [], settingIds = [], catalog = [], profile = null, before = null, onProgress = () => {} }) {
   if (!destDir || !fs.existsSync(destDir)) return { ok: false, error: 'Elige una carpeta o unidad USB de destino.' };
   const stamp = new Date().toISOString().slice(0, 10);
   const dir = path.join(destDir, `XHANNIZER0_Migracion_${safeName(os.hostname())}_${stamp}`);
@@ -131,6 +131,8 @@ async function exportMigration({ destDir, folders = [], settingIds = [], catalog
     settingIds: settingIds.filter((s) => /^[a-z0-9-]{3,40}$/.test(s)),
     folders: folderEntries,
     profile,
+    // Foto del rendimiento antes de formatear, para comparar en el PC nuevo
+    before,
   };
   fs.writeFileSync(path.join(dir, MANIFEST_NAME), JSON.stringify(manifest, null, 2), 'utf8');
   const ps1 = [
@@ -184,6 +186,7 @@ function readMigration(manifestPath) {
     settingIds: Array.isArray(data.settingIds) ? data.settingIds.filter((s) => /^[a-z0-9-]{3,40}$/.test(s)) : [],
     folders,
     profile: data.profile || null,
+    before: data.before && typeof data.before === 'object' ? data.before : null,
   };
 }
 

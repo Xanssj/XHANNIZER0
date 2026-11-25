@@ -60,14 +60,20 @@ $sb = (Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecureBoot\\
 $tpm = (tpmtool getdeviceinformation 2>&1 | Out-String)
 $bar = $null
 if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { $bar = (nvidia-smi -q -d MEMORY 2>$null | Out-String) }
-$disks = @(Get-PhysicalDisk | Where-Object { $_.BusType -ne 'USB' } | ForEach-Object { [pscustomobject]@{ name = $_.FriendlyName; health = [string]$_.HealthStatus; bus = [string]$_.BusType } })
+$disks = @(Get-PhysicalDisk | Where-Object { $_.BusType -ne 'USB' } | ForEach-Object {
+  $rc = $_ | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue
+  [pscustomobject]@{ name = $_.FriendlyName; health = [string]$_.HealthStatus; bus = [string]$_.BusType; media = [string]$_.MediaType
+    temp = $rc.Temperature; wear = $rc.Wear; hours = $rc.PowerOnHours; readErr = $rc.ReadErrorsUncorrected }
+})
+$gpuTemp = $null
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { $gpuTemp = (nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu --format=csv,noheader,nounits 2>$null | Out-String) }
 $problems = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.ConfigManagerErrorCode -and @(0,22,24,45) -notcontains $_.ConfigManagerErrorCode } | ForEach-Object {
   [pscustomobject]@{ name = $(if ($_.Name) { $_.Name } else { $_.Description }); id = $_.PNPDeviceID; code = $_.ConfigManagerErrorCode; cls = $_.PNPClass }
 })
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
 @{
   ram = $ram; gpus = $gpus; pci = $pci; secureBoot = $sb; firmware = $env:firmware_type; tpm = $tpm; bar = $bar
-  disks = $disks; problems = $problems; virt = $cpu.VirtualizationFirmwareEnabled; hyperv = [bool](Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+  disks = $disks; gpuTemp = $gpuTemp; problems = $problems; virt = $cpu.VirtualizationFirmwareEnabled; hyperv = [bool](Get-CimInstance Win32_ComputerSystem).HypervisorPresent
 } | ConvertTo-Json -Depth 4 -Compress
 `;
 
@@ -235,16 +241,53 @@ function analyze(d) {
     push({ id: 'virt', category: 'Procesador', status: 'ok', title: 'Virtualización disponible' });
   }
 
-  // ---------- Salud de discos
-  for (const disk of arr(d.disks)) {
-    if (disk.health && disk.health !== 'Healthy') {
+  // ---------- Salud de discos (estado de Windows + contadores SMART cuando el disco los informa)
+  arr(d.disks).forEach((disk, idx) => {
+    const temp = Number(disk.temp) || 0;
+    const wear = Number(disk.wear) || 0;
+    const hours = Number(disk.hours) || 0;
+    const readErr = Number(disk.readErr) || 0;
+    const facts = [
+      temp ? `${temp} °C` : null,
+      wear ? `${wear} % de vida útil usada` : null,
+      hours ? `${hours.toLocaleString('es')} h encendido` : null,
+    ].filter(Boolean);
+    const problems = [];
+    if (disk.health && disk.health !== 'Healthy') problems.push(`Windows informa estado «${disk.health}»`);
+    if (wear >= 90) problems.push(`desgaste del ${wear} %`);
+    if (readErr > 0) problems.push(`${readErr} errores de lectura sin corregir`);
+    if (temp >= 70) problems.push(`temperatura alta (${temp} °C)`);
+    if (problems.length) {
       push({
-        id: `disk-${disk.name}`, category: 'Almacenamiento', status: 'warn',
-        title: `Disco con problemas de salud: ${disk.name}`,
-        detail: `Estado reportado por Windows: ${disk.health}.`,
-        fix: 'Respalda tus datos cuanto antes y revisa el disco con CrystalDiskInfo.',
+        id: `disk-${idx}`, category: 'Almacenamiento', status: 'warn',
+        title: `Revisa el disco ${disk.name}`,
+        detail: `${problems.join(', ')}.${facts.length ? ` ${facts.join(' · ')}.` : ''}`,
+        fix: temp >= 70 && problems.length === 1
+          ? 'Mejora el flujo de aire o pon un disipador al SSD NVMe.'
+          : 'Respalda tus datos cuanto antes y revisa el disco con CrystalDiskInfo.',
+      });
+    } else {
+      push({
+        id: `disk-${idx}`, category: 'Almacenamiento', status: 'ok',
+        title: `Disco sano: ${disk.name}`,
+        detail: facts.length ? facts.join(' · ') : 'Windows no informa problemas.',
       });
     }
+  });
+
+  // ---------- Temperatura de la GPU en reposo (NVIDIA: nvidia-smi viene con el driver)
+  for (const line of String(d.gpuTemp || '').split(/\r?\n/).filter((l) => l.includes(','))) {
+    const [name, t, util] = line.split(',').map((x) => x.trim());
+    const temp = Number(t);
+    if (!temp) continue;
+    const idle = Number(util) < 15;
+    const hot = idle ? temp >= 70 : temp >= 87;
+    push({
+      id: `gpu-temp-${name}`, category: 'Gráficos', status: hot ? 'warn' : 'ok',
+      title: hot ? `GPU caliente: ${temp} °C${idle ? ' en reposo' : ''}` : `GPU a ${temp} °C${idle ? ' en reposo' : ''}`,
+      detail: `${name} · uso ${util} %.`,
+      fix: hot ? 'Revisa que los ventiladores giren, el flujo de aire del gabinete y que no haya polvo.' : undefined,
+    });
   }
 
   const devices = arr(d.problems)
