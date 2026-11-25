@@ -1,5 +1,9 @@
 # Cambios
 
+## 2.2.1 — 2026-11-25
+
+- Versión de prueba de la actualización automática: si tenías la 2.2.0, esta llegó sola con «Reiniciar para actualizar».
+
 ## 2.2.0 — 2026-11-25
 
 ### Nuevo
