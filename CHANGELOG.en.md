@@ -2,6 +2,18 @@
 
 English notes for the "What's new" window. The full history is in CHANGELOG.md (Spanish).
 
+## 2.2.4 — 2026-11-25
+
+### Security & quality
+- **Security hardening**: stricter validation on HTTPS downloads, Authenticode signature checks before auto-launching emulator installers, full PowerShell parameter isolation, and tighter local path checks.
+- **More reliable Windows 11 USB tool**: supports official Microsoft HTTPS download subdomains with a request timeout (keeping mandatory Microsoft signature verification).
+- **WinGet installs**: added a safety timeout so a stuck external installer can no longer freeze the queue.
+
+### Fixed
+- The right-click context menu (Cut, Copy, Paste, Select all) is now translated into English as well.
+- Updated official Discord invite link.
+- GitHub Releases now ship only the official Windows installer (`-x64-nsis.exe`) with automatic updates.
+
 ## 2.2.3 — 2026-11-25
 
 ### New

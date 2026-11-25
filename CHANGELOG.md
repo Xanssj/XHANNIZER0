@@ -1,5 +1,17 @@
 # Cambios
 
+## 2.2.4 — 2026-11-25
+
+### Seguridad y calidad
+- **Endurecimiento de seguridad**: validación más estricta en descargas HTTPS, verificación de firmas digitales antes de abrir instaladores de emuladores, parametrización completa de comandos PowerShell y límites estrictos al abrir archivos o carpetas locales.
+- **USB de Windows 11 más fiable**: soporte para redirecciones HTTPS de los servidores oficiales de Microsoft con tiempo de espera controlado (manteniendo la verificación de firma de Microsoft).
+- **Instalaciones con WinGet**: límite de tiempo de seguridad para evitar bloqueos si un instalador externo se queda colgado.
+
+### Arreglado
+- El menú de clic derecho (Cortar, Copiar, Pegar, Seleccionar todo) ahora también se traduce al inglés.
+- Enlace de invitación del Discord oficial actualizado.
+- Las versiones publicadas en GitHub incluyen únicamente el instalador oficial de Windows (`-x64-nsis.exe`) con actualizaciones automáticas.
+
 ## 2.2.3 — 2026-11-25
 
 ### Nuevo
