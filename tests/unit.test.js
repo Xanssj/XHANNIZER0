@@ -324,3 +324,89 @@ test('seguridad: biosUpdate rechaza descargas sin SHA-256 o fuera de download.ms
   });
   assert.strictEqual(badHost.ok, false);
 });
+
+test('pcCheck: detecta monitor atascado en 60 Hz y salud de batería en portátiles', () => {
+  const { analyze } = backend('pcCheck')._internals;
+  const stuck60 = analyze({
+    ram: [],
+    gpus: [{ name: 'NVIDIA GeForce RTX 4070', res: 2560, curHz: 60, maxHz: 144 }],
+    pci: [],
+    secureBoot: 1,
+    firmware: 'UEFI',
+    tpm: '2.0',
+    virt: true,
+    battery: { designed: 60000, full: 34000 },
+    problems: [],
+  });
+  const byId = Object.fromEntries(stuck60.checks.map((c) => [c.id, c]));
+  assert.strictEqual(byId['display-hz'].status, 'warn');
+  assert.match(byId['display-hz'].title, /60 Hz.*144 Hz/);
+  assert.strictEqual(byId['battery-health'].status, 'warn');
+
+  const healthy = analyze({
+    ram: [],
+    gpus: [{ name: 'NVIDIA GeForce RTX 4070', res: 2560, curHz: 144, maxHz: 144 }],
+    pci: [],
+    secureBoot: 1,
+    firmware: 'UEFI',
+    tpm: '2.0',
+    virt: true,
+    battery: { designed: 60000, full: 56000 },
+    problems: [],
+  });
+  const okById = Object.fromEntries(healthy.checks.map((c) => [c.id, c]));
+  assert.strictEqual(okById['display-hz'].status, 'ok');
+  assert.strictEqual(okById['battery-health'].status, 'ok');
+});
+
+test('seguridad: uninstallWingetApp bloquea IDs inválidos o inyección de argumentos', async () => {
+  const pft = backend('postFormatTools');
+  assert.strictEqual((await pft.uninstallWingetApp({ wingetId: '' })).ok, false);
+  assert.strictEqual((await pft.uninstallWingetApp({ wingetId: '--force' })).ok, false);
+  assert.strictEqual((await pft.uninstallWingetApp({ wingetId: 'Brave.Brave; calc.exe' })).ok, false);
+});
+
+test('pcCheck: detecta pantallazos azules (BSOD) y apagados inesperados Kernel-Power 41', () => {
+  const { analyze } = backend('pcCheck')._internals;
+  const base = { ram: [], gpus: [], pci: [], secureBoot: 1, firmware: 'UEFI', tpm: '2.0', virt: true, problems: [] };
+  const clean = analyze({ ...base, crashes: { minidumps: 0, bsod30d: 0, powerLoss30d: 0, lastAt: null } });
+  assert.strictEqual(clean.checks.find((c) => c.id === 'stability-bsod').status, 'ok');
+
+  const crashed = analyze({ ...base, crashes: { minidumps: 2, bsod30d: 2, powerLoss30d: 1, lastAt: '2026-11-20T12:00:00.000Z' } });
+  const c = crashed.checks.find((c) => c.id === 'stability-bsod');
+  assert.strictEqual(c.status, 'warn');
+  assert.match(c.title, /2 pantallazo/);
+});
+
+test('seguridad: isProtectedSystemDir bloquea raíces de disco y carpetas críticas de Windows', () => {
+  const sb = backend('safetyBackup');
+  assert.strictEqual(sb.isProtectedSystemDir('C:\\'), true);
+  assert.strictEqual(sb.isProtectedSystemDir('C:\\Windows'), true);
+  assert.strictEqual(sb.isProtectedSystemDir('C:\\Windows\\System32'), true);
+  assert.strictEqual(sb.isProtectedSystemDir('C:\\Program Files'), true);
+  assert.strictEqual(sb.isProtectedSystemDir('C:\\Users'), true);
+  assert.strictEqual(sb.isProtectedSystemDir(path.join(os.homedir(), 'Downloads')), false);
+});
+
+test('seguridad: maintenance wu-reset y cleanup wu-cache garantizan reinicio de servicios con finally', () => {
+  const maint = backend('maintenance');
+  assert.match(maint.REPAIRS['wu-reset'].script, /finally\s*\{[\s\S]*Start-Service/i);
+  const cleanupSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'backend', 'cleanup.js'), 'utf8');
+  assert.match(cleanupSrc, /finally\s*\{[\s\S]*Start-Service wuauserv,bits/i);
+});
+
+test('restore: soporta deshacer para nuevos ajustes (archivos ocultos, máximo rendimiento e hibernación)', () => {
+  const { SETTING_TARGETS } = backend('restore')._internals;
+  assert.ok(SETTING_TARGETS['win-show-hidden']?.reg?.length === 1);
+  assert.strictEqual(SETTING_TARGETS['win-ultimate-power']?.power, true);
+  assert.strictEqual(SETTING_TARGETS['win-hibernation-off']?.hibernate, true);
+});
+
+test('hardware: getLiveSystemMetrics devuelve CPU, RAM y disco del sistema válidos', async () => {
+  const hw = backend('hardware');
+  const m = await hw.getLiveSystemMetrics();
+  assert.strictEqual(m.ok, true);
+  assert.ok(m.cpuPct >= 0 && m.cpuPct <= 100);
+  assert.ok(m.ramTotalGb > 0 && m.ramPct >= 0 && m.ramPct <= 100);
+  if (m.disk) assert.ok(m.disk.totalGb > 0 && m.disk.freeGb >= 0);
+});

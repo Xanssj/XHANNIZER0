@@ -1,5 +1,29 @@
 # Cambios
 
+## 2.3.0 — 2026-11-26
+
+### Nuevo
+- **Pantalla de Resumen y navegación agrupada**: menú lateral organizado en 4 grupos (`Inicio`, `Hardware`, `Programas`, `Sistema`) con sub-pestañas estilo macOS, accesos rápidos, botón de 1 clic para copiar especificaciones del PC y vista dedicada de **Ajustes** (`Ctrl + ,`).
+- **Monitor en vivo de hardware** en Resumen: muestra CPU, memoria RAM, espacio del disco del sistema y temperatura de GPU NVIDIA en tiempo real (con pausa manual y pausa automática al cambiar de pestaña o minimizar).
+- **Comparador de DNS en vivo**: mide en paralelo la latencia real (3 pings) contra Cloudflare, Google, Quad9, AdGuard y OpenDNS, destaca el más rápido y permite aplicarlo en 1 clic.
+- **Chequeo de PC ampliado**: ahora también detecta monitores atascados en 60 Hz, desgaste/salud de batería en portátiles y pantallazos azules (BSOD) o apagados inesperados `Kernel-Power 41` de los últimos 30 días.
+- **Desinstalador oficial por WinGet** directo en las tarjetas instaladas del Catálogo (con confirmación nativa).
+- **Mis perfiles guardados** dentro de Presets para guardar, cargar o compartir configuraciones propias sin archivos sueltos.
+- **Nuevos ajustes reversibles de Windows**: mostrar archivos ocultos, desbloquear plan «Máximo rendimiento» y desactivar hibernación (`hiberfil.sys`) con avisos claros en portátiles.
+- **Notificaciones nativas de Windows** al terminar instalaciones largas, Piloto automático, limpieza profunda, reparaciones o pruebas de estabilidad cuando la app está minimizada (activable en Ajustes).
+- **Spotlight ampliado (`Ctrl + K`)** como paleta de comandos completa y atajos `Ctrl + 1..9`.
+
+### Fluidez y diseño
+- **Sistema de movimiento fluido a 60–240 Hz**: píldora flotante con resortes físicos en la barra lateral, sub-pestañas deslizantes, inclinación 3D física suave e independiente de los Hz, borde de cristal 1 px reactivo al cursor y ondas táctiles al hacer clic.
+- **Animaciones nativas de Windows 11 DWM**: la ventana ahora usa `titleBarStyle: 'hidden'` + `thickFrame: true` para mantener las animaciones GPU nativas al abrir, minimizar, restaurar, maximizar y cerrar.
+- Contraste corregido en notificaciones toast en modo claro.
+
+### Seguridad y protección del PC
+- **Protección de servicios de Windows Update**: los comandos de reinicio y limpieza de caché ahora usan bloques `try/finally` que garantizan reactivar siempre `wuauserv`, `bits`, `cryptsvc` y `msiserver`.
+- **Bloqueo de carpetas críticas del sistema**: las acciones de discos/carpetas y migración rechazan rutas del sistema (`C:\Windows`, `Program Files`, raíces de disco) para evitar errores accidentales.
+- **Avisos explícitos antes de cambios sensibles**: confirmación nativa y advertencias visibles antes de desactivar hibernación, activar Máximo rendimiento en portátiles, activar HAGS, reiniciar el Explorador o programar el reinicio del Piloto automático.
+- Auditoría completa de seguridad, IPC (85/85) y pruebas unitarias ampliadas (29 tests).
+
 ## 2.2.5 — 2026-11-25
 
 ### Cambiado

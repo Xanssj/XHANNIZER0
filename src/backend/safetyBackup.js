@@ -294,6 +294,25 @@ const ORGANIZE_GROUPS = {
   Documentos: ['.pdf', '.docx', '.xlsx', '.txt', '.md', '.csv'],
 };
 
+// Nunca permitir que acciones de organización modifiquen directorios críticos de Windows o la raíz de un disco
+function isProtectedSystemDir(dirPath) {
+  const resolved = path.resolve(String(dirPath || '')).toLowerCase();
+  if (!resolved || /^[a-z]:\\?$/.test(resolved)) return true;
+  const sysDrive = (process.env.SystemDrive || 'C:').toLowerCase();
+  const protectedRoots = [
+    `${sysDrive}\\windows`,
+    `${sysDrive}\\program files`,
+    `${sysDrive}\\program files (x86)`,
+    `${sysDrive}\\programdata`,
+    `${sysDrive}\\system volume information`,
+    `${sysDrive}\\$recycle.bin`,
+    `${sysDrive}\\recovery`,
+    `${sysDrive}\\boot`,
+  ];
+  if (resolved === `${sysDrive}\\users`) return true;
+  return protectedRoots.some((root) => resolved === root || resolved.startsWith(`${root}\\`));
+}
+
 async function executeDiskOrFolderAction({ actionId, targetDir, backupId }) {
   if (!backupId) {
     return {
@@ -304,6 +323,9 @@ async function executeDiskOrFolderAction({ actionId, targetDir, backupId }) {
 
   if (actionId === 'create-clean-structure') {
     const base = targetDir || path.join(os.homedir(), 'XhanniWorkspace');
+    if (isProtectedSystemDir(base)) {
+      return { ok: false, error: 'Carpeta protegida del sistema: elige una carpeta de usuario o de trabajo.' };
+    }
     const folders = CLEAN_STRUCTURE_FOLDERS;
     ensureDir(base);
     for (const sub of folders) {
@@ -318,6 +340,9 @@ async function executeDiskOrFolderAction({ actionId, targetDir, backupId }) {
 
   if (actionId === 'organize-downloads') {
     const downloads = targetDir || path.join(os.homedir(), 'Downloads');
+    if (isProtectedSystemDir(downloads)) {
+      return { ok: false, error: 'Por seguridad no se permite reorganizar carpetas del sistema ni la raíz de un disco.' };
+    }
     if (!fs.existsSync(downloads)) {
       return { ok: false, error: `No se encontró la carpeta ${downloads}` };
     }
@@ -397,6 +422,7 @@ module.exports = {
   journalSummary,
   CLEAN_STRUCTURE_FOLDERS,
   ORGANIZE_GROUPS,
+  isProtectedSystemDir,
   scanDisksAndFolders,
   executeDiskOrFolderAction,
 };

@@ -951,11 +951,108 @@ function getLastHardwareScan() {
   return lastScan;
 }
 
+// Monitor en vivo liviano (CPU %, RAM, disco del sistema y temp GPU NVIDIA si está disponible)
+let prevCpuSnap = null;
+let gpuProbeCache = { checkedAt: 0, available: true, data: null };
+
+function readCpuUsagePct() {
+  const cpus = os.cpus() || [];
+  let idle = 0;
+  let total = 0;
+  for (const c of cpus) {
+    const t = c.times || {};
+    idle += t.idle || 0;
+    total += (t.user || 0) + (t.nice || 0) + (t.sys || 0) + (t.irq || 0) + (t.idle || 0);
+  }
+  if (!prevCpuSnap) {
+    prevCpuSnap = { idle, total };
+    return 0;
+  }
+  const dIdle = Math.max(0, idle - prevCpuSnap.idle);
+  const dTotal = Math.max(1, total - prevCpuSnap.total);
+  prevCpuSnap = { idle, total };
+  return Math.max(0, Math.min(100, Math.round(((dTotal - dIdle) / dTotal) * 100)));
+}
+
+function readSystemDiskMetrics() {
+  const sysDrive = (process.env.SystemDrive || 'C:') + '\\';
+  try {
+    if (typeof fs.statfsSync === 'function') {
+      const s = fs.statfsSync(sysDrive);
+      const totalBytes = Number(s.blocks || 0) * Number(s.bsize || 0);
+      const freeBytes = Number(s.bavail || s.bfree || 0) * Number(s.bsize || 0);
+      if (totalBytes > 0) {
+        const totalGb = Math.round((totalBytes / 1024 ** 3) * 10) / 10;
+        const freeGb = Math.round((freeBytes / 1024 ** 3) * 10) / 10;
+        const usedPct = Math.max(0, Math.min(100, Math.round(((totalBytes - freeBytes) / totalBytes) * 100)));
+        return { drive: sysDrive.slice(0, 2), freeGb, totalGb, usedPct };
+      }
+    }
+  } catch {
+    // Ignorar si statfsSync falla
+  }
+  return null;
+}
+
+function probeNvidiaGpuLive() {
+  const now = Date.now();
+  if (!gpuProbeCache.available) return Promise.resolve(null);
+  if (now - gpuProbeCache.checkedAt < 4500) return Promise.resolve(gpuProbeCache.data);
+  gpuProbeCache.checkedAt = now;
+  return new Promise((resolve) => {
+    execFile(
+      'nvidia-smi',
+      ['--query-gpu=temperature.gpu,utilization.gpu', '--format=csv,noheader,nounits'],
+      { windowsHide: true, timeout: 2000 },
+      (err, stdout) => {
+        if (err || !stdout) {
+          if (err && err.code === 'ENOENT') gpuProbeCache.available = false;
+          gpuProbeCache.data = null;
+          resolve(null);
+          return;
+        }
+        const first = String(stdout).trim().split(/\r?\n/)[0] || '';
+        const [t, u] = first.split(',').map((v) => Number(String(v).trim()));
+        if (Number.isFinite(t) && t > 0) {
+          gpuProbeCache.data = { tempC: Math.round(t), utilPct: Number.isFinite(u) ? Math.round(u) : null };
+          resolve(gpuProbeCache.data);
+        } else {
+          gpuProbeCache.data = null;
+          resolve(null);
+        }
+      }
+    );
+  });
+}
+
+async function getLiveSystemMetrics() {
+  const cpuPct = readCpuUsagePct();
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = Math.max(0, totalMem - freeMem);
+  const ramTotalGb = Math.round((totalMem / 1024 ** 3) * 10) / 10;
+  const ramUsedGb = Math.round((usedMem / 1024 ** 3) * 10) / 10;
+  const ramPct = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+  const disk = readSystemDiskMetrics();
+  const gpu = await probeNvidiaGpuLive();
+  return {
+    ok: true,
+    cpuPct,
+    ramUsedGb,
+    ramTotalGb,
+    ramPct,
+    disk,
+    gpu,
+    uptimeSec: Math.round(os.uptime()),
+  };
+}
+
 module.exports = {
   formatNvidiaVersion,
   isIntegratedGpuName,
   oemFor,
   detectHardwareAndDrivers,
   getLastHardwareScan,
+  getLiveSystemMetrics,
   fetchJson,
 };

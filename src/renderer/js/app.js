@@ -7,8 +7,10 @@
   // Estado global de la aplicación
   // =========================================================================
   const state = {
-    activeTab: 'drivers',
-    previousTab: 'drivers',
+    activeTab: 'resumen',
+    previousTab: 'resumen',
+    techMode: localStorage.getItem('xh_tech_mode') !== '0',
+    backupCount: 0,
     driverFilter: 'all',
     devFilter: 'all',
     utilFilter: 'all',
@@ -53,6 +55,9 @@
     pilotSettingIds: [],
     theme: localStorage.getItem('xh_theme') || 'dark',
     lang: localStorage.getItem('xh_lang') || 'es',
+    winNotify: localStorage.getItem('xh_win_notify') !== '0',
+    livePaused: false,
+    windowFocused: true,
     pendingDriverConfirm: null,
     auditLog: new Map(), // id -> { id, name, state, progress, detail, sourceType, sourceOrigin, sha256, signatureStatus, signatureSigner, timestamp }
     auditDrawerOpen: false,
@@ -87,6 +92,11 @@
     el.classList.add('is-show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove('is-show'), 3800);
+  }
+
+  function notifyDone(title, body) {
+    if (!state.winNotify || !api.notify) return;
+    api.notify({ title, body }).catch(() => {});
   }
 
   function statusLabel(st) {
@@ -277,7 +287,10 @@
     );
 
     // Tema Claro / Oscuro (Apple Glass)
+    let themeBooted = false;
     const applyTheme = (theme) => {
+      if (themeBooted) window.XhMotion?.animateThemeSwitch?.();
+      themeBooted = true;
       state.theme = theme === 'light' ? 'light' : 'dark';
       document.documentElement.dataset.theme = state.theme;
       localStorage.setItem('xh_theme', state.theme);
@@ -288,7 +301,9 @@
           ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-17.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>'
           : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
       }
+      syncSettingsUi();
     };
+    state.applyTheme = applyTheme;
     applyTheme(state.theme);
     $('#xh-theme-btn').addEventListener('click', () => applyTheme(state.theme === 'dark' ? 'light' : 'dark'));
 
@@ -356,12 +371,9 @@
         const key = el.dataset.i18n;
         if (dict[key]) el.textContent = dict[key];
       });
-      $$('#sidebar-nav [data-tab]').forEach((btn) => {
-        const span = btn.querySelector('span');
-        const t = btn.dataset.tab;
-        if (span && dict.tabs[t]) span.textContent = dict.tabs[t];
-      });
       if (window.XhI18n) window.XhI18n.apply(state.lang);
+      syncSettingsUi();
+      requestAnimationFrame(() => window.XhMotion?.syncAllSliders?.(true));
     };
     applyLanguage(state.lang);
     state.applyLanguage = applyLanguage;
@@ -371,8 +383,11 @@
     });
 
     api.onWindowState((st) => {
+      state.windowFocused = Boolean(st.focused);
       document.documentElement.classList.toggle('xh-blurred', !st.focused);
       document.documentElement.classList.toggle('xh-maximized', Boolean(st.maximized));
+      window.XhMotion?.handleWindowEvent?.(st);
+      syncLiveMonitorSchedule();
     });
 
     // Popover de estado arriba a la derecha
@@ -457,6 +472,7 @@
     try {
       const res = await api.listBackups();
       const count = res?.backups?.length || 0;
+      state.backupCount = count;
       state.recentBackup = res?.recentBackup || state.recentBackup || null;
       $('#pop-backup-count').textContent = state.recentBackup
         ? `${count} (vigente)`
@@ -467,6 +483,7 @@
           ? `<span class="status-dot"></span><span>Respaldo vigente listo</span>`
           : `<span class="status-dot warn"></span><span>Sin respaldo reciente</span>`;
       }
+      renderDashboard();
     } catch {
       // Ignorar
     }
@@ -496,23 +513,186 @@
   }
 
   // =========================================================================
-  // Navegación lateral (con puerta obligatoria de respaldo en Carpetas y Discos)
+  // Navegación lateral agrupada + sub-pestañas + Dashboard + Ajustes
   // =========================================================================
+  const NAV_GROUPS = {
+    catalog: ['herramientas', 'launchers', 'navegadores', 'utilidades', 'dev', 'emuladores', 'store'],
+    windows: ['windows-audit', 'startup', 'cleaner-net'],
+    tools: ['migracion', 'mantenimiento', 'rendimiento'],
+  };
+  const groupForTab = (tab) => Object.keys(NAV_GROUPS).find((g) => NAV_GROUPS[g].includes(tab)) || null;
+
+  function syncSettingsUi() {
+    $$('[data-settings-lang]').forEach((b) => b.classList.toggle('is-active', b.dataset.settingsLang === state.lang));
+    $$('[data-settings-theme]').forEach((b) => b.classList.toggle('is-active', b.dataset.settingsTheme === state.theme));
+    const techToggle = $('#toggle-tech-mode');
+    if (techToggle) techToggle.checked = Boolean(state.techMode);
+    const notifyToggle = $('#toggle-win-notify');
+    if (notifyToggle) notifyToggle.checked = Boolean(state.winNotify);
+    const reportSec = $('#tech-report-section');
+    if (reportSec) reportSec.hidden = !state.techMode;
+  }
+
+  // ---------- Monitor en vivo liviano (solo activo en Resumen y con ventana enfocada)
+  let liveTimer = null;
+  let liveBusy = false;
+
+  async function pollLiveMetrics() {
+    if (liveBusy || !api.liveMetrics) return;
+    liveBusy = true;
+    try {
+      const m = await api.liveMetrics();
+      if (!m?.ok) return;
+      const cpuEl = $('#live-cpu-val');
+      const cpuBar = $('#live-cpu-bar');
+      if (cpuEl) cpuEl.textContent = `${m.cpuPct} %`;
+      if (cpuBar) cpuBar.style.width = `${Math.max(2, Math.min(100, m.cpuPct))}%`;
+
+      const ramEl = $('#live-ram-val');
+      const ramBar = $('#live-ram-bar');
+      if (ramEl) ramEl.textContent = `${m.ramUsedGb} / ${m.ramTotalGb} GB (${m.ramPct} %)`;
+      if (ramBar) ramBar.style.width = `${Math.max(2, Math.min(100, m.ramPct))}%`;
+
+      if (m.disk) {
+        const dLbl = $('#live-disk-label');
+        const dVal = $('#live-disk-val');
+        const dBar = $('#live-disk-bar');
+        if (dLbl) dLbl.textContent = `Disco ${m.disk.drive}`;
+        if (dVal) dVal.textContent = `${m.disk.freeGb} GB libres (${m.disk.usedPct} %)`;
+        if (dBar) dBar.style.width = `${Math.max(2, Math.min(100, m.disk.usedPct))}%`;
+      }
+
+      const gpuWrap = $('#live-gpu-wrap');
+      if (gpuWrap && m.gpu) {
+        gpuWrap.hidden = false;
+        const gVal = $('#live-gpu-val');
+        const gBar = $('#live-gpu-bar');
+        if (gVal) gVal.textContent = `${m.gpu.tempC} °C${m.gpu.utilPct != null ? ` · ${m.gpu.utilPct} %` : ''}`;
+        if (gBar) gBar.style.width = `${Math.max(5, Math.min(100, Math.round((m.gpu.tempC / 95) * 100)))}%`;
+      }
+    } catch {
+      // Ignorar fallos transitorios
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  function syncLiveMonitorSchedule() {
+    const active = state.activeTab === 'resumen' && state.windowFocused && !state.livePaused;
+    const dot = $('#live-monitor-dot');
+    const stEl = $('#live-monitor-state');
+    const btn = $('#btn-live-toggle');
+    if (dot) dot.classList.toggle('is-paused', !active);
+    if (stEl) stEl.textContent = state.livePaused ? 'En pausa' : active ? 'Actualizando cada 2.5 s' : 'En espera';
+    if (btn) btn.textContent = state.livePaused ? 'Reanudar' : 'Pausar';
+
+    if (active) {
+      if (!liveTimer) {
+        pollLiveMetrics();
+        liveTimer = setInterval(pollLiveMetrics, 2500);
+      }
+    } else if (liveTimer) {
+      clearInterval(liveTimer);
+      liveTimer = null;
+    }
+  }
+
+  function renderDashboard() {
+    const sys = state.hardware?.system || null;
+    if (sys) {
+      const kind = sys.isVirtualMachine ? 'Máquina virtual' : sys.isLaptop ? 'Portátil' : 'PC de escritorio';
+      $('#dash-form-badge').textContent = kind;
+      $('#dash-os-line').textContent = [sys.osName, sys.osBuild ? `Compilación ${sys.osBuild}` : ''].filter(Boolean).join(' · ') || 'Windows';
+      $('#dash-pc-title').textContent = sys.isBrandSystem && sys.model ? sys.model : (sys.hostname || 'Tu PC');
+      const gpuText = sys.dedicatedGpuName
+        ? `${sys.dedicatedGpuName}${sys.dedicatedGpuVramGb ? ` (${sys.dedicatedGpuVramGb} GB)` : ''}`
+        : (sys.integratedGpuName || 'Gráficos integrados');
+      $('#dash-specs-line').textContent = [sys.cpuName, gpuText, sys.ramGb ? `${sys.ramGb} GB RAM` : ''].filter(Boolean).join(' · ');
+
+      const updates = state.hardware.updatesCount || 0;
+      const advisories = state.hardware.advisoriesCount || 0;
+      $('#dash-kpi-drivers').textContent = updates > 0 ? `${updates} por actualizar` : 'Al día';
+      $('#dash-kpi-drivers-sub').textContent = advisories > 0
+        ? `${state.hardware.drivers.length} componentes · ${advisories} aviso(s)`
+        : `${state.hardware.drivers.length} componentes detectados`;
+      const drvCard = $('#dash-card-drivers');
+      if (drvCard) {
+        drvCard.classList.toggle('tone-warn', updates > 0 || advisories > 0);
+        drvCard.classList.toggle('tone-ok', updates === 0 && advisories === 0);
+      }
+    }
+
+    if (state.pcCheck) {
+      const w = state.pcCheck.warnCount || 0;
+      const d = state.pcCheck.devices?.length || 0;
+      $('#dash-kpi-pccheck').textContent = w > 0 || d > 0 ? `${w + d} por revisar` : 'Todo correcto';
+      $('#dash-kpi-pccheck-sub').textContent = d > 0
+        ? `${w} avisos de BIOS/armado · ${d} dispositivo(s)`
+        : `${state.pcCheck.checks?.length || 0} comprobaciones completadas`;
+      const pcCard = $('#dash-card-pccheck');
+      if (pcCard) {
+        pcCard.classList.toggle('tone-warn', w > 0 || d > 0);
+        pcCard.classList.toggle('tone-ok', w === 0 && d === 0);
+      }
+    }
+
+    const totalApps = (state.catalog?.length || 0) + (state.emulators?.length || 0);
+    if (totalApps > 0) {
+      const inst = state.catalog.filter((i) => i.installed).length;
+      $('#dash-kpi-apps').textContent = `${inst} instaladas`;
+      $('#dash-kpi-apps-sub').textContent = `${totalApps} disponibles en catálogo y emuladores`;
+      const catBadge = $('#badge-catalog-total');
+      if (catBadge) {
+        catBadge.textContent = String(totalApps);
+        catBadge.hidden = false;
+      }
+    }
+
+    $('#dash-kpi-backup').textContent = state.recentBackup ? 'Vigente' : `${state.backupCount || 0} guardadas`;
+    $('#dash-kpi-backup-sub').textContent = state.recentBackup
+      ? `${state.backupCount || 1} respaldo(s) · listo para cambios`
+      : 'Se creará uno automáticamente antes de cambiar nada';
+    const bkCard = $('#dash-card-backup');
+    if (bkCard) {
+      bkCard.classList.toggle('tone-ok', Boolean(state.recentBackup));
+      bkCard.classList.toggle('tone-warn', !state.recentBackup);
+    }
+  }
+
   function activateTab(target) {
     if (state.activeTab !== target) {
       state.previousTab = state.activeTab;
       state.activeTab = target;
     }
+    const activeGroup = groupForTab(target);
     $$('#sidebar-nav .owner-menu-item').forEach((li) => {
       const btn = li.querySelector('[data-tab]');
-      li.classList.toggle('is-active', btn && btn.dataset.tab === target);
+      const isMatch = btn && (btn.dataset.tab === target || (activeGroup && btn.dataset.navGroup === activeGroup));
+      li.classList.toggle('is-active', Boolean(isMatch));
+    });
+    $$('.side-foot-nav [data-tab]').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.tab === target);
+    });
+    Object.keys(NAV_GROUPS).forEach((g) => {
+      const bar = $(`#subnav-${g}`);
+      if (bar) bar.hidden = g !== activeGroup;
+    });
+    $$('.xh-subnav-btn').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.tab === target);
     });
     $$('.owner-tab-panel').forEach((panel) => {
       panel.classList.toggle('is-active', panel.id === `tab-${target}`);
     });
     contentEl.scrollTop = 0;
     $('#xh-titlebar').classList.remove('is-scrolled');
+    if (window.XhMotion) {
+      window.XhMotion.animatePanelEnter($(`#tab-${target}`));
+      requestAnimationFrame(() => window.XhMotion.syncAllSliders(false));
+    }
 
+    if (target === 'resumen') renderDashboard();
+    syncLiveMonitorSchedule();
+    if (target === 'ajustes') syncSettingsUi();
     if (target === 'emuladores' && !state.emulators.length) loadEmulators();
     if (target === 'store' && !state.storeItems.length) loadFeaturedStore();
     if (target === 'presets') loadPresets();
@@ -525,7 +705,7 @@
     if (target === 'migracion' && !state.migFolders) loadMigrationFolders();
     if (target === 'mantenimiento') loadMaintenance();
     if (target === 'piloto') renderPilot();
-    if (target === 'rendimiento') loadBenchmark();
+    if (target === 'rendimiento') { syncSettingsUi(); loadBenchmark(); }
     if (target === 'acerca') loadAbout();
   }
 
@@ -587,29 +767,206 @@
     });
   }
 
-  function initNavigation() {
-    $$('#sidebar-nav [data-tab]').forEach((btn) => {
+  function initSettings() {
+    $$('[data-settings-lang]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const target = btn.dataset.tab;
-        if (target === 'discos' && !state.recentBackup?.id) {
-          const fallbackTab = state.activeTab;
-          activateTab('discos');
-          ensureVerifiedBackup({
-            scope: 'system',
-            label: 'Acceso protegido a Carpetas y Discos',
-            detail: 'No se detectó una copia de seguridad reciente. Por seguridad, crea un respaldo preventivo del sistema antes de modificar o reordenar carpetas y discos.',
-            items: ['Respaldo preventivo de sistema y estructura de carpetas'],
-            onConfirmed: () => {
-              showToast('Copia de seguridad verificada. Sección Carpetas y Discos desbloqueada.');
-            },
-            onCancel: () => {
-              activateTab(fallbackTab === 'discos' ? 'drivers' : fallbackTab);
-            },
-          });
-          return;
-        }
-        activateTab(target);
+        if (state.applyLanguage) state.applyLanguage(btn.dataset.settingsLang);
+        showToast(state.lang === 'en' ? 'Language switched to English.' : 'Idioma cambiado a Español.');
       });
+    });
+    $$('[data-settings-theme]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (state.applyTheme) state.applyTheme(btn.dataset.settingsTheme);
+      });
+    });
+    $('#toggle-tech-mode')?.addEventListener('change', (e) => {
+      state.techMode = Boolean(e.target.checked);
+      localStorage.setItem('xh_tech_mode', state.techMode ? '1' : '0');
+      syncSettingsUi();
+      showToast(state.techMode ? 'Modo técnico activado.' : 'Modo técnico oculto.');
+    });
+    $('#toggle-win-notify')?.addEventListener('change', (e) => {
+      state.winNotify = Boolean(e.target.checked);
+      localStorage.setItem('xh_win_notify', state.winNotify ? '1' : '0');
+      showToast(state.winNotify ? 'Notificaciones de Windows activadas.' : 'Notificaciones de Windows desactivadas.');
+    });
+    $('#btn-live-toggle')?.addEventListener('click', () => {
+      state.livePaused = !state.livePaused;
+      syncLiveMonitorSchedule();
+    });
+    $('#btn-dns-benchmark')?.addEventListener('click', () => runDnsBenchmark());
+    $('#btn-settings-setup')?.addEventListener('click', () => openSetup());
+    $('#btn-settings-backups')?.addEventListener('click', () => api.openPath());
+    $('#btn-settings-data')?.addEventListener('click', async () => {
+      const res = await api.openDataFolder();
+      if (!res?.ok) showToast(res?.error || 'No se pudo abrir la carpeta de datos.');
+    });
+    $('#btn-dash-rescan')?.addEventListener('click', () => scanHardware(true));
+    $('#btn-dash-copy-specs')?.addEventListener('click', () => copyPcSpecs());
+    $('#btn-save-local-profile')?.addEventListener('click', () => saveCurrentLocalProfile());
+    $('#saved-profiles-list')?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const list = state.savedProfiles || [];
+      if (btn.dataset.loadProfile) {
+        const p = list.find((x) => x.id === btn.dataset.loadProfile);
+        if (!p) return;
+        let added = 0;
+        for (const id of p.appIds || []) {
+          const item = state.catalog.find((c) => c.id === id);
+          if (item && !state.selected.has(id)) {
+            state.selected.set(id, { id: item.id, type: 'app', name: item.name, officialUrl: item.officialUrl });
+            added += 1;
+          }
+        }
+        renderAllCatalogSections();
+        updateBatchDock();
+        showToast(`Perfil «${p.name}» cargado (${added} app(s) añadidas al lote).`);
+      } else if (btn.dataset.shareProfile) {
+        const p = list.find((x) => x.id === btn.dataset.shareProfile);
+        if (!p) return;
+        const res = await api.profileCodeEncode({ name: p.name, appIds: p.appIds, settingIds: p.settingIds });
+        showToast(res?.ok ? `Código de «${p.name}» copiado al portapapeles.` : res?.error || 'No se pudo generar el código.');
+      } else if (btn.dataset.deleteProfile) {
+        const res = await api.profilesDelete(btn.dataset.deleteProfile);
+        if (res?.ok) {
+          state.savedProfiles = res.items || [];
+          renderSavedProfiles();
+          showToast('Perfil eliminado.');
+        }
+      }
+    });
+    syncSettingsUi();
+  }
+
+  async function copyPcSpecs() {
+    const hw = state.hardware;
+    if (!hw?.system) {
+      showToast('Espera a que termine el escaneo de hardware.');
+      return;
+    }
+    const sys = hw.system;
+    const board = hw.drivers?.find((d) => d.category === 'motherboard');
+    const disks = (hw.drivers || []).filter((d) => d.category === 'storage').map((d) => d.name);
+    const kind = sys.isVirtualMachine ? 'Máquina virtual' : sys.isLaptop ? 'Portátil' : 'PC de escritorio';
+    const lines = [
+      `PC: ${sys.isBrandSystem && sys.model ? sys.model : (sys.hostname || 'Windows PC')} (${kind})`,
+      `Sistema: ${[sys.osName, sys.osBuild ? `Build ${sys.osBuild}` : ''].filter(Boolean).join(' · ')}`,
+      `CPU: ${sys.cpuName || '—'}`,
+      sys.dedicatedGpuName ? `GPU: ${sys.dedicatedGpuName}${sys.dedicatedGpuVramGb ? ` (${sys.dedicatedGpuVramGb} GB)` : ''}` : null,
+      sys.integratedGpuName ? `iGPU: ${sys.integratedGpuName}` : null,
+      `RAM: ${sys.ramGb ? `${sys.ramGb} GB` : '—'}`,
+      board ? `Placa madre: ${board.name}${board.installedVersionDisplay || board.installedVersion ? ` (${board.installedVersionDisplay || board.installedVersion})` : ''}` : null,
+      disks.length ? `Almacenamiento: ${disks.join(', ')}` : null,
+    ].filter(Boolean);
+    const res = await api.copyText(lines.join('\n'));
+    showToast(res?.ok ? 'Especificaciones del PC copiadas al portapapeles.' : 'No se pudieron copiar las especificaciones.');
+  }
+
+  async function loadSavedProfiles() {
+    try {
+      const res = await api.profilesList();
+      state.savedProfiles = res?.items || [];
+    } catch {
+      state.savedProfiles = [];
+    }
+    renderSavedProfiles();
+  }
+
+  function renderSavedProfiles() {
+    const el = $('#saved-profiles-list');
+    if (!el) return;
+    const list = state.savedProfiles || [];
+    if (!list.length) {
+      el.innerHTML = `<article class="driver-card"><p class="section-subtitle">Todavía no guardaste perfiles propios. Selecciona apps en el Catálogo, ponle nombre arriba y guárdalo.</p></article>`;
+      return;
+    }
+    el.innerHTML = list
+      .map(
+        (p) => `
+      <article class="driver-card">
+        <div class="driver-top">
+          <div class="driver-main" style="grid-column: span 2;">
+            <div class="driver-name">${esc(p.name)}</div>
+            <div class="driver-meta">
+              <span>${p.appIds?.length || 0} programa(s) · ${p.settingIds?.length || 0} ajuste(s)</span>
+              <span>Guardado el ${esc(String(p.createdAt || '').slice(0, 10))}</span>
+            </div>
+          </div>
+          <div class="driver-actions">
+            <button type="button" class="btn-action-small is-primary" data-load-profile="${esc(p.id)}">Cargar al lote</button>
+            <button type="button" class="btn-action-small is-ghost" data-share-profile="${esc(p.id)}">Copiar código</button>
+            <button type="button" class="btn-action-small is-ghost" data-delete-profile="${esc(p.id)}">Eliminar</button>
+          </div>
+        </div>
+      </article>`
+      )
+      .join('');
+  }
+
+  async function saveCurrentLocalProfile() {
+    const input = $('#saved-profile-name');
+    const name = String(input?.value || '').trim();
+    if (!name) {
+      showToast('Escribe un nombre para el perfil.');
+      input?.focus();
+      return;
+    }
+    const appIds = Array.from(state.selected.values()).filter((t) => t.type === 'app').map((t) => t.id);
+    const settingIds = (state.winAudit?.items || []).filter((i) => i.isOptimal && i.id !== 'win-refresh-rate').map((i) => i.id);
+    const res = await api.profilesSave({ name, appIds, settingIds });
+    if (res?.ok) {
+      state.savedProfiles = res.items || [];
+      if (input) input.value = '';
+      renderSavedProfiles();
+      showToast(`Perfil «${name}» guardado.`);
+    } else {
+      showToast(res?.error || 'No se pudo guardar el perfil.');
+    }
+  }
+
+  function initNavigation() {
+    const navigateTo = (target) => {
+      if (target === 'discos' && !state.recentBackup?.id) {
+        const fallbackTab = state.activeTab;
+        activateTab('discos');
+        ensureVerifiedBackup({
+          scope: 'system',
+          label: 'Acceso protegido a Carpetas y Discos',
+          detail: 'No se detectó una copia de seguridad reciente. Por seguridad, crea un respaldo preventivo del sistema antes de modificar o reordenar carpetas y discos.',
+          items: ['Respaldo preventivo de sistema y estructura de carpetas'],
+          onConfirmed: () => {
+            showToast('Copia de seguridad verificada. Sección Carpetas y Discos desbloqueada.');
+          },
+          onCancel: () => {
+            activateTab(fallbackTab === 'discos' ? 'resumen' : fallbackTab);
+          },
+        });
+        return;
+      }
+      activateTab(target);
+    };
+
+    $$('#sidebar-nav [data-tab], .side-foot-nav [data-tab], .xh-subnav [data-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => navigateTo(btn.dataset.tab));
+    });
+
+    // Atajos de teclado rápidos: Ctrl+, (Ajustes) y Ctrl+1..9 (secciones principales)
+    const QUICK_KEYS = ['resumen', 'piloto', 'drivers', 'pc-check', 'herramientas', 'presets', 'upgrades', 'windows-audit', 'discos'];
+    document.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.key === ',') {
+        e.preventDefault();
+        navigateTo('ajustes');
+        return;
+      }
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const idx = Number(e.key) - 1;
+      if (idx >= 0 && idx < QUICK_KEYS.length) {
+        e.preventDefault();
+        navigateTo(QUICK_KEYS[idx]);
+      }
     });
   }
 
@@ -647,6 +1004,7 @@
       }
 
       renderDrivers();
+      renderDashboard();
       loadPresets();
       loadWindowsAudit();
       renderPostFormatChecklist();
@@ -669,6 +1027,7 @@
       state.hardware.updatesCount = res.updatesCount;
       $('#m-updates').textContent = String(res.updatesCount);
       renderDrivers();
+      renderDashboard();
       renderPostFormatChecklist();
       updateStatusPill();
     } catch {
@@ -817,6 +1176,7 @@
     const popInst = $('#pop-installed-count');
     if (popInst) popInst.textContent = `${instCount} detectadas`;
     renderAllCatalogSections();
+    renderDashboard();
   }
 
   function renderAllCatalogSections() {
@@ -845,7 +1205,10 @@
 
     const sectionAll = state.catalog.filter((i) => i.section === section);
     const badgeEl = $(`#badge-${section}`);
-    if (badgeEl) badgeEl.textContent = String(sectionAll.length);
+    if (badgeEl) {
+      badgeEl.textContent = String(sectionAll.length);
+      badgeEl.hidden = sectionAll.length === 0;
+    }
 
     if (!items.length) {
       grid.innerHTML = `<article class="app-card"><p class="app-card-desc">No se encontraron elementos con ese filtro.</p></article>`;
@@ -909,6 +1272,7 @@
             <div class="app-card-foot">
               <button type="button" class="btn-action-small is-ghost" data-open-url="${esc(item.officialUrl)}">Web oficial</button>
               <div class="driver-actions">
+                ${item.installed && item.wingetId ? `<button type="button" class="btn-action-small is-ghost" data-uninstall-app="${esc(item.id)}">Desinstalar</button>` : ''}
                 ${item.installed ? `<button type="button" class="btn-action-small" data-install-app="${esc(item.id)}">Actualizar</button>` : ''}
                 ${primaryAction}
               </div>
@@ -925,8 +1289,12 @@
     const res = await api.getEmulators();
     state.emulators = res?.items || [];
     const badge = $('#badge-emuladores');
-    if (badge) badge.textContent = String(state.emulators.length);
+    if (badge) {
+      badge.textContent = String(state.emulators.length);
+      badge.hidden = state.emulators.length === 0;
+    }
     renderEmulators();
+    renderDashboard();
   }
 
   async function checkEmulatorsGithub() {
@@ -1143,6 +1511,7 @@
     const res = await api.getPresets(sys);
     state.presets = res?.presets || [];
     renderPresets();
+    loadSavedProfiles();
   }
 
   function renderPresets() {
@@ -1214,6 +1583,11 @@
       badge.textContent = String(res?.pendingCount || 0);
       badge.hidden = !(res?.pendingCount > 0);
     }
+    const winGrpBadge = $('#badge-windows-group');
+    if (winGrpBadge) {
+      winGrpBadge.textContent = String(res?.pendingCount || 0);
+      winGrpBadge.hidden = !(res?.pendingCount > 0);
+    }
     renderWindowsAudit();
     if (notify) showToast('Auditoría de configuraciones de Windows actualizada.');
   }
@@ -1243,6 +1617,7 @@
             <div class="driver-meta">
               <span class="version-compare"><span>Estado actual: ${esc(item.currentState)}</span></span>
               <span>${esc(item.description)}</span>
+              ${item.caution ? `<div class="win-caution-note"><strong>Aviso:</strong> ${esc(item.caution)}</div>` : ''}
             </div>
           </div>
           <div class="driver-actions">
@@ -1370,6 +1745,58 @@
   // =========================================================================
   // Limpieza de Bloatware y Red/DNS
   // =========================================================================
+  async function runDnsBenchmark() {
+    const btn = $('#btn-dns-benchmark');
+    const card = $('#dns-bench-card');
+    const listEl = $('#dns-bench-list');
+    const stEl = $('#dns-bench-status');
+    if (!btn || !card || !listEl || !api.benchmarkDns) return;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Midiendo DNS…';
+    card.hidden = false;
+    if (stEl) stEl.textContent = 'Enviando 3 pings paralelos a 5 servidores…';
+    listEl.innerHTML = '';
+    try {
+      const res = await api.benchmarkDns();
+      const items = res?.items || [];
+      if (!items.length) {
+        if (stEl) stEl.textContent = 'No se pudo medir la latencia.';
+        return;
+      }
+      const validMs = items.filter((x) => typeof x.avgMs === 'number').map((x) => x.avgMs);
+      const maxMs = Math.max(40, ...(validMs.length ? validMs : [100]));
+      const best = items.find((x) => x.recommended);
+      if (stEl) {
+        stEl.textContent = best
+          ? `Recomendado: ${best.name} (${best.avgMs} ms)`
+          : 'Sin respuesta ICMP (el firewall puede bloquear ping)';
+      }
+      listEl.innerHTML = items
+        .map((it) => {
+          const pct = it.reachable ? Math.max(8, Math.min(100, Math.round((it.avgMs / maxMs) * 100))) : 100;
+          return `
+            <div class="dns-bench-row ${it.recommended ? 'is-best' : ''}">
+              <div class="dns-bench-name">
+                <strong>${esc(it.name)}${it.recommended ? ' <span class="pill-badge is-ok">Más rápido</span>' : ''}</strong>
+                <small>${esc(it.primary)} · ${esc(it.note)}</small>
+              </div>
+              <div class="progress-track">
+                <div class="progress-bar" style="width:${pct}%${it.recommended ? ';background:var(--green)' : !it.reachable ? ';background:var(--orange)' : ''}"></div>
+              </div>
+              <div class="dns-bench-ms">${it.reachable ? `${it.avgMs} ms` : 'Sin resp.'}</div>
+              <button type="button" class="btn-action-small ${it.recommended ? 'is-primary' : ''}" data-net-action="${esc(it.id)}">Aplicar</button>
+            </div>`;
+        })
+        .join('');
+    } catch {
+      if (stEl) stEl.textContent = 'Error al medir servidores DNS.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
   async function loadCleanerAndNet(notify = false) {
     const [netRes, bloatRes] = await Promise.all([api.scanNetwork(), api.scanBloatware()]);
     state.networkInfo = netRes;
@@ -1934,6 +2361,7 @@
         updateBatchDock();
         await loadCatalog();
         showToast('Cola de instalación completada.');
+        notifyDone('Instalación completada — XHANNIZER0', `Finalizó la cola de ${tasks.length} elemento(s).`);
         // Para drivers NVIDIA o AMD (GPU / CPU), volver a confirmar post-instalación con opción de app oficial
         const postDrv = tasks.find((t) => t.askPostConfirm && t.drvRef);
         if (postDrv) {
@@ -2294,6 +2722,24 @@
         return;
       }
 
+      // Desinstalar una app oficial vía WinGet (con confirmación nativa en main.js)
+      if (btn.dataset.uninstallApp) {
+        const id = btn.dataset.uninstallApp;
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Desinstalando…';
+        try {
+          const res = await api.uninstallApp({ id });
+          if (res?.canceled) return;
+          showToast(res?.message || res?.error || 'Desinstalación finalizada.');
+          if (res?.ok) await loadCatalog();
+        } finally {
+          btn.disabled = false;
+          btn.textContent = orig;
+        }
+        return;
+      }
+
       // Acción de Red / DNS (1 clic)
       if (btn.dataset.netAction) {
         const action = btn.dataset.netAction;
@@ -2470,6 +2916,7 @@
           items: [item.name],
           onConfirmed: async (backupRes) => {
             const res = await api.applyWindowsSetting({ settingId, backupId: backupRes.id });
+            if (res?.canceled) return;
             showToast(res?.ok ? res.message : res?.error || 'No se pudo aplicar el ajuste.');
             await loadWindowsAudit(false);
           },
@@ -2594,21 +3041,42 @@
         run: () => activateTab('drivers'),
       });
     }
+    const quickActions = [
+      ['Copiar especificaciones del PC', 'Copia CPU, GPU, RAM, placa madre, BIOS y discos al portapapeles', () => copyPcSpecs()],
+      ['Reescanear hardware del PC', 'Actualiza detección de CPU, GPU, placa y drivers', () => scanHardware(true)],
+      ['Analizar mi PC (Chequeo)', 'Revisa XMP/EXPO, BIOS, PCIe, Secure Boot y dispositivos', () => { activateTab('pc-check'); loadPcCheck(true); }],
+      ['Cambiar tema (Oscuro / Claro)', 'Alterna entre modo oscuro y claro', () => state.applyTheme && state.applyTheme(state.theme === 'dark' ? 'light' : 'dark')],
+      ['Cambiar idioma (ES / EN)', 'Alterna entre Español e Inglés', () => { if (state.applyLanguage) state.applyLanguage(state.lang === 'es' ? 'en' : 'es'); }],
+      ['Abrir carpeta de respaldos', 'Abre la carpeta donde se guardan tus copias de seguridad', () => api.openPath()],
+      ['Abrir configuración inicial', 'Vuelve a abrir el asistente de bienvenida', () => openSetup()],
+      ['Buscar actualización de XHANNIZER0', 'Comprueba si existe una versión nueva en GitHub', () => { activateTab('acerca'); $('#btn-about-update')?.click(); }],
+    ];
+    for (const [title, sub, run] of quickActions) {
+      entries.push({ title, sub, badge: 'Acción', run });
+    }
     const quickTabs = [
-      ['Drivers', 'drivers'],
+      ['Resumen del equipo', 'resumen'],
+      ['Piloto automático', 'piloto'],
+      ['Drivers y BIOS', 'drivers'],
+      ['Chequeo de PC', 'pc-check'],
       ['Herramientas', 'herramientas'],
-      ['Launchers', 'launchers'],
+      ['Launchers y Gaming', 'launchers'],
       ['Navegadores', 'navegadores'],
       ['Compresores y Utilidades', 'utilidades'],
       ['Programadores', 'dev'],
       ['Emuladores (GitHub)', 'emuladores'],
       ['Microsoft Store', 'store'],
-      ['Presets (Experimental)', 'presets'],
+      ['Presets Post-Formateo', 'presets'],
       ['Auditoría de Windows', 'windows-audit'],
       ['Gestor de Inicio Windows', 'startup'],
       ['Actualizador Global', 'upgrades'],
-      ['Limpieza y Red / DNS', 'cleaner-net'],
+      ['Bloatware y Red / DNS', 'cleaner-net'],
       ['Carpetas y Discos', 'discos'],
+      ['Migrar mi PC', 'migracion'],
+      ['Mantenimiento y Limpieza', 'mantenimiento'],
+      ['Rendimiento e informe', 'rendimiento'],
+      ['Ajustes', 'ajustes'],
+      ['Acerca de y soporte', 'acerca'],
     ];
     for (const [label, tab] of quickTabs) {
       entries.push({ title: label, sub: 'Ir a sección', badge: 'Sección', run: () => activateTab(tab) });
@@ -2671,11 +3139,17 @@
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         spotlightActiveIndex = Math.min(spotlightMatches.length - 1, spotlightActiveIndex + 1);
-        $$('.spotlight-item', spotlightResults).forEach((el, i) => el.classList.toggle('is-active', i === spotlightActiveIndex));
+        $$('.spotlight-item', spotlightResults).forEach((el, i) => {
+          el.classList.toggle('is-active', i === spotlightActiveIndex);
+          if (i === spotlightActiveIndex) el.scrollIntoView({ block: 'nearest' });
+        });
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         spotlightActiveIndex = Math.max(0, spotlightActiveIndex - 1);
-        $$('.spotlight-item', spotlightResults).forEach((el, i) => el.classList.toggle('is-active', i === spotlightActiveIndex));
+        $$('.spotlight-item', spotlightResults).forEach((el, i) => {
+          el.classList.toggle('is-active', i === spotlightActiveIndex);
+          if (i === spotlightActiveIndex) el.scrollIntoView({ block: 'nearest' });
+        });
       } else if (e.key === 'Enter' && spotlightMatches[spotlightActiveIndex]) {
         e.preventDefault();
         const item = spotlightMatches[spotlightActiveIndex];
@@ -2989,6 +3463,7 @@
     const badge = $('#badge-pccheck');
     badge.hidden = !data.warnCount;
     badge.textContent = String(data.warnCount || 0);
+    renderDashboard();
 
     $('#pccheck-list').innerHTML = checks
       .map((c) => {
@@ -3272,6 +3747,7 @@
       const res = await api.runRepair(kind);
       if (res?.canceled) return;
       showToast(res?.message || res?.error || 'Reparación terminada.');
+      notifyDone('Mantenimiento terminado — XHANNIZER0', res?.message || 'Reparación finalizada.');
       const out = $(`#repair-out-${kind}`);
       if (out) out.textContent = res?.output || res?.error || '';
       loadActionLog();
@@ -3410,7 +3886,7 @@
       } else if (btn.id === 'btn-restart-explorer') {
         btn.disabled = true;
         const res = await api.restartExplorer();
-        showToast(res?.message || 'Explorador reiniciado.');
+        if (!res?.canceled) showToast(res?.message || 'Explorador reiniciado.');
         btn.disabled = false;
       }
     });
@@ -3515,7 +3991,9 @@
       showToast(res?.error || 'No se pudo limpiar.');
       return res;
     }
-    showToast(`Limpieza terminada: ${formatBytes(res.freedBytes)} liberados.${res.notes?.length ? ` ${res.notes.join(' ')}` : ''}`);
+    const msg = `Limpieza terminada: ${formatBytes(res.freedBytes)} liberados.${res.notes?.length ? ` ${res.notes.join(' ')}` : ''}`;
+    showToast(msg);
+    notifyDone('Limpieza terminada — XHANNIZER0', msg);
     return res;
   }
 
@@ -3633,6 +4111,7 @@
             </div>
           </div>
         </article>`;
+      notifyDone('Prueba de estabilidad terminada — XHANNIZER0', res.verdict || 'Análisis completado.');
     } finally {
       $('#btn-stab-run').disabled = false;
       $('#btn-stab-stop').hidden = true;
@@ -3951,6 +4430,7 @@
       if (state.pilot.status === 'running') {
         state.pilot.status = 'done';
         showToast('Piloto automático terminado.');
+        notifyDone('Piloto automático terminado — XHANNIZER0', 'Todos los pasos seleccionados han finalizado.');
         if (state.pilot.steps.find((s) => s.id === 'after')?.status === 'done') loadBenchmark();
       }
     } finally {
@@ -4100,7 +4580,7 @@
     });
     $('#btn-pilot-reboot').addEventListener('click', async () => {
       const res = await api.autopilotReboot();
-      showToast(res?.ok ? res.message : res?.error || 'No se pudo reiniciar.');
+      if (!res?.canceled) showToast(res?.ok ? res.message : res?.error || 'No se pudo reiniciar.');
     });
     $('#btn-pilot-continue-now').addEventListener('click', () => continuePilot());
 
@@ -4131,10 +4611,13 @@
     initNewFeatures();
     initExtraFeatures();
     initAbout();
+    initSettings();
     initSetup();
     startOnboarding();
     await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
+    renderDashboard();
     renderPostFormatChecklist();
+    syncLiveMonitorSchedule();
     initAppUpdates();
     resumePilotIfNeeded();
   }

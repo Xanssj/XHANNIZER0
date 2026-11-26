@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('xhApi', {
 
   // Hardware y Drivers
   scanHardware: () => ipcRenderer.invoke('xh:scan-hardware'),
+  liveMetrics: () => ipcRenderer.invoke('xh:live-metrics'),
+  notify: (payload) => ipcRenderer.invoke('xh:notify', payload),
   setupGet: () => ipcRenderer.invoke('xh:setup-get'),
   setupSave: (payload) => ipcRenderer.invoke('xh:setup-save', payload),
   whatsNew: () => ipcRenderer.invoke('xh:whats-new'),
@@ -67,16 +69,21 @@ contextBridge.exposeInMainWorld('xhApi', {
   listStartup: () => ipcRenderer.invoke('xh:list-startup'),
   toggleStartup: (payload) => ipcRenderer.invoke('xh:toggle-startup', payload),
 
-  // Exportar / Importar Perfil (.json)
+  // Exportar / Importar Perfil (.json) y Mis perfiles guardados
   exportProfile: (data) => ipcRenderer.invoke('xh:export-profile', data),
   importProfile: () => ipcRenderer.invoke('xh:import-profile'),
+  profilesList: () => ipcRenderer.invoke('xh:profiles-list'),
+  profilesSave: (payload) => ipcRenderer.invoke('xh:profiles-save', payload),
+  profilesDelete: (profileId) => ipcRenderer.invoke('xh:profiles-delete', profileId),
 
-  // Debloater, Actualizador Global y Red/DNS
+  // Debloater, Actualizador Global, Desinstalador y Red/DNS
   scanBloatware: () => ipcRenderer.invoke('xh:scan-bloatware'),
   removeBloatware: (payload) => ipcRenderer.invoke('xh:remove-bloatware', payload),
   scanUpgrades: () => ipcRenderer.invoke('xh:scan-upgrades'),
   runUpgrade: (payload) => ipcRenderer.invoke('xh:run-upgrade', payload),
+  uninstallApp: (payload) => ipcRenderer.invoke('xh:uninstall-app', payload),
   scanNetwork: () => ipcRenderer.invoke('xh:scan-network'),
+  benchmarkDns: () => ipcRenderer.invoke('xh:benchmark-dns'),
   applyNetwork: (payload) => ipcRenderer.invoke('xh:apply-network', payload),
 
   // Auto-actualizador, Gestión de Respaldos y Kit USB

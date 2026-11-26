@@ -173,9 +173,12 @@ foreach ($k in $keys) { Remove-ItemProperty "$vc\\$k" -Name StateFlags0742 -Erro
     parts.push(`Get-ChildItem -LiteralPath ${psData(path.join(WINDIR, 'Temp'))} -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue`);
   }
   if (ids.includes('wu-cache')) {
-    parts.push(`Stop-Service wuauserv,bits -Force -ErrorAction SilentlyContinue
-Get-ChildItem -LiteralPath ${psData(path.join(WINDIR, 'SoftwareDistribution', 'Download'))} -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Start-Service wuauserv,bits -ErrorAction SilentlyContinue`);
+    parts.push(`try {
+  Stop-Service wuauserv,bits -Force -ErrorAction SilentlyContinue
+  Get-ChildItem -LiteralPath ${psData(path.join(WINDIR, 'SoftwareDistribution', 'Download'))} -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+} finally {
+  Start-Service wuauserv,bits -ErrorAction SilentlyContinue
+}`);
   }
   if (ids.includes('component-store')) {
     parts.push('DISM.exe /Online /Cleanup-Image /StartComponentCleanup /Quiet | Out-Null');

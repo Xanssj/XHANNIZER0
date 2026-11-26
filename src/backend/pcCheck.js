@@ -51,7 +51,7 @@ $ram = @(Get-CimInstance Win32_PhysicalMemory | ForEach-Object {
   [pscustomobject]@{ capacity = [int64]$_.Capacity; speed = $_.Speed; configured = $_.ConfiguredClockSpeed; type = $_.SMBIOSMemoryType; part = ([string]$_.PartNumber).Trim(); slot = [string]$_.DeviceLocator; bank = [string]$_.BankLabel }
 })
 $gpus = @(Get-CimInstance Win32_VideoController | ForEach-Object {
-  [pscustomobject]@{ name = $_.Name; res = $_.CurrentHorizontalResolution; pnp = $_.PNPDeviceID }
+  [pscustomobject]@{ name = $_.Name; res = $_.CurrentHorizontalResolution; curHz = $_.CurrentRefreshRate; maxHz = $_.MaxRefreshRate; pnp = $_.PNPDeviceID }
 })
 $pci = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'PCI\\*' -and $_.Class -in @('Display','SCSIAdapter') } | ForEach-Object {
   $k = Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_PciDevice_CurrentLinkSpeed','DEVPKEY_PciDevice_MaxLinkSpeed','DEVPKEY_PciDevice_CurrentLinkWidth','DEVPKEY_PciDevice_MaxLinkWidth'
@@ -72,9 +72,33 @@ $problems = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.ConfigManagerE
   [pscustomobject]@{ name = $(if ($_.Name) { $_.Name } else { $_.Description }); id = $_.PNPDeviceID; code = $_.ConfigManagerErrorCode; cls = $_.PNPClass }
 })
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+$bat = $null
+$bs = Get-CimInstance -Namespace root\wmi -ClassName BatteryStaticData -ErrorAction SilentlyContinue | Select-Object -First 1
+$bf = Get-CimInstance -Namespace root\wmi -ClassName BatteryFullChargedCapacity -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($bs -and $bf -and $bs.DesignedCapacity -gt 0 -and $bf.FullChargedCapacity -gt 0) {
+  $bat = @{ designed = [int64]$bs.DesignedCapacity; full = [int64]$bf.FullChargedCapacity }
+}
+$dumps = @(Get-ChildItem -LiteralPath "$env:SystemRoot\\Minidump" -Filter '*.dmp' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+$since30 = (Get-Date).AddDays(-30)
+$critEvents = @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = @(41, 1001); StartTime = $since30 } -MaxEvents 25 -ErrorAction SilentlyContinue | Where-Object {
+  ($_.Id -eq 41 -and $_.ProviderName -eq 'Microsoft-Windows-Kernel-Power') -or
+  ($_.Id -eq 1001 -and $_.ProviderName -match 'BugCheck|Windows Error Reporting')
+})
+$bsodEvents = @($critEvents | Where-Object { $_.Id -eq 1001 })
+$kpEvents = @($critEvents | Where-Object { $_.Id -eq 41 })
+$lastCrash = $null
+if ($bsodEvents.Count -gt 0) { $lastCrash = $bsodEvents[0].TimeCreated.ToString('o') }
+elseif ($dumps.Count -gt 0) { $lastCrash = $dumps[0].LastWriteTime.ToString('o') }
+elseif ($kpEvents.Count -gt 0) { $lastCrash = $kpEvents[0].TimeCreated.ToString('o') }
+$crashes = @{
+  minidumps = $dumps.Count
+  bsod30d = $bsodEvents.Count
+  powerLoss30d = $kpEvents.Count
+  lastAt = $lastCrash
+}
 @{
   ram = $ram; gpus = $gpus; pci = $pci; secureBoot = $sb; firmware = $env:firmware_type; tpm = $tpm; bar = $bar
-  disks = $disks; gpuTemp = $gpuTemp; problems = $problems; virt = $cpu.VirtualizationFirmwareEnabled; hyperv = [bool](Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+  disks = $disks; gpuTemp = $gpuTemp; battery = $bat; crashes = $crashes; problems = $problems; virt = $cpu.VirtualizationFirmwareEnabled; hyperv = [bool](Get-CimInstance Win32_ComputerSystem).HypervisorPresent
 } | ConvertTo-Json -Depth 4 -Compress
 `;
 
@@ -180,6 +204,27 @@ function analyze(d, ctx = {}) {
       });
     } else if (dgpu.res) {
       push({ id: 'display-port', category: 'Gráficos', status: 'ok', title: 'Monitor conectado a la tarjeta de video', detail: dgpu.name });
+    }
+  }
+
+  // ---------- Frecuencia de actualización del monitor (detecta monitores de alto Hz atascados en 60 Hz)
+  const activeGpu = gpus.find((g) => g.res && Number(g.curHz) > 0) || gpus.find((g) => Number(g.curHz) > 0);
+  if (activeGpu && !vm) {
+    const curHz = Number(activeGpu.curHz) || 0;
+    const maxHz = Number(activeGpu.maxHz) || 0;
+    if (curHz > 0 && curHz <= 65 && maxHz >= 90 && maxHz - curHz >= 20) {
+      push({
+        id: 'display-hz', category: 'Pantalla', status: 'warn',
+        title: `Monitor funcionando a ${curHz} Hz (admite hasta ${maxHz} Hz)`,
+        detail: 'La pantalla corre por debajo de su frecuencia máxima: se nota menos fluidez en Windows y juegos.',
+        fix: `Abre Configuración → Sistema → Pantalla → Pantalla avanzada → Frecuencia de actualización y elige ${maxHz} Hz.`,
+      });
+    } else if (curHz > 0) {
+      push({
+        id: 'display-hz', category: 'Pantalla', status: 'ok',
+        title: `Monitor a ${curHz} Hz`,
+        detail: maxHz > curHz ? `Frecuencia activa ${curHz} Hz (máximo informado: ${maxHz} Hz).` : 'Frecuencia de actualización activa.',
+      });
     }
   }
 
@@ -306,6 +351,58 @@ function analyze(d, ctx = {}) {
       detail: `${name} · uso ${util} %.`,
       fix: hot ? 'Revisa que los ventiladores giren, el flujo de aire del gabinete y que no haya polvo.' : undefined,
     });
+  }
+
+  // ---------- Salud de la batería (portátiles)
+  if (d.battery && Number(d.battery.designed) > 0 && Number(d.battery.full) > 0) {
+    const designed = Number(d.battery.designed);
+    const full = Number(d.battery.full);
+    const pct = Math.min(100, Math.round((full / designed) * 100));
+    const wear = Math.max(0, 100 - pct);
+    const status = pct < 65 ? 'warn' : pct < 80 ? 'info' : 'ok';
+    push({
+      id: 'battery-health', category: 'Batería', status,
+      title: pct < 65 ? `Batería desgastada (${pct} % de salud)` : `Salud de la batería: ${pct} %`,
+      detail: `Capacidad actual ${(full / 1000).toFixed(1)} Wh de ${(designed / 1000).toFixed(1)} Wh originales (${wear} % de desgaste).`,
+      fix: pct < 65 ? 'Si la batería dura muy poco o se calienta, conviene reemplazarla.' : undefined,
+    });
+  }
+
+  // ---------- Pantallazos azules (BSOD) y reinicios inesperados (últimos 30 días)
+  if (d.crashes && typeof d.crashes === 'object') {
+    const bsod = Number(d.crashes.bsod30d || 0);
+    const dumps = Number(d.crashes.minidumps || 0);
+    const kp41 = Number(d.crashes.powerLoss30d || 0);
+    const lastStr = d.crashes.lastAt
+      ? (() => {
+          const dt = new Date(d.crashes.lastAt);
+          return Number.isNaN(dt.getTime()) ? '' : ` Último evento: ${dt.toLocaleDateString('es-ES')}.`;
+        })()
+      : '';
+    if (bsod > 0 || kp41 >= 2) {
+      const parts = [];
+      if (bsod > 0) parts.push(`${bsod} pantallazo(s) azul(es)`);
+      if (kp41 > 0) parts.push(`${kp41} apagado(s) inesperado(s) Kernel-Power 41`);
+      if (dumps > 0) parts.push(`${dumps} volcado(s) en Minidump`);
+      push({
+        id: 'stability-bsod', category: 'Estabilidad', status: 'warn',
+        title: bsod > 0 ? `Se registraron ${bsod} pantallazo(s) azul(es) en 30 días` : `${kp41} apagados inesperados en 30 días`,
+        detail: `${parts.join(' · ')}.${lastStr}`,
+        fix: 'Revisa drivers de GPU, temperaturas y ejecuta la Prueba de estabilidad de RAM (especialmente si activaste XMP/EXPO).',
+      });
+    } else if (kp41 === 1 || dumps > 0) {
+      push({
+        id: 'stability-bsod', category: 'Estabilidad', status: 'info',
+        title: kp41 === 1 ? '1 apagado inesperado en los últimos 30 días' : `${dumps} volcado(s) antiguo(s) en Minidump`,
+        detail: `${kp41 === 1 ? 'Puede deberse a un corte de luz o reinicio forzado.' : 'Sin pantallazos azules en los últimos 30 días.'}${lastStr}`,
+      });
+    } else {
+      push({
+        id: 'stability-bsod', category: 'Estabilidad', status: 'ok',
+        title: 'Sin pantallazos azules ni apagados inesperados (30 días)',
+        detail: 'El Visor de Eventos no registra fallos BugCheck ni Kernel-Power 41 recientes.',
+      });
+    }
   }
 
   const devices = arr(d.problems)

@@ -8,6 +8,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 const ACTION_LABELS = {
   install: 'Instalación',
+  uninstall: 'Desinstalación',
   'windows-setting': 'Ajuste de Windows',
   preset: 'Preset',
   startup: 'Programas al inicio',

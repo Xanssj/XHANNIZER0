@@ -25,6 +25,7 @@ const R = {
   mouseT1: { path: 'HKCU:\\Control Panel\\Mouse', name: 'MouseThreshold1' },
   mouseT2: { path: 'HKCU:\\Control Panel\\Mouse', name: 'MouseThreshold2' },
   hideExt: { path: 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced', name: 'HideFileExt' },
+  showHidden: { path: 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced', name: 'Hidden' },
   clipboard: { path: 'HKCU:\\Software\\Microsoft\\Clipboard', name: 'EnableClipboardHistory' },
   adsId: { path: 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo', name: 'Enabled' },
   appsLight: { path: 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize', name: 'AppsUseLightTheme' },
@@ -40,6 +41,9 @@ const SETTING_TARGETS = {
   'win-privacy-ads': { label: 'ID de publicidad', reg: [R.adsId] },
   'win-power-plan': { label: 'Plan de energía', reg: [], power: true },
   'win-dark-mode': { label: 'Modo oscuro', reg: [R.appsLight, R.systemLight] },
+  'win-show-hidden': { label: 'Archivos ocultos', reg: [R.showHidden] },
+  'win-ultimate-power': { label: 'Plan Máximo rendimiento', reg: [], power: true },
+  'win-hibernation-off': { label: 'Hibernación (hiberfil.sys)', reg: [], hibernate: true },
 };
 for (const t of WIN11_TWEAKS) {
   SETTING_TARGETS[t.id] = { label: t.name, reg: t.values.map((v) => ({ path: v.path, name: v.name })), keys: t.keys || [] };
@@ -137,11 +141,26 @@ ${script}`, 8000);
   return r.ok ? { ok: true } : { ok: false, note: 'No se pudieron quitar claves de registro creadas.' };
 }
 
+async function captureHibernate() {
+  const r = await runPowerShell(
+    `$v = (Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power' -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled; if ($v -eq 1 -or (Test-Path "$env:SystemDrive\\hiberfil.sys")) { 'on' } else { 'off' }`,
+    8000
+  );
+  return r.stdout.trim() === 'on';
+}
+
+async function restoreHibernate(wasEnabled) {
+  const flag = wasEnabled ? 'on' : 'off';
+  const r = await runElevated(`powercfg /h ${flag}; if ($LASTEXITCODE -ne 0) { exit 1 }`, 30000);
+  return r.ok ? { ok: true } : { ok: false, note: r.cancelled ? 'Elevación UAC cancelada.' : 'No se pudo restaurar la hibernación.' };
+}
+
 async function captureSystemState(target) {
   return {
     registry: await captureRegistry(target.reg || []),
     keys: await captureKeys(target.keys || []),
     powerScheme: target.power ? await capturePowerPlan() : null,
+    hibernateEnabled: target.hibernate ? await captureHibernate() : null,
   };
 }
 
@@ -158,6 +177,10 @@ async function restoreSystemState(data) {
   }
   if (data.powerScheme) {
     const r = await restorePowerPlan(data.powerScheme);
+    if (!r.ok) { ok = false; notes.push(r.note); }
+  }
+  if (typeof data.hibernateEnabled === 'boolean') {
+    const r = await restoreHibernate(data.hibernateEnabled);
     if (!r.ok) { ok = false; notes.push(r.note); }
   }
   return { ok, note: notes.join(' ') };

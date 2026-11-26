@@ -150,11 +150,14 @@ $ErrorActionPreference = 'SilentlyContinue'
 $gameMode = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AllowAutoGameMode').AllowAutoGameMode
 $hags = (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' -Name 'HwSchMode').HwSchMode
 $hideExt = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced' -Name 'HideFileExt').HideFileExt
+$showHidden = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced' -Name 'Hidden').Hidden
 $mouseSpeed = (Get-ItemProperty -Path 'HKCU:\\Control Panel\\Mouse' -Name 'MouseSpeed').MouseSpeed
 $advId = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Name 'Enabled').Enabled
 $clipboard = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Clipboard' -Name 'EnableClipboardHistory').EnableClipboardHistory
 $darkApps = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize' -Name 'AppsUseLightTheme').AppsUseLightTheme
 $powerRaw = (powercfg /getactivescheme) -join ' '
+$hiberEnabled = (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power' -Name 'HibernateEnabled').HibernateEnabled
+$hiberFile = Test-Path -LiteralPath "$env:SystemDrive\\hiberfil.sys"
 $refreshRates = @(Get-CimInstance Win32_VideoController | Where-Object { $_.CurrentRefreshRate -gt 0 } | Select-Object -ExpandProperty CurrentRefreshRate)
 $maxHz = if ($refreshRates.Count -gt 0) { ($refreshRates | Measure-Object -Maximum).Maximum } else { 60 }
 $build = [Environment]::OSVersion.Version.Build
@@ -164,11 +167,14 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
   gameMode = $gameMode
   hags = $hags
   hideExt = $hideExt
+  showHidden = $showHidden
   mouseSpeed = $mouseSpeed
   advId = $advId
   clipboard = $clipboard
   darkApps = $darkApps
   powerRaw = $powerRaw
+  hiberEnabled = $hiberEnabled
+  hiberFile = $hiberFile
   maxHz = $maxHz
   startupCount = $startupCount
   build = $build
@@ -214,6 +220,7 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
       canApply: true,
       requiresRestart: true,
       impact: hasDedicatedGpu ? 'Alta prioridad' : 'Opcional',
+      caution: 'Requiere reiniciar Windows. En tarjetas muy antiguas o ciertos flujos con OBS/VR puede causar tirones; es 100 % reversible.',
     },
     {
       id: 'win-refresh-rate',
@@ -293,9 +300,60 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
   const pendingCount = items.filter((i) => !i.isOptimal).length;
   const build = Number(data.build || 0);
   const win11Items = await scanWin11Tweaks(build);
+  const isLaptop = hardwareSystem?.formFactor === 'laptop';
+  const isUltimate = /e9a42b02-d5df-448d-aa00-03f14749eb61|ultimate|m[aá]ximo rendimiento/i.test(powerRaw);
+  const hiberOff = data.hiberEnabled === 0 && !data.hiberFile;
+
+  const extraOptional = [
+    {
+      id: 'win-show-hidden',
+      group: 'win11',
+      optional: true,
+      category: 'Explorador',
+      name: 'Mostrar archivos y carpetas ocultos',
+      description: 'Muestra AppData, .env y archivos ocultos en el Explorador de Windows. Muy útil para desarrolladores y técnicos.',
+      currentState: data.showHidden === 1 ? 'Visibles' : 'Ocultos (predeterminado)',
+      isOptimal: data.showHidden === 1,
+      canApply: true,
+      impact: 'Opcional',
+    },
+    {
+      id: 'win-ultimate-power',
+      group: 'win11',
+      optional: true,
+      category: 'Energía avanzada',
+      name: 'Desbloquear plan «Máximo rendimiento» (Ultimate Performance)',
+      description: 'Desbloquea el perfil nativo oculto de Windows para PCs de escritorio de alto rendimiento sin micro-ahorros de energía.',
+      currentState: isUltimate ? 'Activo' : 'No activo',
+      isOptimal: isUltimate,
+      canApply: true,
+      impact: isLaptop ? 'Precaución · Portátil' : 'Opcional · Escritorio',
+      riskLevel: isLaptop ? 'warn' : 'info',
+      caution: isLaptop
+        ? 'No recomendado en portátiles: reduce la duración de la batería y aumenta la temperatura en reposo. En portátiles usa «Equilibrado».'
+        : 'Aumenta levemente el consumo eléctrico en reposo porque evita los estados profundos de ahorro. Reversible desde Respaldos.',
+    },
+    {
+      id: 'win-hibernation-off',
+      group: 'win11',
+      optional: true,
+      category: 'Espacio SSD',
+      name: 'Desactivar hibernación y liberar hiberfil.sys (6–16 GB)',
+      description: 'Ejecuta powercfg /h off para eliminar el archivo de hibernación del disco C: y recuperar espacio en el SSD.',
+      currentState: hiberOff ? 'Desactivada (espacio libre)' : 'Activada',
+      isOptimal: hiberOff,
+      canApply: true,
+      impact: 'Precaución · Admin',
+      riskLevel: 'warn',
+      caution: isLaptop
+        ? 'NO recomendado en portátiles: desactiva la hibernación por batería crítica (riesgo de perder trabajo abierto si se agota la batería) y el Inicio rápido.'
+        : 'Desactiva también el «Inicio rápido» de Windows (en SSD NVMe apenas cambia 1–2 s). Reversible con «Deshacer cambios» o powercfg /h on.',
+    },
+  ];
+
   return {
-    // Los ajustes de Windows 11 son opcionales: no cuentan como «pendientes»
-    items: [...items, ...win11Items],
+    // Los ajustes opcionales (Windows 11 + avanzados) no cuentan como «pendientes»
+    items: [...items, ...extraOptional, ...win11Items],
     pendingCount,
     optimalCount: items.length - pendingCount,
     startupCount: Number(data.startupCount || 0),
@@ -361,7 +419,40 @@ async function applyWindowsSetting({ settingId, backupId }) {
       Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize' -Name 'SystemUsesLightTheme' -Value 0 -Type DWord
       Write-Output 'Modo oscuro nativo activado.'
     `,
+    'win-show-hidden': `
+      Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced' -Name 'Hidden' -Value 1 -Type DWord
+      Write-Output 'Archivos y carpetas ocultos visibles en el Explorador.'
+    `,
+    'win-ultimate-power': `
+      $existing = (powercfg /list) -join "\`n"
+      $guid = $null
+      if ($existing -match '([0-9a-f-]{36})\\s*\\([^)]*(?:Ultimate|M[aá]ximo rendimiento)') {
+        $guid = $Matches[1]
+      } else {
+        $dup = (powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>&1) -join ' '
+        if ($dup -match '([0-9a-f-]{36})') { $guid = $Matches[1] }
+      }
+      if ($guid) {
+        powercfg /setactive $guid 2>$null
+        if ($LASTEXITCODE -eq 0) { Write-Output 'Plan Máximo rendimiento (Ultimate Performance) activado.' } else { exit 1 }
+      } else {
+        powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
+        Write-Output 'Plan Alto rendimiento activado (Ultimate Performance no disponible en este equipo).'
+      }
+    `,
   };
+
+  if (settingId === 'win-hibernation-off') {
+    const elevRes = await runElevated('powercfg /h off; if ($LASTEXITCODE -ne 0) { exit 1 }', 30000);
+    return {
+      ok: elevRes.ok,
+      message: elevRes.ok
+        ? 'Hibernación desactivada (hiberfil.sys liberado). Puedes reactivarla con «Deshacer cambios».'
+        : elevRes.cancelled
+          ? 'Elevación UAC cancelada por el usuario.'
+          : 'No se pudo desactivar la hibernación.',
+    };
+  }
 
   const ps = commands[settingId];
   if (!ps) return { ok: false, error: 'Configuración desconocida.' };

@@ -159,9 +159,31 @@ async function runWingetUpgrade({ wingetId }) {
   };
 }
 
+async function uninstallWingetApp({ wingetId, name }) {
+  const id = String(wingetId || '').trim();
+  if (!WINGET_ID_RE.test(id)) return { ok: false, error: 'ID de paquete inválido.' };
+  const args = ['uninstall', '--id', id, '--exact', '--silent', '--accept-source-agreements', '--disable-interactivity'];
+  const res = await runExec('winget.exe', args, 180000);
+  const label = String(name || id);
+  return {
+    ok: res.ok,
+    message: res.ok
+      ? `${label} desinstalado correctamente.`
+      : `No se pudo desinstalar ${label} automáticamente (puede requerir cerrar la app o desinstalar desde Configuración de Windows).`,
+  };
+}
+
 // =========================================================================
-// 3. DIAGNÓSTICO RÁPIDO DE RED Y DNS (Cloudflare / Google / DHCP / Flush)
+// 3. DIAGNÓSTICO RÁPIDO DE RED Y DNS (Comparador en vivo + Cloudflare/Google/Quad9/AdGuard/DHCP)
 // =========================================================================
+const DNS_PROVIDERS = [
+  { id: 'dns-cloudflare', name: 'Cloudflare', primary: '1.1.1.1', secondary: '1.0.0.1', note: 'Muy rápido y enfocado en privacidad' },
+  { id: 'dns-google', name: 'Google DNS', primary: '8.8.8.8', secondary: '8.8.4.4', note: 'Alta disponibilidad global' },
+  { id: 'dns-quad9', name: 'Quad9', primary: '9.9.9.9', secondary: '149.112.112.112', note: 'Bloquea dominios maliciosos y phishing' },
+  { id: 'dns-adguard', name: 'AdGuard DNS', primary: '94.140.14.14', secondary: '94.140.15.15', note: 'Bloquea anuncios y rastreadores por DNS' },
+  { id: 'dns-opendns', name: 'OpenDNS', primary: '208.67.222.222', secondary: '208.67.220.220', note: 'Estable con protección de Cisco' },
+];
+
 async function scanNetworkAndDns() {
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
@@ -187,6 +209,8 @@ $pingGg = (Test-Connection -ComputerName 8.8.8.8 -Count 1 -ErrorAction SilentlyC
   if (dnsList.includes('1.1.1.1')) provider = 'Cloudflare (1.1.1.1)';
   else if (dnsList.includes('8.8.8.8')) provider = 'Google (8.8.8.8)';
   else if (dnsList.includes('9.9.9.9')) provider = 'Quad9 (9.9.9.9)';
+  else if (dnsList.includes('94.140.14.14')) provider = 'AdGuard DNS (94.140.14.14)';
+  else if (dnsList.includes('208.67.222.222')) provider = 'OpenDNS (208.67.222.222)';
 
   return {
     ok: true,
@@ -197,6 +221,56 @@ $pingGg = (Test-Connection -ComputerName 8.8.8.8 -Count 1 -ErrorAction SilentlyC
     pingCloudflare: typeof data.pingCloudflare === 'number' ? `${data.pingCloudflare} ms` : 'Sin respuesta',
     pingGoogle: typeof data.pingGoogle === 'number' ? `${data.pingGoogle} ms` : 'Sin respuesta',
   };
+}
+
+// Mide en paralelo (3 pings por servidor) la latencia real de los principales DNS públicos
+async function benchmarkDnsServers() {
+  const ips = DNS_PROVIDERS.map((p) => p.primary);
+  const ps = `
+$ErrorActionPreference = 'SilentlyContinue'
+$ips = @(${psData(ips)})
+$results = @{}
+foreach ($ip in $ips) { $results[$ip] = @() }
+for ($round = 0; $round -lt 3; $round++) {
+  $tasks = @{}
+  foreach ($ip in $ips) {
+    $p = New-Object System.Net.NetworkInformation.Ping
+    $tasks[$ip] = @{ ping = $p; task = $p.SendPingAsync($ip, 1200) }
+  }
+  foreach ($ip in $ips) {
+    try {
+      $r = $tasks[$ip].task.GetAwaiter().GetResult()
+      if ($r -and $r.Status -eq 'Success') { $results[$ip] += [int]$r.RoundtripTime }
+    } catch {}
+    $tasks[$ip].ping.Dispose()
+  }
+}
+$results | ConvertTo-Json -Compress
+`;
+  const res = await runPowerShell(ps, 14000);
+  let raw = {};
+  if (res.ok && res.stdout) {
+    try { raw = JSON.parse(res.stdout); } catch { raw = {}; }
+  }
+  const items = DNS_PROVIDERS.map((prov) => {
+    const samples = (Array.isArray(raw[prov.primary]) ? raw[prov.primary] : typeof raw[prov.primary] === 'number' ? [raw[prov.primary]] : [])
+      .map(Number)
+      .filter((n) => Number.isFinite(n) && n >= 0);
+    const avgMs = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : null;
+    const minMs = samples.length ? Math.min(...samples) : null;
+    const lossPct = Math.round(((3 - samples.length) / 3) * 100);
+    return { ...prov, avgMs, minMs, lossPct, reachable: samples.length > 0 };
+  }).sort((a, b) => {
+    if (a.avgMs == null && b.avgMs == null) return 0;
+    if (a.avgMs == null) return 1;
+    if (b.avgMs == null) return -1;
+    return a.avgMs - b.avgMs;
+  });
+
+  if (items.length && items[0].reachable) {
+    items[0].recommended = true;
+  }
+  return { ok: true, items, testedAt: new Date().toISOString() };
 }
 
 async function applyNetworkAction({ action, adapterName, backupId }) {
@@ -216,12 +290,10 @@ async function applyNetworkAction({ action, adapterName, backupId }) {
 
   let innerCmd = '';
   let label = '';
-  if (action === 'dns-cloudflare') {
-    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias ${psData(adapter)} -ServerAddresses ('1.1.1.1','1.0.0.1'); ipconfig /flushdns`;
-    label = 'DNS Cloudflare (1.1.1.1) aplicado';
-  } else if (action === 'dns-google') {
-    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias ${psData(adapter)} -ServerAddresses ('8.8.8.8','8.8.4.4'); ipconfig /flushdns`;
-    label = 'DNS Google (8.8.8.8) aplicado';
+  const provider = DNS_PROVIDERS.find((p) => p.id === action);
+  if (provider) {
+    innerCmd = `Set-DnsClientServerAddress -InterfaceAlias ${psData(adapter)} -ServerAddresses (${psData(provider.primary)},${psData(provider.secondary)}); ipconfig /flushdns`;
+    label = `DNS ${provider.name} (${provider.primary}) aplicado`;
   } else if (action === 'dns-dhcp') {
     innerCmd = `Set-DnsClientServerAddress -InterfaceAlias ${psData(adapter)} -ResetServerAddresses; ipconfig /flushdns`;
     label = 'DNS restaurado a Automático (DHCP)';
@@ -247,6 +319,9 @@ module.exports = {
   removeBloatware,
   scanWingetUpgrades,
   runWingetUpgrade,
+  uninstallWingetApp,
   scanNetworkAndDns,
+  benchmarkDnsServers,
   applyNetworkAction,
+  DNS_PROVIDERS,
 };

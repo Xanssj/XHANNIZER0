@@ -189,7 +189,7 @@ function buildHardwarePresets(system) {
     {
       id: 'preset-gaming',
       name: 'Gaming',
-      badge: 'Experimental',
+      badge: 'Recomendado',
       tone: 'accent',
       summary: 'Máxima fluidez en juegos, monitoreo de temperaturas/FPS y librerías esenciales adaptadas a tu tarjeta gráfica.',
       hardwareNote:

@@ -2,6 +2,30 @@
 
 English notes for the "What's new" window. The full history is in CHANGELOG.md (Spanish).
 
+## 2.3.0 — 2026-11-26
+
+### New
+- **Overview dashboard & grouped sidebar**: navigation reorganized into 4 clean groups (`Home`, `Hardware`, `Programs`, `System`) with macOS segmented sub-tabs, 1-click PC specs copy, and a dedicated **Settings** view (`Ctrl + ,`).
+- **Live hardware monitor** in Overview: real-time CPU, RAM, system drive free space, and NVIDIA GPU temperature (auto-pauses when switching tabs or minimizing).
+- **Live DNS benchmark**: measures real parallel latency across Cloudflare, Google, Quad9, AdGuard, and OpenDNS, highlights the fastest server, and applies it in 1 click.
+- **Expanded PC Check**: now also detects monitors stuck at 60 Hz, laptop battery health/wear, and Blue Screens (BSOD) or unexpected `Kernel-Power 41` shutdowns over the last 30 days.
+- **Built-in WinGet uninstaller** on installed catalog cards with native confirmation.
+- **Saved local profiles** inside Presets to save, load, and share custom selections without loose files.
+- **New reversible Windows settings**: show hidden files, unlock Ultimate Performance plan, and disable hibernation (`hiberfil.sys`) with clear laptop warnings.
+- **Native Windows notifications** when long tasks finish while the app is minimized (toggleable in Settings).
+- **Command Palette (`Ctrl + K`)** and quick keyboard shortcuts (`Ctrl + 1..9`).
+
+### Fluidity & design
+- **60–240 Hz fluid motion system**: spring-physics sidebar hover pill, sliding segmented indicators, frame-rate-independent 3D card tilt, 1 px cursor-reactive glass edge highlight, and click ripples.
+- **Native Windows 11 DWM window animations**: switched to `titleBarStyle: 'hidden'` + `thickFrame: true` for smooth GPU-accelerated open, minimize, restore, maximize, and close animations.
+- Fixed Light Mode toast notification contrast.
+
+### Security & PC safety
+- **Guaranteed Windows Update service recovery**: repair and cache cleanup scripts wrap service stop/start in `try/finally` blocks so services never stay stopped.
+- **Protected system folder guard**: disk, folder, and migration actions block critical OS paths (`C:\Windows`, `Program Files`, drive roots).
+- **Explicit safety confirmations** before sensitive changes (hibernation, Ultimate Performance on laptops, HAGS, Explorer restart, and Autopilot reboot).
+- Full security & IPC audit (85/85 channels verified) and expanded unit test suite (29 tests).
+
 ## 2.2.5 — 2026-11-25
 
 ### Changed

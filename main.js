@@ -2,14 +2,14 @@
 // Utilidad post-formateo para Windows con estética macOS / Apple Design y arquitectura limpia.
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-const { detectHardwareAndDrivers, getLastHardwareScan, formatNvidiaVersion } = require('./src/backend/hardware');
+const { detectHardwareAndDrivers, getLastHardwareScan, getLiveSystemMetrics, formatNvidiaVersion } = require('./src/backend/hardware');
 const { checkDriverUpdates } = require('./src/backend/driverCheck');
-const { getCatalogWithStatusAsync, setCatalogOverrides } = require('./src/backend/catalog');
+const { getCatalogWithStatusAsync, getCatalogItem, setCatalogOverrides } = require('./src/backend/catalog');
 const { getEmulatorsCatalog, resolveGithubLatestRelease } = require('./src/backend/emulators');
 const { hasWinget, runBatchInstall } = require('./src/backend/installer');
 const {
@@ -33,7 +33,9 @@ const {
   removeBloatware,
   scanWingetUpgrades,
   runWingetUpgrade,
+  uninstallWingetApp,
   scanNetworkAndDns,
+  benchmarkDnsServers,
   applyNetworkAction,
 } = require('./src/backend/postFormatTools');
 const { withUndo, restoreBackup, pendingEntries } = require('./src/backend/restore');
@@ -151,7 +153,8 @@ function createWindow() {
     y: state.y,
     minWidth: 1020,
     minHeight: 660,
-    frame: false,
+    titleBarStyle: 'hidden',
+    thickFrame: true,
     show: false,
     backgroundColor: '#00000000',
     backgroundMaterial: 'acrylic',
@@ -169,6 +172,9 @@ function createWindow() {
   if (state.maximized) win.maximize();
 
   const contents = win.webContents;
+
+  // Con titleBarStyle: 'hidden' + thickFrame: true, Windows 11 DWM ejecuta sus
+  // animaciones nativas GPU a 240 Hz para abrir, minimizar, restaurar, maximizar y cerrar.
   win.once('ready-to-show', () => win.show());
 
   // Todo enlace externo se abre en el navegador del sistema
@@ -216,26 +222,27 @@ function createWindow() {
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
 
-  const sendWindowState = () => {
+  const sendWindowState = (eventName = '') => {
     if (!win || win.isDestroyed()) return;
     contents.send('xh:window', {
       focused: win.isFocused(),
       maximized: win.isMaximized(),
       dark: true,
+      event: eventName,
     });
   };
 
-  ['focus', 'blur', 'maximize', 'unmaximize', 'restore'].forEach((ev) => win.on(ev, sendWindowState));
-  contents.on('did-finish-load', sendWindowState);
+  ['focus', 'blur', 'maximize', 'unmaximize', 'restore'].forEach((ev) => win.on(ev, () => sendWindowState(ev)));
+  contents.on('did-finish-load', () => sendWindowState('load'));
   win.on('close', () => saveWindowState(win));
 
   win.loadFile(path.join(__dirname, 'src', 'renderer', 'index.html'));
 }
 
-// ---------- Controles de ventana (semáforo macOS) y tema claro/oscuro
+// ---------- Controles de ventana (orden Windows) y tema claro/oscuro
 ipcMain.on('xh:window', (event, action) => {
   const target = BrowserWindow.fromWebContents(event.sender);
-  if (!target) return;
+  if (!target || target.isDestroyed()) return;
   if (action === 'close') target.close();
   else if (action === 'minimize') target.minimize();
   else if (action === 'zoom') {
@@ -680,9 +687,50 @@ ipcMain.handle('xh:scan-windows-audit', async (_event, system) => {
   return scanWindowsSettings(system);
 });
 
-ipcMain.handle('xh:apply-windows-setting', withVerifiedBackup((payload) =>
-  withUndo(payload.backupId, 'windows-setting', payload, () => applyWindowsSetting(payload))
-));
+const SENSITIVE_WIN_WARNINGS = {
+  'win-hibernation-off': (isLaptop) => ({
+    title: 'Desactivar hibernación — XHANNIZER0',
+    message: isLaptop
+      ? 'Este equipo parece un portátil: desactivar la hibernación NO es recomendable.'
+      : '¿Desactivar la hibernación y liberar hiberfil.sys?',
+    detail: isLaptop
+      ? 'Al desactivar hibernación también se desactiva el «Inicio rápido» y la hibernación automática por batería crítica (si se agota la batería, el equipo se apagará y podrías perder trabajo abierto). Es 100 % reversible desde Respaldos.'
+      : 'Esto libera entre 6 y 16 GB del disco C:, pero también desactiva el «Inicio rápido» de Windows (en SSD NVMe la diferencia al encender es mínima). Puedes revertirlo en cualquier momento desde «Deshacer cambios».',
+  }),
+  'win-ultimate-power': (isLaptop) =>
+    isLaptop
+      ? {
+          title: 'Plan Máximo rendimiento en portátil — XHANNIZER0',
+          message: 'Tu equipo es un portátil: «Máximo rendimiento» reducirá la batería.',
+          detail: 'Evita estados de ahorro de energía del procesador, lo que aumenta el calor, el ruido del ventilador y descarga más rápido la batería. En portátiles se recomienda «Equilibrado». Puedes revertirlo desde Respaldos.',
+        }
+      : null,
+  'win-hags': () => ({
+    title: 'Activar HAGS (Programación de GPU) — XHANNIZER0',
+    message: '¿Activar Programación de GPU acelerada por hardware (HAGS)?',
+    detail: 'Requiere reiniciar Windows para aplicarse. Mejora la latencia en GPUs modernas, pero en tarjetas muy antiguas o ciertos flujos con OBS/VR puede causar tirones. Es 100 % reversible desde «Deshacer cambios».',
+  }),
+};
+
+ipcMain.handle('xh:apply-windows-setting', withVerifiedBackup(async (payload) => {
+  const id = String(payload?.settingId || '');
+  const isLaptop = getLastHardwareScan()?.system?.formFactor === 'laptop';
+  const warnBuilder = SENSITIVE_WIN_WARNINGS[id];
+  const warn = typeof warnBuilder === 'function' ? warnBuilder(isLaptop) : null;
+  if (warn && win && !win.isDestroyed()) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Aplicar de todos modos', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: warn.title,
+      message: warn.message,
+      detail: warn.detail,
+    });
+    if (response !== 0) return { ok: false, canceled: true };
+  }
+  return withUndo(payload.backupId, 'windows-setting', payload, () => applyWindowsSetting(payload));
+}));
 
 // ---------- Gestor de Inicio de Windows (Startup Manager)
 ipcMain.handle('xh:list-startup', async () => {
@@ -700,10 +748,107 @@ ipcMain.handle('xh:remove-bloatware', withVerifiedBackup((payload) =>
 ));
 ipcMain.handle('xh:scan-upgrades', async () => scanWingetUpgrades());
 ipcMain.handle('xh:run-upgrade', async (_event, payload) => runWingetUpgrade(payload || {}));
+let uninstallBusy = false;
+ipcMain.handle('xh:uninstall-app', async (_event, payload) => {
+  if (uninstallBusy) return { ok: false, error: 'Ya hay una desinstalación en curso.' };
+  const item = getCatalogItem(String(payload?.id || ''));
+  if (!item || !item.wingetId) return { ok: false, error: 'Este programa no admite desinstalación automática por WinGet.' };
+  if (win && !win.isDestroyed()) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Desinstalar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Desinstalar programa — XHANNIZER0',
+      message: `¿Desinstalar ${item.name}?`,
+      detail: `Se ejecutará la desinstalación oficial vía WinGet (${item.wingetId}). Cierra el programa antes si está abierto.`,
+    });
+    if (response !== 0) return { ok: false, canceled: true };
+  }
+  uninstallBusy = true;
+  try {
+    const res = await uninstallWingetApp({ wingetId: item.wingetId, name: item.name });
+    logAction('uninstall', { id: item.id, name: item.name, wingetId: item.wingetId, ok: res.ok });
+    return res;
+  } finally {
+    uninstallBusy = false;
+  }
+});
+
+// ---------- Mis perfiles guardados en la app (sin archivos sueltos)
+const SAVED_PROFILES_FILE = () => path.join(app.getPath('userData'), 'mis-perfiles.json');
+const PROFILE_ID_RE = /^[a-z0-9][a-z0-9._+-]{0,79}$/i;
+function readSavedProfiles() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(SAVED_PROFILES_FILE(), 'utf8'));
+    return Array.isArray(raw) ? raw.slice(0, 30) : [];
+  } catch {
+    return [];
+  }
+}
+function writeSavedProfiles(list) {
+  fs.mkdirSync(path.dirname(SAVED_PROFILES_FILE()), { recursive: true });
+  fs.writeFileSync(SAVED_PROFILES_FILE(), JSON.stringify(list.slice(0, 30), null, 2), 'utf8');
+}
+ipcMain.handle('xh:profiles-list', async () => ({ ok: true, items: readSavedProfiles() }));
+ipcMain.handle('xh:profiles-save', async (_event, payload) => {
+  const name = cleanText(payload?.name, 60);
+  if (!name) return { ok: false, error: 'Escribe un nombre para el perfil.' };
+  const appIds = Array.from(new Set((Array.isArray(payload?.appIds) ? payload.appIds : []).map(String).filter((s) => PROFILE_ID_RE.test(s)))).slice(0, 200);
+  const settingIds = Array.from(new Set((Array.isArray(payload?.settingIds) ? payload.settingIds : []).map(String).filter((s) => PROFILE_ID_RE.test(s)))).slice(0, 80);
+  if (!appIds.length && !settingIds.length) {
+    return { ok: false, error: 'Selecciona al menos un programa o aplica ajustes antes de guardar.' };
+  }
+  const list = readSavedProfiles();
+  const id = `prof-${Date.now().toString(36)}`;
+  const entry = { id, name, appIds, settingIds, createdAt: new Date().toISOString() };
+  const next = [entry, ...list.filter((p) => p.name.toLowerCase() !== name.toLowerCase())].slice(0, 30);
+  writeSavedProfiles(next);
+  return { ok: true, profile: entry, items: next };
+});
+ipcMain.handle('xh:profiles-delete', async (_event, profileId) => {
+  const id = String(profileId || '');
+  const list = readSavedProfiles();
+  const next = list.filter((p) => p.id !== id);
+  writeSavedProfiles(next);
+  return { ok: true, items: next };
+});
 ipcMain.handle('xh:scan-network', async () => scanNetworkAndDns());
+ipcMain.handle('xh:benchmark-dns', async () => benchmarkDnsServers());
 ipcMain.handle('xh:apply-network', withVerifiedBackup((payload) =>
   withUndo(payload.backupId, 'network', payload, () => applyNetworkAction(payload))
 ));
+
+// ---------- Monitor en vivo liviano + Notificaciones nativas de Windows
+ipcMain.handle('xh:live-metrics', async () => getLiveSystemMetrics());
+ipcMain.handle('xh:notify', async (_event, payload) => {
+  try {
+    if (!Notification || !Notification.isSupported()) return { ok: false };
+    // Solo mostrar notificación nativa si la ventana está minimizada o en segundo plano
+    if (win && !win.isDestroyed() && win.isFocused() && !win.isMinimized()) {
+      return { ok: true, skipped: true };
+    }
+    const title = cleanText(payload?.title || 'XHANNIZER0', 80) || 'XHANNIZER0';
+    const body = cleanText(payload?.body || '', 220);
+    if (!body) return { ok: false };
+    const n = new Notification({
+      title,
+      body,
+      icon: path.join(__dirname, 'assets', 'icon.ico'),
+      silent: false,
+    });
+    n.on('click', () => {
+      if (win && !win.isDestroyed()) {
+        if (win.isMinimized()) win.restore();
+        win.focus();
+      }
+    });
+    n.show();
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
 
 // ---------- Exportar / Importar Perfil XHANNIZER0 (.json)
 ipcMain.handle('xh:export-profile', async (_event, profileData) => {
@@ -934,7 +1079,21 @@ ipcMain.handle('xh:export-diagnostics', async () => {
 });
 
 // ---------- Reiniciar el Explorador (para ver ajustes de Windows 11)
-ipcMain.handle('xh:restart-explorer', async () => restartExplorer());
+ipcMain.handle('xh:restart-explorer', async () => {
+  if (win && !win.isDestroyed()) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Reiniciar Explorador', 'Cancelar'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Reiniciar Explorador de Windows — XHANNIZER0',
+      message: '¿Reiniciar el Explorador de Windows ahora?',
+      detail: 'La barra de tareas parpadeará unos segundos y se cerrarán las ventanas abiertas del Explorador de archivos (cancela si estás copiando archivos en este momento).',
+    });
+    if (response !== 0) return { ok: false, canceled: true };
+  }
+  return restartExplorer();
+});
 
 // ---------- Migrar mi PC
 const KNOWN_FOLDERS = [
@@ -969,6 +1128,14 @@ ipcMain.handle('xh:migration-measure', async (_event, folderPath) => {
 
 ipcMain.handle('xh:migration-export', async (_event, payload) => {
   if (migrationBusy) return { ok: false, error: 'Ya hay una migración en curso.' };
+  const destDir = typeof payload?.destDir === 'string' ? path.resolve(payload.destDir) : '';
+  if (!destDir || !LOCAL_DRIVE_PATH_RE.test(destDir)) {
+    return { ok: false, error: 'Elige una carpeta o unidad USB de destino.' };
+  }
+  const sysDrive = (process.env.SystemDrive || 'C:').toLowerCase();
+  if (destDir.toLowerCase().startsWith(`${sysDrive}\\windows`) || destDir.toLowerCase().startsWith(`${sysDrive}\\program files`)) {
+    return { ok: false, error: 'Por seguridad no se puede exportar una migración dentro de carpetas del sistema.' };
+  }
   const folders = (Array.isArray(payload?.folders) ? payload.folders : [])
     .map((f) => {
       if (f?.key) {
@@ -979,8 +1146,10 @@ ipcMain.handle('xh:migration-export', async (_event, payload) => {
     })
     .filter((f) => f && f.path && fs.existsSync(f.path));
   // Ajustes que ya tienes aplicados en este PC: se proponen para el PC nuevo
+  // (excluye energía extrema e hibernación para no heredarlos por error en un portátil)
+  const EXCLUDE_MIGRATION = new Set(['win-refresh-rate', 'win-hibernation-off', 'win-ultimate-power']);
   const audit = await scanWindowsSettings(getLastHardwareScan()?.system || null);
-  const settingIds = (audit.items || []).filter((i) => i.isOptimal && i.id !== 'win-refresh-rate').map((i) => i.id);
+  const settingIds = (audit.items || []).filter((i) => i.isOptimal && !EXCLUDE_MIGRATION.has(i.id)).map((i) => i.id);
   const catalog = await getCatalogWithStatusAsync();
   migrationBusy = true;
   try {
@@ -988,7 +1157,7 @@ ipcMain.handle('xh:migration-export', async (_event, payload) => {
     const snap = await benchmark.takeSnapshot({ startupEnabled: await countStartupEnabled() });
     const before = snap.ok ? benchmark.sanitizeSnapshot({ ...snap.snapshot, pcName: require('os').hostname() }) : null;
     return await migration.exportMigration({
-      destDir: payload?.destDir,
+      destDir,
       folders,
       settingIds,
       catalog,
@@ -1395,6 +1564,18 @@ ipcMain.handle('xh:autopilot-get', async () => ({
 }));
 ipcMain.handle('xh:autopilot-save', async (_event, data) => autopilot.saveAutopilot(data || null));
 ipcMain.handle('xh:autopilot-reboot', async () => {
+  if (win && !win.isDestroyed()) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Reiniciar en 15 s', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Reiniciar PC — Piloto automático',
+      message: '¿Reiniciar Windows ahora para continuar el Piloto automático?',
+      detail: 'Guarda tu trabajo y cierra los programas abiertos. El equipo se reiniciará en 15 segundos y XHANNIZER0 volverá a abrirse solo al iniciar sesión.',
+    });
+    if (response !== 0) return { ok: false, canceled: true };
+  }
   const res = await autopilot.scheduleResumeAndReboot({
     execPath: process.execPath,
     appPath: app.getAppPath(),

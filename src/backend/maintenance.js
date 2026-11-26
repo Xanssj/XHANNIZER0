@@ -26,15 +26,21 @@ $code = $LASTEXITCODE`,
     label: 'Restablecer Windows Update',
     script: `$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $svcs = 'wuauserv','bits','cryptsvc','msiserver'
-foreach ($s in $svcs) { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue }
 $lines = @()
-foreach ($d in @("$env:SystemRoot\\SoftwareDistribution", "$env:SystemRoot\\System32\\catroot2")) {
-  if (Test-Path $d) { Rename-Item -LiteralPath $d -NewName ("{0}.old-{1}" -f (Split-Path $d -Leaf), $stamp) -ErrorAction Stop; $lines += "Renombrado: $d (copia conservada)" }
+$code = 0
+try {
+  foreach ($s in $svcs) { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue }
+  foreach ($d in @("$env:SystemRoot\\SoftwareDistribution", "$env:SystemRoot\\System32\\catroot2")) {
+    if (Test-Path $d) { Rename-Item -LiteralPath $d -NewName ("{0}.old-{1}" -f (Split-Path $d -Leaf), $stamp) -ErrorAction Stop; $lines += "Renombrado: $d (copia conservada)" }
+  }
+} catch {
+  $code = 1
+  $lines += "Error al renombrar: $($_.Exception.Message)"
+} finally {
+  foreach ($s in $svcs) { Start-Service -Name $s -ErrorAction SilentlyContinue }
+  $lines += 'Servicios de Windows Update reiniciados.'
 }
-foreach ($s in $svcs) { Start-Service -Name $s -ErrorAction SilentlyContinue }
-$lines += 'Servicios de Windows Update reiniciados.'
-$out = $lines -join [Environment]::NewLine
-$code = 0`,
+$out = $lines -join [Environment]::NewLine`,
     timeoutMin: 5,
   },
 };

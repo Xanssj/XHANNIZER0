@@ -1,0 +1,496 @@
+/* =========================================================================
+   motion.css — Sistema de movimiento fluido estilo Apple Glass / macOS
+   Borde de cristal 1px reactivo al cursor, inclinación 3D física suave,
+   botones magnéticos con destello y onda táctil, píldoras con spring y scroll reveal.
+   Las transiciones de ventana (abrir/minimizar/maximizar/cerrar) las ejecuta
+   de forma nativa Windows 11 DWM a la frecuencia completa del monitor.
+   ========================================================================= */
+
+/* ---------- Transición suave al cambiar tema Oscuro <-> Claro */
+html.xh-theme-switching,
+html.xh-theme-switching .console-side,
+html.xh-theme-switching .owner-content,
+html.xh-theme-switching .app-card,
+html.xh-theme-switching .driver-card,
+html.xh-theme-switching .owner-metric-card,
+html.xh-theme-switching .preset-card,
+html.xh-theme-switching .checklist-card,
+html.xh-theme-switching .xh-subnav,
+html.xh-theme-switching #xh-toast {
+  transition: background-color 260ms var(--ease-out), color 220ms var(--ease-out), border-color 240ms var(--ease-out), box-shadow 240ms var(--ease-out) !important;
+}
+
+/* ---------- Entrada fluida y cinematográfica al cambiar de sección */
+@keyframes xhPanelIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.99);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.owner-tab-panel.is-active.xh-panel-enter {
+  animation: xhPanelIn 290ms var(--ease-out) both;
+}
+
+@keyframes xhCardCascade {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.xh-stagger-in {
+  animation: xhCardCascade 320ms var(--ease-out) var(--stagger-delay, 0ms) both;
+}
+
+/* ---------- Revelado fluido al hacer scroll en listas largas */
+.xh-scroll-hidden {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0) scale(0.975);
+}
+
+.xh-scroll-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition:
+    opacity 320ms var(--ease-out),
+    transform 360ms var(--ease-out),
+    background-color 180ms var(--ease-out),
+    box-shadow 220ms var(--ease-out);
+}
+
+/* ---------- Tarjetas: borde fino 1px reactivo al cursor + 3D tilt suave (sin círculos sobre el texto) */
+.app-card,
+.driver-card,
+.owner-metric-card,
+.preset-card,
+.checklist-card {
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  transition:
+    transform 240ms var(--ease-out),
+    background-color 200ms var(--ease-out),
+    box-shadow 240ms var(--ease-out),
+    border-color 200ms var(--ease-out);
+}
+
+/* Borde luminoso limpio de 1px en el perímetro donde apunta el cursor */
+.app-card::after,
+.driver-card::after,
+.owner-metric-card::after,
+.preset-card::after,
+.checklist-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    200px circle at var(--mx, 50%) var(--my, 50%),
+    var(--glow-border),
+    transparent 65%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: opacity 220ms var(--ease-out);
+  z-index: 2;
+}
+
+.app-card > *,
+.driver-card > *,
+.owner-metric-card > *,
+.preset-card > *,
+.checklist-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-card.is-glow::after,
+  .driver-card.is-glow::after,
+  .owner-metric-card.is-glow::after,
+  .preset-card.is-glow::after,
+  .checklist-card.is-glow::after {
+    opacity: 1;
+  }
+
+  .app-card:hover,
+  .preset-card:hover,
+  button.owner-metric-card.dash-metric-btn:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  /* Cuando no hay tilt activo por JS (driver-card / checklist-card), leve elevación */
+  .driver-card:hover {
+    transform: translate3d(0, -2px, 0);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  .app-card.is-tilting,
+  .preset-card.is-tilting,
+  button.owner-metric-card.dash-metric-btn.is-tilting {
+    transition:
+      background-color 200ms var(--ease-out),
+      box-shadow 220ms var(--ease-out);
+    will-change: transform;
+  }
+
+  button.owner-metric-card.dash-metric-btn:active,
+  button.app-card.dash-quick-card:active {
+    transform: scale(0.975) !important;
+    transition: transform 90ms var(--ease-out) !important;
+  }
+
+  /* Íconos dentro de tarjetas resaltan con micro-rebote */
+  .app-card:hover .app-monogram,
+  .driver-card:hover .driver-icon,
+  button.app-card.dash-quick-card:hover .driver-icon {
+    transform: scale(1.1) rotate(-2deg);
+    box-shadow: 0 6px 16px var(--glow-accent);
+  }
+}
+
+.app-monogram,
+.driver-icon {
+  transition: transform 240ms var(--ease-pop), background-color 180ms var(--ease-out), box-shadow 220ms var(--ease-out);
+}
+
+/* ---------- Barra lateral: pill flotante VisionOS + barra vertical con spring */
+#sidebar-nav {
+  position: relative;
+}
+
+.xh-side-hover-pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 9px;
+  background: var(--fill-hover);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+  will-change: transform, opacity;
+  transition: opacity 180ms var(--ease-out);
+}
+
+.xh-side-active-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3.5px;
+  border-radius: 99px;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--glow-accent), 0 0 4px var(--accent);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+  will-change: transform, opacity;
+  transition: height 200ms var(--ease-out), opacity 160ms var(--ease-out);
+}
+
+.xh-side-active-bar.no-anim,
+.xh-side-hover-pill.no-anim {
+  transition: none !important;
+}
+
+#sidebar-nav .owner-sidebar-menu,
+#sidebar-nav .side-group-label {
+  position: relative;
+  z-index: 1;
+}
+
+#sidebar-nav .owner-menu-item button {
+  transition: color 150ms var(--ease-out), background-color 160ms var(--ease-out), transform 140ms var(--ease-out);
+}
+
+#sidebar-nav .owner-menu-item button svg {
+  transition: transform 220ms var(--ease-pop), color 160ms var(--ease-out);
+}
+
+#sidebar-nav .owner-menu-item button > span {
+  transition: transform 180ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #sidebar-nav.has-hover-pill .owner-menu-item:not(.is-active) button:hover {
+    background: transparent;
+  }
+
+  #sidebar-nav .owner-menu-item button:hover svg {
+    transform: scale(1.14) translate3d(1px, 0, 0);
+  }
+
+  #sidebar-nav .owner-menu-item button:hover > span {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+/* ---------- Píldora deslizante con spring en Sub-pestañas, Filtros y Segmentados */
+.xh-subnav,
+.owner-filter-chips,
+.xh-segmented {
+  position: relative;
+}
+
+.xh-pill-slider {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+  transition:
+    transform 300ms cubic-bezier(0.22, 1.22, 0.36, 1),
+    width 280ms cubic-bezier(0.22, 1.15, 0.36, 1),
+    height 220ms var(--ease-out),
+    opacity 150ms var(--ease-out);
+}
+
+.xh-pill-slider.no-anim {
+  transition: none !important;
+}
+
+.xh-subnav > .xh-pill-slider {
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--accent-hover), var(--accent));
+  box-shadow: 0 4px 14px rgba(0, 113, 227, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.owner-filter-chips > .xh-pill-slider,
+.xh-segmented > .xh-pill-slider {
+  border-radius: 8px;
+  background: var(--card-hover);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22), inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
+}
+
+.xh-subnav-btn,
+.owner-filter-chip,
+.xh-seg-btn {
+  position: relative;
+  z-index: 1;
+  transition: color 180ms var(--ease-out), background-color 150ms var(--ease-out), transform 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .xh-subnav-btn:not(.is-active):hover {
+    transform: translate3d(0, -1px, 0);
+  }
+}
+
+.xh-subnav.has-slider .xh-subnav-btn.is-active,
+.owner-filter-chips.has-slider .owner-filter-chip.is-active,
+.xh-segmented.has-slider .xh-seg-btn.is-active {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ---------- Botones magnéticos + destello diagonal de cristal + onda táctil (ripple) */
+.btn-primary,
+.btn-secondary,
+.btn-action-small,
+.xh-chrome-icon-btn,
+.xh-downloads-btn,
+.xh-svc-pill {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 180ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    border-color 180ms var(--ease-out);
+}
+
+/* Destello diagonal de luz en botones primarios al pasar el cursor */
+.btn-primary::after,
+.btn-action-small.is-primary::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  left: -75%;
+  width: 48%;
+  height: 160%;
+  background: linear-gradient(105deg, transparent 20%, rgba(255, 255, 255, 0.34) 50%, transparent 80%);
+  transform: skewX(-20deg);
+  pointer-events: none;
+  opacity: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled)::after,
+  .btn-action-small.is-primary:hover:not(:disabled)::after {
+    opacity: 1;
+    animation: xhSheenSweep 620ms var(--ease-out);
+  }
+
+  .btn-primary:hover:not(:disabled),
+  .btn-action-small.is-primary:hover:not(:disabled) {
+    box-shadow: 0 8px 22px rgba(0, 113, 227, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  }
+
+  .btn-secondary:hover:not(:disabled),
+  .btn-action-small:not(.is-primary):hover:not(:disabled) {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+  }
+
+  .side-spotlight-btn:hover {
+    transform: translate3d(0, -1px, 0);
+    border-color: var(--sep-strong);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  }
+}
+
+@keyframes xhSheenSweep {
+  from { left: -75%; }
+  to { left: 140%; }
+}
+
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled),
+.btn-action-small:active:not(:disabled) {
+  transform: scale(0.955) !important;
+  transition-duration: 85ms !important;
+  box-shadow: none;
+}
+
+/* Onda táctil (ripple) desde el punto exacto del clic */
+.xh-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.34);
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  z-index: 3;
+  animation: xhRippleOut 460ms var(--ease-out) forwards;
+}
+
+:root[data-theme="light"] .btn-secondary .xh-ripple,
+:root[data-theme="light"] .btn-action-small:not(.is-primary) .xh-ripple,
+:root[data-theme="light"] .xh-chrome-icon-btn .xh-ripple,
+:root[data-theme="light"] .xh-downloads-btn .xh-ripple,
+:root[data-theme="light"] .xh-svc-pill .xh-ripple {
+  background: rgba(0, 113, 227, 0.18);
+}
+
+@keyframes xhRippleOut {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.8);
+    opacity: 0;
+  }
+}
+
+/* ---------- Checkboxes con micro-rebote táctil */
+@keyframes xhCheckPop {
+  0% { transform: scale(0.84); }
+  55% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.xh-check input:checked {
+  animation: xhCheckPop 260ms var(--ease-pop);
+}
+
+/* ---------- Toast y Popover con rebote suave */
+#xh-status-pop {
+  transform-origin: top right;
+}
+
+#xh-toast {
+  transform: translate3d(0, -14px, 0) scale(0.94);
+  transition: opacity 200ms var(--ease-out), transform 300ms cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+#xh-toast.is-show {
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+/* ---------- Barras de progreso con transición fluida y destello */
+.progress-bar {
+  position: relative;
+  overflow: hidden;
+  transition: width 360ms var(--ease-out), background-color 220ms var(--ease-out);
+}
+
+@keyframes xhShimmer {
+  from { transform: translate3d(-100%, 0, 0); }
+  to { transform: translate3d(220%, 0, 0); }
+}
+
+.progress-bar.is-installing::after,
+.progress-bar[style*="width:"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 48%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.36), transparent);
+  animation: xhShimmer 1.4s linear infinite;
+  pointer-events: none;
+}
+
+.progress-bar.is-done::after,
+.progress-bar[style*="width:0%"]::after,
+.progress-bar[style*="width: 0%"]::after,
+.progress-bar[style*="width:100%"]::after,
+.progress-bar[style*="width: 100%"]::after {
+  display: none;
+}
+
+/* ---------- Spotlight items suaves */
+.spotlight-item {
+  transition: background-color 120ms var(--ease-out), transform 140ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .spotlight-item:hover,
+  .spotlight-item.is-active {
+    transform: translate3d(3px, 0, 0);
+  }
+}
+
+/* ---------- Respeto estricto a prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .app-card::after,
+  .driver-card::after,
+  .owner-metric-card::after,
+  .preset-card::after,
+  .checklist-card::after,
+  .btn-primary::after,
+  .btn-action-small.is-primary::after,
+  .progress-bar::after,
+  .xh-ripple {
+    display: none !important;
+  }
+  .owner-tab-panel.is-active.xh-panel-enter,
+  .xh-stagger-in,
+  .xh-check input:checked {
+    animation: none !important;
+  }
+  .xh-side-hover-pill,
+  .xh-side-active-bar,
+  .xh-pill-slider,
+  .xh-scroll-visible {
+    transition: none !important;
+  }
+  .xh-scroll-hidden {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

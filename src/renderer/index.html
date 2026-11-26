@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles/tokens.css">
   <link rel="stylesheet" href="styles/chrome.css">
   <link rel="stylesheet" href="styles/app.css">
+  <link rel="stylesheet" href="styles/motion.css">
 </head>
 <body>
   <!-- Franja superior arrastrable con scroll-edge blur (estilo Xhanni Consola / macOS) -->
@@ -78,19 +79,29 @@
         <span class="spotlight-kbd">Ctrl K</span>
       </button>
 
-      <div class="side-nav-scroll">
-        <div class="side-group-label">Post-formateo</div>
-        <ul class="owner-sidebar-menu" id="sidebar-nav">
+      <div class="side-nav-scroll" id="sidebar-nav">
+        <div class="side-group-label">Inicio</div>
+        <ul class="owner-sidebar-menu">
+          <li class="owner-menu-item is-active">
+            <button type="button" data-tab="resumen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>
+              <span>Resumen</span>
+            </button>
+          </li>
           <li class="owner-menu-item">
             <button type="button" data-tab="piloto">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
               <span>Piloto automático</span>
             </button>
           </li>
-          <li class="owner-menu-item is-active">
+        </ul>
+
+        <div class="side-group-label">Hardware</div>
+        <ul class="owner-sidebar-menu">
+          <li class="owner-menu-item">
             <button type="button" data-tab="drivers">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
-              <span>Drivers</span>
+              <span>Drivers y BIOS</span>
               <em class="ov2-tab-badge" id="badge-drivers" hidden>0</em>
             </button>
           </li>
@@ -101,75 +112,21 @@
               <em class="ov2-tab-badge" id="badge-pccheck" hidden>0</em>
             </button>
           </li>
+        </ul>
+
+        <div class="side-group-label">Programas</div>
+        <ul class="owner-sidebar-menu">
           <li class="owner-menu-item">
-            <button type="button" data-tab="herramientas">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.8-.7-.7-2.8z"/></svg>
-              <span>Herramientas</span>
-              <em class="ov2-tab-badge is-accent" id="badge-herramientas">5</em>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="launchers">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4M8 10v4M15 11h.01M18 13h.01"/></svg>
-              <span>Launchers</span>
-              <em class="ov2-tab-badge is-accent" id="badge-launchers">5</em>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="navegadores">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-              <span>Navegadores</span>
-              <em class="ov2-tab-badge is-accent" id="badge-navegadores">4</em>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="utilidades">
+            <button type="button" data-tab="herramientas" data-nav-group="catalog">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
-              <span>Compresores</span>
-              <em class="ov2-tab-badge is-accent" id="badge-utilidades">6</em>
-            </button>
-          </li>
-          <li class="owner-menu-sep" role="presentation"></li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="dev">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span>Programadores</span>
-              <em class="ov2-tab-badge is-accent" id="badge-dev">18</em>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="emuladores">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 10v4M6 12h4M15 11h.01M18 13h.01"/></svg>
-              <span>Emuladores</span>
-              <em class="ov2-tab-badge is-accent" id="badge-emuladores">18</em>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="store">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-              <span>Microsoft Store</span>
+              <span>Catálogo</span>
+              <em class="ov2-tab-badge is-accent" id="badge-catalog-total" hidden>0</em>
             </button>
           </li>
           <li class="owner-menu-item">
             <button type="button" data-tab="presets">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               <span>Presets</span>
-              <em class="ov2-tab-badge" style="background: var(--purple-soft); color: var(--purple);">Exp</em>
-            </button>
-          </li>
-          <li class="owner-menu-sep" role="presentation"></li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="windows-audit">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-              <span>Auditoría Windows</span>
-              <em class="ov2-tab-badge" id="badge-winaudit" hidden>0</em>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="startup">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-              <span data-i18n="nav_startup">Inicio Windows</span>
-              <em class="ov2-tab-badge is-accent" id="badge-startup" hidden>0</em>
             </button>
           </li>
           <li class="owner-menu-item">
@@ -179,10 +136,15 @@
               <em class="ov2-tab-badge is-accent" id="badge-upgrades" hidden>0</em>
             </button>
           </li>
+        </ul>
+
+        <div class="side-group-label">Sistema</div>
+        <ul class="owner-sidebar-menu">
           <li class="owner-menu-item">
-            <button type="button" data-tab="cleaner-net">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-              <span>Limpieza y Red</span>
+            <button type="button" data-tab="windows-audit" data-nav-group="windows">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <span>Windows y Red</span>
+              <em class="ov2-tab-badge" id="badge-windows-group" hidden>0</em>
             </button>
           </li>
           <li class="owner-menu-item">
@@ -192,36 +154,18 @@
             </button>
           </li>
           <li class="owner-menu-item">
-            <button type="button" data-tab="migracion">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/></svg>
-              <span>Migrar mi PC</span>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="mantenimiento">
+            <button type="button" data-tab="migracion" data-nav-group="tools">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-              <span>Mantenimiento</span>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="rendimiento">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-6"/></svg>
-              <span>Rendimiento e informe</span>
-            </button>
-          </li>
-          <li class="owner-menu-item">
-            <button type="button" data-tab="acerca">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              <span>Acerca de y soporte</span>
+              <span>Migración y Técnico</span>
             </button>
           </li>
         </ul>
       </div>
 
       <div class="console-side-foot">
-        <div style="display:flex;gap:6px;">
-          <button type="button" class="xh-svc-btn" id="btn-export-profile" title="Guardar perfil en JSON" data-i18n="export_profile">Exportar</button>
-          <button type="button" class="xh-svc-btn" id="btn-import-profile" title="Cargar perfil desde JSON" data-i18n="import_profile">Importar</button>
+        <div class="side-foot-nav">
+          <button type="button" class="xh-svc-btn" data-tab="ajustes" title="Ajustes de XHANNIZER0 (Ctrl + ,)">Ajustes</button>
+          <button type="button" class="xh-svc-btn" data-tab="acerca" title="Acerca de y soporte">Acerca de</button>
         </div>
         <div class="owner-status-pill" id="side-safety-pill">
           <span class="status-dot"></span>
@@ -239,6 +183,166 @@
 
     <!-- Workspace principal -->
     <main class="owner-content">
+      <!-- Barras de sub-navegación segmentada (estilo macOS) para secciones agrupadas -->
+      <nav class="xh-subnav" id="subnav-catalog" aria-label="Categorías del catálogo" hidden>
+        <button type="button" class="xh-subnav-btn" data-tab="herramientas"><span>Herramientas</span><em class="xh-subnav-badge" id="badge-herramientas" hidden></em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="launchers"><span>Launchers</span><em class="xh-subnav-badge" id="badge-launchers" hidden></em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="navegadores"><span>Navegadores</span><em class="xh-subnav-badge" id="badge-navegadores" hidden></em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="utilidades"><span>Compresores</span><em class="xh-subnav-badge" id="badge-utilidades" hidden></em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="dev"><span>Programadores</span><em class="xh-subnav-badge" id="badge-dev" hidden></em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="emuladores"><span>Emuladores</span><em class="xh-subnav-badge" id="badge-emuladores" hidden></em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="store"><span>Microsoft Store</span></button>
+      </nav>
+      <nav class="xh-subnav" id="subnav-windows" aria-label="Optimización de Windows y red" hidden>
+        <button type="button" class="xh-subnav-btn" data-tab="windows-audit"><span>Auditoría Windows</span><em class="xh-subnav-badge" id="badge-winaudit" hidden>0</em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="startup"><span data-i18n="nav_startup">Inicio Windows</span><em class="xh-subnav-badge" id="badge-startup" hidden>0</em></button>
+        <button type="button" class="xh-subnav-btn" data-tab="cleaner-net"><span>Bloatware y Red</span></button>
+      </nav>
+      <nav class="xh-subnav" id="subnav-tools" aria-label="Migración, mantenimiento y rendimiento" hidden>
+        <button type="button" class="xh-subnav-btn" data-tab="migracion"><span>Migrar mi PC</span></button>
+        <button type="button" class="xh-subnav-btn" data-tab="mantenimiento"><span>Mantenimiento y Limpieza</span></button>
+        <button type="button" class="xh-subnav-btn" data-tab="rendimiento"><span>Rendimiento e informe</span></button>
+      </nav>
+
+      <!-- ==================== RESUMEN (DASHBOARD PRINCIPAL) ==================== -->
+      <section class="owner-tab-panel is-active" id="tab-resumen">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Resumen del equipo</h1>
+            <p class="section-subtitle" id="dash-subtitle">Vista rápida de tu hardware, drivers, chequeo de Windows y copias de seguridad.</p>
+          </div>
+          <div class="section-actions">
+            <button type="button" class="btn-secondary" id="btn-dash-rescan">Reescanear PC</button>
+            <button type="button" class="btn-primary" data-jump-tab="piloto">Piloto automático</button>
+          </div>
+        </header>
+
+        <article class="driver-card" id="dash-hw-card">
+          <div class="driver-top dash-hero-top-row">
+            <div class="driver-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            </div>
+            <div class="driver-main">
+              <div class="driver-title-row">
+                <span class="pill-badge is-accent" id="dash-form-badge">Detectando PC…</span>
+                <span class="driver-category" id="dash-os-line">Consultando Windows…</span>
+              </div>
+              <div class="driver-name dash-hero-name" id="dash-pc-title">Analizando hardware…</div>
+              <div class="driver-meta">
+                <span id="dash-specs-line">CPU, tarjeta gráfica, memoria RAM y placa madre</span>
+              </div>
+            </div>
+            <div class="driver-actions">
+              <button type="button" class="btn-action-small is-ghost" id="btn-dash-copy-specs">Copiar specs</button>
+              <button type="button" class="btn-action-small is-primary" data-jump-tab="drivers">Ver drivers</button>
+              <button type="button" class="btn-action-small is-ghost" data-jump-tab="pc-check">Chequeo de PC</button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Checklist Post-Formateo (0% -> 100%) -->
+        <article class="checklist-card" id="postformat-checklist">
+          <div class="checklist-head">
+            <strong>Checklist Post-Formateo</strong>
+            <span class="checklist-pct" id="checklist-pct">0% listo</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-bar" id="checklist-bar" style="width:0%"></div>
+          </div>
+          <div class="checklist-steps" id="checklist-steps"></div>
+        </article>
+
+        <!-- Monitor en vivo liviano (se pausa automáticamente fuera de Resumen o en segundo plano) -->
+        <article class="driver-card live-monitor-card" id="live-monitor-card">
+          <div class="live-monitor-head">
+            <div class="live-monitor-title">
+              <span class="live-dot" id="live-monitor-dot" aria-hidden="true"></span>
+              <strong>Monitor en vivo</strong>
+              <span class="section-subtitle" id="live-monitor-state">Actualizando cada 2.5 s</span>
+            </div>
+            <button type="button" class="btn-action-small is-ghost" id="btn-live-toggle">Pausar</button>
+          </div>
+          <div class="live-meters-grid">
+            <div class="live-meter">
+              <div class="live-meter-head"><span>CPU</span><strong id="live-cpu-val">-- %</strong></div>
+              <div class="progress-track"><div class="progress-bar" id="live-cpu-bar" style="width:0%"></div></div>
+            </div>
+            <div class="live-meter">
+              <div class="live-meter-head"><span>Memoria RAM</span><strong id="live-ram-val">--</strong></div>
+              <div class="progress-track"><div class="progress-bar" id="live-ram-bar" style="width:0%"></div></div>
+            </div>
+            <div class="live-meter">
+              <div class="live-meter-head"><span id="live-disk-label">Disco C:</span><strong id="live-disk-val">--</strong></div>
+              <div class="progress-track"><div class="progress-bar" id="live-disk-bar" style="width:0%"></div></div>
+            </div>
+            <div class="live-meter" id="live-gpu-wrap" hidden>
+              <div class="live-meter-head"><span>GPU (NVIDIA)</span><strong id="live-gpu-val">-- °C</strong></div>
+              <div class="progress-track"><div class="progress-bar" id="live-gpu-bar" style="width:0%"></div></div>
+            </div>
+          </div>
+        </article>
+
+        <div class="owner-metrics-grid">
+          <button type="button" class="owner-metric-card dash-metric-btn" id="dash-card-drivers" data-jump-tab="drivers">
+            <span>Drivers y BIOS</span>
+            <strong id="dash-kpi-drivers">—</strong>
+            <p id="dash-kpi-drivers-sub">Escaneando componentes…</p>
+          </button>
+          <button type="button" class="owner-metric-card dash-metric-btn" id="dash-card-pccheck" data-jump-tab="pc-check">
+            <span>Chequeo de PC</span>
+            <strong id="dash-kpi-pccheck">Sin analizar</strong>
+            <p id="dash-kpi-pccheck-sub">Toca para revisar BIOS y armado</p>
+          </button>
+          <button type="button" class="owner-metric-card dash-metric-btn tone-accent" id="dash-card-apps" data-jump-tab="herramientas">
+            <span>Programas</span>
+            <strong id="dash-kpi-apps">—</strong>
+            <p id="dash-kpi-apps-sub">Catálogo oficial y emuladores</p>
+          </button>
+          <button type="button" class="owner-metric-card dash-metric-btn" id="dash-card-backup" data-jump-tab="discos">
+            <span>Copias de seguridad</span>
+            <strong id="dash-kpi-backup">—</strong>
+            <p id="dash-kpi-backup-sub">Protección reversible activa</p>
+          </button>
+        </div>
+
+        <div class="section-header" style="margin-top:6px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Accesos rápidos</h2>
+            <p class="section-subtitle">Elige por dónde empezar según lo que necesite tu PC hoy.</p>
+          </div>
+        </div>
+        <div class="catalog-grid dash-quick-grid">
+          <button type="button" class="app-card dash-quick-card" data-jump-tab="piloto">
+            <div class="dash-quick-head">
+              <div class="driver-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/></svg></div>
+              <strong>Piloto automático</strong>
+            </div>
+            <p class="app-card-desc">Drivers, runtimes, apps, ajustes y limpieza en un solo flujo guiado.</p>
+          </button>
+          <button type="button" class="app-card dash-quick-card" data-jump-tab="herramientas">
+            <div class="dash-quick-head">
+              <div class="driver-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
+              <strong>Catálogo oficial</strong>
+            </div>
+            <p class="app-card-desc">Más de 100 programas, emuladores y Microsoft Store en lote.</p>
+          </button>
+          <button type="button" class="app-card dash-quick-card" data-jump-tab="windows-audit">
+            <div class="dash-quick-head">
+              <div class="driver-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
+              <strong>Windows y Red</strong>
+            </div>
+            <p class="app-card-desc">Tweaks de Windows 11, programas al inicio, bloatware y DNS rápidos.</p>
+          </button>
+          <button type="button" class="app-card dash-quick-card" data-jump-tab="migracion">
+            <div class="dash-quick-head">
+              <div class="driver-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/></svg></div>
+              <strong>Migrar y Mantenimiento</strong>
+            </div>
+            <p class="app-card-desc">Migra tu PC a un USB, limpia espacio, repara Windows o genera un PDF.</p>
+          </button>
+        </div>
+      </section>
+
       <!-- ==================== PILOTO AUTOMÁTICO ==================== -->
       <section class="owner-tab-panel" id="tab-piloto">
         <header class="section-header">
@@ -287,7 +391,7 @@
       </section>
 
       <!-- ==================== SECCIÓN 1: DRIVERS (PRINCIPAL) ==================== -->
-      <section class="owner-tab-panel is-active" id="tab-drivers">
+      <section class="owner-tab-panel" id="tab-drivers">
         <header class="section-header">
           <div class="section-header-copy">
             <h1 class="console-title">Drivers</h1>
@@ -303,18 +407,6 @@
             </button>
           </div>
         </header>
-
-        <!-- Checklist Post-Formateo (0% -> 100%) -->
-        <article class="checklist-card" id="postformat-checklist">
-          <div class="checklist-head">
-            <strong>Checklist Post-Formateo</strong>
-            <span class="checklist-pct" id="checklist-pct">0% listo</span>
-          </div>
-          <div class="progress-track">
-            <div class="progress-bar" id="checklist-bar" style="width:0%"></div>
-          </div>
-          <div class="checklist-steps" id="checklist-steps"></div>
-        </article>
 
         <div class="owner-metrics-grid" id="hw-metrics">
           <article class="owner-metric-card">
@@ -524,14 +616,11 @@
         <div class="catalog-grid" id="grid-store"></div>
       </section>
 
-      <!-- ==================== SECCIÓN 8: PRESETS (EXPERIMENTAL) ==================== -->
+      <!-- ==================== SECCIÓN 8: PRESETS Y MIS PERFILES ==================== -->
       <section class="owner-tab-panel" id="tab-presets">
         <header class="section-header">
           <div class="section-header-copy">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <h1 class="console-title">Presets Post-Formateo</h1>
-              <span class="pill-badge is-purple">Experimental</span>
-            </div>
+            <h1 class="console-title">Presets Post-Formateo</h1>
             <p class="section-subtitle">Perfiles inteligentes que analizan tu CPU, GPU, VRAM y RAM reales para instalar y optimizar tu equipo sin cometer errores de compatibilidad.</p>
           </div>
         </header>
@@ -542,6 +631,18 @@
           </div>
         </div>
         <div class="preset-grid" id="preset-grid"></div>
+
+        <div class="section-header" style="margin-top:12px;">
+          <div class="section-header-copy">
+            <h2 class="xh-h2">Mis perfiles guardados</h2>
+            <p class="section-subtitle">Guarda tu selección actual del catálogo y tus ajustes en la app para aplicarlos con un clic en futuros equipos.</p>
+          </div>
+          <div class="section-actions">
+            <input type="text" class="xh-input" id="saved-profile-name" placeholder="Nombre del perfil (ej. PC Gamer)" maxlength="60" autocomplete="off">
+            <button type="button" class="btn-primary" id="btn-save-local-profile">Guardar selección</button>
+          </div>
+        </div>
+        <div class="driver-list" id="saved-profiles-list"></div>
       </section>
 
       <!-- ==================== SECCIÓN 8B: AUDITORÍA WINDOWS ==================== -->
@@ -643,16 +744,27 @@
 
         <div class="toolbar-row">
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" class="btn-action-small is-primary" data-net-action="dns-cloudflare">Usar Cloudflare (1.1.1.1)</button>
-            <button type="button" class="btn-action-small" data-net-action="dns-google">Usar Google (8.8.8.8)</button>
+            <button type="button" class="btn-action-small is-primary" id="btn-dns-benchmark">Medir mejor DNS</button>
+            <button type="button" class="btn-action-small" data-net-action="dns-cloudflare">Cloudflare (1.1.1.1)</button>
+            <button type="button" class="btn-action-small" data-net-action="dns-google">Google (8.8.8.8)</button>
+            <button type="button" class="btn-action-small" data-net-action="dns-quad9">Quad9 (9.9.9.9)</button>
+            <button type="button" class="btn-action-small" data-net-action="dns-adguard">AdGuard DNS</button>
             <button type="button" class="btn-action-small" data-net-action="dns-dhcp">Restaurar Automático</button>
             <button type="button" class="btn-action-small is-safe" data-net-action="flush-dns">Vaciar caché DNS</button>
           </div>
         </div>
 
+        <article class="driver-card dns-bench-card" id="dns-bench-card" hidden>
+          <div class="driver-title-row" style="justify-content:space-between;margin-bottom:8px;">
+            <strong>Comparativa de latencia DNS (3 pings paralelos)</strong>
+            <span class="section-subtitle" id="dns-bench-status">Midiendo…</span>
+          </div>
+          <div class="dns-bench-list" id="dns-bench-list"></div>
+        </article>
+
         <div class="section-header" style="margin-top:8px;">
           <div class="section-header-copy">
-            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">Limpiador de Bloatware de Windows</h2>
+            <h2 class="xh-h2">Limpiador de Bloatware de Windows</h2>
             <p class="section-subtitle">Solo apps preinstaladas reversibles desde Microsoft Store. Nunca toca componentes críticos del sistema.</p>
           </div>
           <div class="section-actions">
@@ -689,7 +801,7 @@
         <!-- Visor e Historial de Respaldos -->
         <div class="section-header" style="margin-top:8px;">
           <div class="section-header-copy">
-            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">Historial de Copias de Seguridad</h2>
+            <h2 class="xh-h2">Historial de Copias de Seguridad</h2>
             <p class="section-subtitle">Respaldos verificados almacenados en <code>XhanniBackups\XHANNIZER0</code>.</p>
           </div>
           <div class="section-actions">
@@ -732,7 +844,7 @@
         </div>
         <div class="section-header" style="margin-top:8px;">
           <div class="section-header-copy">
-            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">Dispositivos sin driver o con errores</h2>
+            <h2 class="xh-h2">Dispositivos sin driver o con errores</h2>
             <p class="section-subtitle">Busca en Windows Update el driver oficial (WHQL) que coincide exactamente con el Hardware ID del dispositivo.</p>
           </div>
         </div>
@@ -762,7 +874,7 @@
 
         <div class="section-header" style="margin-top:4px;">
           <div class="section-header-copy">
-            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">1. Exportar (en el PC viejo)</h2>
+            <h2 class="xh-h2">1. Exportar (en el PC viejo)</h2>
             <p class="section-subtitle">Se guarda la lista de programas instalados (WinGet), los ajustes de Windows que ya tienes aplicados y las carpetas que marques.</p>
           </div>
           <div class="section-actions">
@@ -781,7 +893,7 @@
 
         <div class="section-header" style="margin-top:12px;">
           <div class="section-header-copy">
-            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">2. Restaurar (en el PC nuevo)</h2>
+            <h2 class="xh-h2">2. Restaurar (en el PC nuevo)</h2>
             <p class="section-subtitle">Abre el archivo <code>xhannizer0-migracion.json</code> de tu USB y elige qué restaurar.</p>
           </div>
           <div class="section-actions">
@@ -867,7 +979,7 @@
 
         <div class="section-header" style="margin-top:8px;">
           <div class="section-header-copy">
-            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">Actualización automática de apps</h2>
+            <h2 class="xh-h2">Actualización automática de apps</h2>
             <p class="section-subtitle">Una vez por semana Windows ejecuta <code>winget upgrade --all</code> en segundo plano. No necesita permisos de administrador y puedes desactivarlo cuando quieras.</p>
           </div>
         </div>
@@ -894,7 +1006,7 @@
 
         <div class="section-header" style="margin-top:8px;">
           <div class="section-header-copy">
-            <h2 style="margin:0;font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:-0.02em;">Historial de acciones</h2>
+            <h2 class="xh-h2">Historial de acciones</h2>
             <p class="section-subtitle">Todo lo que XHANNIZER0 cambió o instaló en este PC, del más reciente al más antiguo.</p>
           </div>
           <div class="section-actions">
@@ -954,28 +1066,130 @@
         </div>
         <div class="driver-list" id="stab-result"></div>
 
-        <div class="section-header" style="margin-top:8px;">
-          <div class="section-header-copy">
-            <h2 class="xh-h2">Modo técnico: informe para el cliente</h2>
-            <p class="section-subtitle">Un PDF con el equipo, el chequeo, el antes y después, el trabajo realizado y los programas instalados, listo para firmar. Usa XHANNIZER0 Portable desde tu USB y genera el informe al terminar.</p>
+        <div id="tech-report-section">
+          <div class="section-header" style="margin-top:8px;">
+            <div class="section-header-copy">
+              <h2 class="xh-h2">Modo técnico: informe para el cliente</h2>
+              <p class="section-subtitle">Un PDF con el equipo, el chequeo, el antes y después, el trabajo realizado y los programas instalados, listo para firmar.</p>
+            </div>
           </div>
+          <article class="driver-card">
+            <div class="report-form">
+              <label>Cliente<input type="text" class="xh-input" id="rep-client" maxlength="80"></label>
+              <label>Técnico<input type="text" class="xh-input" id="rep-tech" maxlength="80"></label>
+              <label>Negocio<input type="text" class="xh-input" id="rep-business" maxlength="80" placeholder="Opcional"></label>
+              <label>Trabajo incluido
+                <select class="xh-field-select" id="rep-since" style="margin-left:0;">
+                  <option value="day">Últimas 24 horas</option><option value="week">Últimos 7 días</option><option value="all">Todo el historial</option>
+                </select>
+              </label>
+              <label class="report-notes">Observaciones<textarea class="xh-input xh-textarea" id="rep-notes" rows="3" maxlength="3000" placeholder="Ej.: se cambió la pasta térmica, se recomienda ampliar a 32 GB de RAM…"></textarea></label>
+            </div>
+            <div class="xh-row" style="justify-content:flex-end;margin-top:10px;">
+              <button type="button" class="btn-primary" id="btn-report-pdf">Generar informe PDF</button>
+            </div>
+          </article>
         </div>
-        <article class="driver-card">
-          <div class="report-form">
-            <label>Cliente<input type="text" class="xh-input" id="rep-client" maxlength="80"></label>
-            <label>Técnico<input type="text" class="xh-input" id="rep-tech" maxlength="80"></label>
-            <label>Negocio<input type="text" class="xh-input" id="rep-business" maxlength="80" placeholder="Opcional"></label>
-            <label>Trabajo incluido
-              <select class="xh-field-select" id="rep-since" style="margin-left:0;">
-                <option value="day">Últimas 24 horas</option><option value="week">Últimos 7 días</option><option value="all">Todo el historial</option>
-              </select>
-            </label>
-            <label class="report-notes">Observaciones<textarea class="xh-input xh-textarea" id="rep-notes" rows="3" maxlength="3000" placeholder="Ej.: se cambió la pasta térmica, se recomienda ampliar a 32 GB de RAM…"></textarea></label>
+      </section>
+
+      <!-- ==================== AJUSTES DE XHANNIZER0 ==================== -->
+      <section class="owner-tab-panel" id="tab-ajustes">
+        <header class="section-header">
+          <div class="section-header-copy">
+            <h1 class="console-title">Ajustes</h1>
+            <p class="section-subtitle">Personaliza el aspecto, idioma, modo técnico, perfiles y datos de XHANNIZER0.</p>
           </div>
-          <div class="xh-row" style="justify-content:flex-end;margin-top:10px;">
-            <button type="button" class="btn-primary" id="btn-report-pdf">Generar informe PDF</button>
-          </div>
-        </article>
+        </header>
+
+        <div class="settings-grid">
+          <article class="driver-card settings-card">
+            <div class="settings-row">
+              <div>
+                <strong>Idioma de la interfaz</strong>
+                <p class="section-subtitle">Traduce toda la app, ventanas de Windows, novedades e informe PDF.</p>
+              </div>
+              <div class="xh-segmented" role="group" aria-label="Idioma">
+                <button type="button" class="xh-seg-btn" data-settings-lang="es">Español</button>
+                <button type="button" class="xh-seg-btn" data-settings-lang="en">English</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <strong>Apariencia</strong>
+                <p class="section-subtitle">Cambia entre modo oscuro y modo claro translúcido.</p>
+              </div>
+              <div class="xh-segmented" role="group" aria-label="Apariencia">
+                <button type="button" class="xh-seg-btn" data-settings-theme="dark">Oscuro</button>
+                <button type="button" class="xh-seg-btn" data-settings-theme="light">Claro</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <strong>Modo técnico</strong>
+                <p class="section-subtitle">Muestra el generador de informe PDF para clientes en Rendimiento e informe.</p>
+              </div>
+              <label class="xh-switch">
+                <input type="checkbox" id="toggle-tech-mode" checked>
+                <span class="xh-switch-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div>
+                <strong>Notificaciones de Windows</strong>
+                <p class="section-subtitle">Avisa con una notificación nativa cuando termina una instalación, reparación o prueba mientras la app está minimizada.</p>
+              </div>
+              <label class="xh-switch">
+                <input type="checkbox" id="toggle-win-notify" checked>
+                <span class="xh-switch-track"></span>
+              </label>
+            </div>
+          </article>
+
+          <article class="driver-card settings-card">
+            <div class="settings-row">
+              <div>
+                <strong>Perfiles en JSON</strong>
+                <p class="section-subtitle">Exporta o importa tu selección de programas y ajustes como archivo local.</p>
+              </div>
+              <div class="xh-row">
+                <button type="button" class="btn-secondary" id="btn-export-profile" title="Guardar perfil en JSON" data-i18n="export_profile">Exportar</button>
+                <button type="button" class="btn-secondary" id="btn-import-profile" title="Cargar perfil desde JSON" data-i18n="import_profile">Importar</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <strong>Asistente de bienvenida</strong>
+                <p class="section-subtitle">Vuelve a elegir idioma, datos del equipo y uso recomendado.</p>
+              </div>
+              <button type="button" class="btn-secondary" id="btn-settings-setup">Configuración inicial</button>
+            </div>
+            <div class="settings-row">
+              <div>
+                <strong>Datos y respaldos</strong>
+                <p class="section-subtitle">Abre las carpetas locales donde XHANNIZER0 guarda respaldos y configuración.</p>
+              </div>
+              <div class="xh-row">
+                <button type="button" class="btn-secondary" id="btn-settings-backups">Abrir respaldos</button>
+                <button type="button" class="btn-secondary" id="btn-settings-data">Abrir datos</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="driver-card settings-card">
+            <div class="settings-row">
+              <div>
+                <strong>Atajos de teclado</strong>
+                <p class="section-subtitle">Navega más rápido por la aplicación sin soltar el teclado.</p>
+              </div>
+            </div>
+            <div class="shortcuts-list">
+              <div class="shortcut-item"><span>Buscar o ejecutar comando (Spotlight)</span><kbd>Ctrl + K</kbd></div>
+              <div class="shortcut-item"><span>Cambiar entre secciones principales</span><kbd>Ctrl + 1…9</kbd></div>
+              <div class="shortcut-item"><span>Abrir Ajustes</span><kbd>Ctrl + ,</kbd></div>
+              <div class="shortcut-item"><span>Cerrar modal o panel activo</span><kbd>Esc</kbd></div>
+            </div>
+          </article>
+        </div>
       </section>
 
       <!-- ==================== ACERCA DE Y SOPORTE ==================== -->
@@ -1302,6 +1516,7 @@
   <div id="xh-toast" role="status" aria-live="polite"></div>
 
   <script src="js/spring.js"></script>
+  <script src="js/motion.js"></script>
   <script src="js/i18n-en.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/app.js"></script>
