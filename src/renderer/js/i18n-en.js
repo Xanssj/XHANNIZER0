@@ -1290,6 +1290,8 @@
     '¿Activar Programación de GPU acelerada por hardware (HAGS)?': 'Enable Hardware-Accelerated GPU Scheduling (HAGS)?',
     'Sin respuesta ICMP (el firewall puede bloquear ping)': 'No ICMP reply (firewall may block ping)',
     'No se pudo medir la latencia.': "Couldn't measure latency.",
+    'Licencia GNU GPLv3. Revisa el código, propone ideas o mira qué cambió en cada versión.': 'GNU GPLv3 license. Inspect the code, suggest ideas or see what changed in each version.',
+    'XHANNIZER0 se entrega sin garantías (licencia GNU GPLv3): úsala bajo tu responsabilidad y mantén tus respaldos. Las marcas mencionadas pertenecen a sus dueños.': 'XHANNIZER0 is provided without warranty (GNU GPLv3 license): use it at your own risk and keep your backups. Mentioned trademarks belong to their owners.',
     'Error al medir servidores DNS.': 'Error benchmarking DNS servers.',
     'Reiniciar Explorador de Windows — XHANNIZER0': 'Restart Windows Explorer — XHANNIZER0',
     '¿Reiniciar el Explorador de Windows ahora?': 'Restart Windows Explorer now?',

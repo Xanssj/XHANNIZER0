@@ -2,6 +2,7 @@
   "name": "xhannizer0",
   "productName": "XHANNIZER0",
   "version": "2.3.0",
+  "license": "GPL-3.0-or-later",
   "private": true,
   "description": "Utilidad post-formateo de Windows limpia y minimalista — Xhanni Studios",
   "author": "Xhanni Studios",

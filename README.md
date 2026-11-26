@@ -10,10 +10,10 @@ Una app gratuita de [xhanni (Xhanni Studios)](https://xhannistudios.org).
 
 ![Versión](https://img.shields.io/badge/Versi%C3%B3n-2.3.0-0071E3?style=for-the-badge)
 ![Plataforma](https://img.shields.io/badge/Windows-11%20%2F%2010%20x64-1C1C1E?style=for-the-badge)
-![Licencia](https://img.shields.io/badge/Licencia-MIT-6E6E73?style=for-the-badge)
+![Licencia](https://img.shields.io/badge/Licencia-GPLv3-6E6E73?style=for-the-badge)
 [![Pruebas](https://img.shields.io/github/actions/workflow/status/Xanssj/XHANNIZER0/tests.yml?label=Pruebas&style=for-the-badge)](https://github.com/Xanssj/XHANNIZER0/actions/workflows/tests.yml)
 
-[Descargar](https://github.com/Xanssj/XHANNIZER0/releases/latest) · [Soporte en Discord](https://discord.gg/QKmUekvX2X) · [Privacidad](PRIVACY.md) · [Cambios](CHANGELOG.md)
+[Descargar](https://github.com/Xanssj/XHANNIZER0/releases/latest) · [Soporte en Discord](https://discord.gg/QKmUekvX2X) · [Privacidad](PRIVACY.md) · [Marca](TRADEMARK.md) · [Cambios](CHANGELOG.md)
 
 </div>
 
@@ -77,9 +77,11 @@ npm start
 
 **Corregir el catálogo sin publicar una versión:** edita [`catalog-overrides.json`](catalog-overrides.json). Las apps instaladas lo descargan al abrirse.
 
-## Aviso legal
+## Licencia, marca y aviso legal
 
-XHANNIZER0 se entrega bajo la [licencia MIT](LICENSE), sin garantías: úsala bajo tu responsabilidad y mantén tus respaldos. Los emuladores se descargan desde sus proyectos oficiales; XHANNIZER0 no incluye ni distribuye BIOS, firmware ni juegos. Las marcas mencionadas pertenecen a sus dueños y se nombran solo para identificar el software que instala la app.
+- **Licencia de código fuente:** XHANNIZER0 se entrega bajo la licencia **[GNU GPLv3](LICENSE)** (`GPL-3.0-or-later`), sin garantías: úsala bajo tu responsabilidad y mantén tus respaldos. Cualquier copia o modificación redistribuida debe mantenerse abierta bajo GPLv3 y conservar la atribución original *(las versiones anteriores hasta v2.3.0 fueron publicadas bajo licencia MIT)*.
+- **Marca e identidad:** los nombres **XHANNIZER0**, **Xhanni Studios**, el logotipo oficial y el dominio `xhannistudios.org` están reservados. Si haces un fork, debes cambiar el nombre, el ícono y el `appId` — consulta [TRADEMARK.md](TRADEMARK.md).
+- **Terceros:** los avisos de librerías de terceros están en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Los emuladores se descargan desde sus proyectos oficiales; XHANNIZER0 no incluye ni distribuye BIOS, firmware ni juegos. Las marcas mencionadas pertenecen a sus dueños y se nombran solo para identificar el software que instala la app.
 
 ---
 

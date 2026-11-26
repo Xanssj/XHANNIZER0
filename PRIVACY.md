@@ -1,6 +1,6 @@
 # Privacidad de XHANNIZER0
 
-Última actualización: 22 de noviembre de 2026
+Última actualización: 26 de noviembre de 2026
 
 XHANNIZER0 es una app de escritorio de **xhanni (Xhanni Studios)**. Funciona en tu PC y **no tiene cuentas, publicidad ni telemetría**: no nos envía datos tuyos, de tu hardware ni de cómo la usas.
 
@@ -15,9 +15,10 @@ Todo se guarda solo en tu equipo y puedes borrarlo cuando quieras:
 | Respaldos de seguridad y su diario de cambios | `%USERPROFILE%\XhanniBackups\XHANNIZER0` | Poder deshacer lo que la app cambió |
 | Historial de acciones y registro de errores | Carpeta de datos de la app¹ | Mostrarte qué hizo la app y ayudar a resolver fallas |
 | Mediciones «Antes y después» y estado del Piloto automático | Carpeta de datos de la app¹ | Comparar la mejora y continuar después de reiniciar |
-| Tamaño de ventana, tema e idioma | Carpeta de datos de la app¹ | Recordar tus preferencias |
+| Mis perfiles guardados (`mis-perfiles.json`) | Carpeta de datos de la app¹ | Reutilizar tus listas de programas y ajustes sin archivos sueltos |
+| Tamaño de ventana, tema, idioma, modo técnico y notificaciones | Carpeta de datos de la app¹ | Recordar tus preferencias |
 
-¹ `%APPDATA%\XHANNIZER0`, o la carpeta `XHANNIZER0-datos` junto al `.exe` en la versión Portable.
+¹ `%APPDATA%\XHANNIZER0`.
 
 ## 2. A qué se conecta y por qué
 
@@ -25,11 +26,11 @@ XHANNIZER0 solo se conecta a internet para hacer lo que le pides:
 
 | Servicio | Para qué |
 | --- | --- |
-| **GitHub** (api.github.com, raw.githubusercontent.com) | Ver si hay una versión nueva de la app, bajar correcciones del catálogo y las versiones de los emuladores |
-| **WinGet / Microsoft Store** | Instalar y actualizar los programas que eliges |
+| **GitHub** (`api.github.com`, `raw.githubusercontent.com`) | Ver si hay una versión nueva de la app, bajar correcciones del catálogo y las versiones de los emuladores |
+| **WinGet / Microsoft Store** | Instalar, desinstalar y actualizar los programas que eliges |
 | **Windows Update** | Buscar e instalar drivers oficiales |
-| **Sitios oficiales de cada fabricante** | Descargar drivers o programas que no están en WinGet |
-| **Cloudflare (1.1.1.1) y Google (8.8.8.8)** | Medir la latencia en la sección Red / DNS |
+| **MSI (`msi.com` / `download.msi.com`) y sitios oficiales de fabricantes** | Consultar/descargar BIOS verificadas por SHA-256 y drivers o programas que no están en WinGet |
+| **Servidores DNS públicos** (`1.1.1.1`, `8.8.8.8`, `9.9.9.9`, `94.140.14.14`, `208.67.222.222`) | Medir la latencia real (ping ICMP) en el comparador de Red / DNS |
 
 Estas conexiones las hace tu PC directamente con cada servicio; xhanni no recibe esos datos. Cada servicio tiene su propia política de privacidad.
 
