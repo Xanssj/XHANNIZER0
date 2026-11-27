@@ -2,6 +2,24 @@
 
 English notes for the "What's new" window. The full history is in CHANGELOG.md (Spanish).
 
+## 2.3.1 — 2026-11-27
+
+### Security
+- **Tighter Electron isolation**: navigation restricted strictly to `src/renderer/index.html`, `dragover`/`drop` navigation blocked, `xh:open-app` restricted to executables verified by the main process, external WinGet packages restricted to opened migrations with native confirmation, Chromium permission requests denied by default, and hardened PDF report window.
+- **Junction-safe elevated UAC cleanup**: elevated cleanup on `C:\Windows\Temp` and `SoftwareDistribution\Download` skips reparse points/junctions (`!ReparsePoint`), wraps `StateFlags0742` in `try/finally`, and preserves active XHANNIZER0 temp folders.
+- **Fail-closed dialogs & safer BIOS USB prep**: destructive confirmations always cancel if the window is closed; BIOS USB formatting locks concurrency upfront, validates physical disk identity (`UniqueId` and size), and enforces strict HTTPS with a download size cap.
+- **Safer downloads & updates**: `downloadFile` enforces a max size limit, rejects non-HTTPS redirects, and waits for stream close before removing partial files; `powershell.exe` is invoked via its absolute System32 path; the auto-updater only installs on explicit user click (no silent install on quit).
+
+### Stability, catalog & CI
+- **Autopilot, restore & PC Check**: Autopilot persists `settingIds` and preserves its original `backupId` across reboots while awaiting live driver checks; `createRestorePoint` restores the registry key inside `finally`; `restore` handles `(default)` values and UAC cancellations; `pcCheck` maps PCIe properties by `KeyName` and avoids `RAM at Infinity MHz`; fixed Overview double-counting, broadened `isAppBusy()`, and wrapped async buttons in `try/finally`.
+- **Catalog, emulators & CI**: GitHub Actions releases now build into a `--draft` release and publish only after verifying `latest.yml` and the `.exe` installer; installer bundles `LICENSE` and `THIRD-PARTY-NOTICES.md` (GNU GPLv3); fixed hanging Promises on oversized responses in `emulators.js`/`main.js` and 64-bit asset picking; catalog validation now runs on `pull_request` too.
+- **Legal text & privacy**: updated `i18n.js` license strings to **GNU GPLv3** and documented catalog favicons (`www.google.com/s2/favicons`) in `PRIVACY.md`.
+
+### Interface
+- **Cleaner PC Check**: removed redundant GPU temperature (already shown in Overview's live monitor) and the positive "Virtualization available" item while keeping the BIOS-disabled warning.
+- **Cleaner title bar**: moved language and theme switching exclusively to **Settings** (and first-run setup), removing duplicate header buttons.
+- **Noise-free up-to-date Drivers**: hid the "Check for update" button on up-to-date drivers, guarded the click handler against opening the install modal unnecessarily, and added a single "All your drivers are up to date." notice after scanning.
+
 ## 2.3.0 — 2026-11-26
 
 ### New

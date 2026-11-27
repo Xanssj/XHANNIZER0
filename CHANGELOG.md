@@ -1,5 +1,23 @@
 # Cambios
 
+## 2.3.1 — 2026-11-27
+
+### Seguridad
+- **Aislamiento reforzado en Electron**: navegación restringida exactamente a `src/renderer/index.html`, bloqueo de arrastre `dragover`/`drop`, apertura de apps (`xh:open-app`) limitada a ejecutables verificados por el proceso principal, paquetes WinGet externos restringidos a migraciones abiertas con confirmación nativa, permisos de Chromium denegados por defecto y ventana PDF endurecida.
+- **Limpieza elevada UAC sin junctions**: el borrado elevado sobre `C:\Windows\Temp` y `SoftwareDistribution\Download` ignora enlaces simbólicos/junctions (`!ReparsePoint`), protege `StateFlags0742` en `try/finally` y excluye temporales activos de XHANNIZER0.
+- **Diálogos fail-closed y BIOS por USB**: las confirmaciones destructivas cancelan siempre si la ventana cerró; el formateo de USB para BIOS usa bloqueo de concurrencia previo, valida el disco físico (`UniqueId` y tamaño) y exige HTTPS estricto con límite de tamaño.
+- **Descargas y actualizaciones más seguras**: `downloadFile` impone límite de tamaño, bloquea redirecciones no HTTPS y espera el cierre del stream antes de borrar archivos parciales; `powershell.exe` se invoca con ruta absoluta de System32 y el auto-actualizador solo instala al hacer clic en «Reiniciar y actualizar» (sin instalar silenciosamente al cerrar).
+
+### Estabilidad, catálogo y CI
+- **Piloto automático, restauración y Chequeo de PC**: el Piloto automático conserva `settingIds` y el `backupId` original tras reiniciar y espera el chequeo de drivers antes de evaluar actualizaciones; `createRestorePoint` restaura el registro en `finally`; `restore` maneja valores `(default)` y cancelación UAC; `pcCheck` mapea propiedades PCIe por `KeyName` y evita mostrar `RAM a Infinity MHz`; corregido el doble conteo en Resumen, ampliado `isAppBusy()` y protegidos botones async con `try/finally`.
+- **Catálogo, emuladores y CI**: las releases en GitHub Actions se crean primero como borrador (`--draft`) y se publican solo tras comprobar `latest.yml` y el instalador `.exe`; el instalador ahora incluye `LICENSE` y `THIRD-PARTY-NOTICES.md` (GNU GPLv3); corregida la promesa colgada sobre respuestas grandes en `emulators.js` / `main.js` y selección de assets x64; validación del catálogo habilitada también en `pull_request`.
+- **Textos legales y privacidad**: corregidas las traducciones de licencia en `i18n.js` a **GNU GPLv3** y documentados los favicons del catálogo (`www.google.com/s2/favicons`) en `PRIVACY.md`.
+
+### Interfaz
+- **Chequeo de PC más limpio**: eliminados la temperatura de GPU (ya presente en el monitor en vivo de Resumen) y el aviso positivo «Virtualización disponible» (manteniendo el aviso cuando está desactivada en BIOS).
+- **Barra superior minimalista**: idioma y tema ahora se cambian únicamente desde **Ajustes** (y primer arranque), retirando los botones duplicados de la barra superior.
+- **Drivers al día sin ruido**: oculto el botón «Buscar actualización» cuando el driver ya está actualizado, bloqueado el modal de instalación si no hay actualización disponible y mostrado un único aviso «Todos tus drivers están al día.» al finalizar el chequeo.
+
 ## 2.3.0 — 2026-11-26
 
 ### Nuevo

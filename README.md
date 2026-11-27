@@ -11,7 +11,7 @@ Sin anuncios, sin telemetría, sin instaladores ocultos — 100 % reversible.
 
 <p>
   <a href="https://github.com/Xanssj/XHANNIZER0/releases/latest">
-    <img src="https://img.shields.io/badge/Descargar-v2.3.0-0071E3?style=for-the-badge&logo=windows11&logoColor=white" alt="Descargar v2.3.0">
+    <img src="https://img.shields.io/badge/Descargar-v2.3.1-0071E3?style=for-the-badge&logo=windows11&logoColor=white" alt="Descargar v2.3.1">
   </a>
   <img src="https://img.shields.io/badge/Windows-11%20%2F%2010%20x64-1C1C1E?style=for-the-badge" alt="Windows 11 / 10 x64">
   <a href="LICENSE">
@@ -117,7 +117,7 @@ XHANNIZER0 modifica configuraciones del sistema, por eso cada acción crítica p
 **Requisitos:** Windows 10 u 11 de 64 bits. Algunas acciones solicitan elevación de administrador (UAC) solo cuando es necesario.
 
 1. Descarga el instalador oficial desde **[GitHub Releases](https://github.com/Xanssj/XHANNIZER0/releases/latest)**:
-   `XHANNIZER0-2.3.0-x64-nsis.exe` *(incluye actualizaciones automáticas)*.
+   `XHANNIZER0-2.3.1-x64-nsis.exe` *(incluye actualizaciones automáticas)*.
 2. Ejecuta el instalador y sigue el asistente de bienvenida inicial.
 
 > [!TIP]
