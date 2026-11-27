@@ -1,61 +1,149 @@
 <div align="center">
 
-<img src="build/icon.png" width="96" alt="">
+<br>
+
+<img src="build/icon.png" width="92" height="92" alt="XHANNIZER0">
 
 # XHANNIZER0
 
-**Deja Windows listo después de formatear o armar tu PC, sin anuncios ni instaladores ocultos.**
+**Deja Windows listo después de formatear o armar tu PC.**
+Sin anuncios, sin telemetría, sin instaladores ocultos — 100 % reversible.
 
-Una app gratuita de [xhanni (Xhanni Studios)](https://xhannistudios.org).
+<p>
+  <a href="https://github.com/Xanssj/XHANNIZER0/releases/latest">
+    <img src="https://img.shields.io/badge/Descargar-v2.3.0-0071E3?style=for-the-badge&logo=windows11&logoColor=white" alt="Descargar v2.3.0">
+  </a>
+  <img src="https://img.shields.io/badge/Windows-11%20%2F%2010%20x64-1C1C1E?style=for-the-badge" alt="Windows 11 / 10 x64">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/Licencia-GNU%20GPLv3-2C2C2E?style=for-the-badge" alt="GNU GPLv3">
+  </a>
+  <a href="https://github.com/Xanssj/XHANNIZER0/actions/workflows/tests.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/Xanssj/XHANNIZER0/tests.yml?label=Pruebas&style=for-the-badge" alt="Estado de pruebas">
+  </a>
+</p>
 
-![Versión](https://img.shields.io/badge/Versi%C3%B3n-2.3.0-0071E3?style=for-the-badge)
-![Plataforma](https://img.shields.io/badge/Windows-11%20%2F%2010%20x64-1C1C1E?style=for-the-badge)
-![Licencia](https://img.shields.io/badge/Licencia-GPLv3-6E6E73?style=for-the-badge)
-[![Pruebas](https://img.shields.io/github/actions/workflow/status/Xanssj/XHANNIZER0/tests.yml?label=Pruebas&style=for-the-badge)](https://github.com/Xanssj/XHANNIZER0/actions/workflows/tests.yml)
+<p>
+  <a href="https://github.com/Xanssj/XHANNIZER0/releases/latest"><strong>Descargar</strong></a>
+  &nbsp;·&nbsp;
+  <a href="CHANGELOG.md">Novedades</a>
+  &nbsp;·&nbsp;
+  <a href="SECURITY.md">Seguridad</a>
+  &nbsp;·&nbsp;
+  <a href="PRIVACY.md">Privacidad</a>
+  &nbsp;·&nbsp;
+  <a href="TRADEMARK.md">Marca</a>
+  &nbsp;·&nbsp;
+  <a href="https://discord.gg/QKmUekvX2X">Discord</a>
+</p>
 
-[Descargar](https://github.com/Xanssj/XHANNIZER0/releases/latest) · [Soporte en Discord](https://discord.gg/QKmUekvX2X) · [Privacidad](PRIVACY.md) · [Marca](TRADEMARK.md) · [Cambios](CHANGELOG.md)
+<sub>Una app gratuita y de código abierto de <a href="https://xhannistudios.org"><strong>xhanni (Xhanni Studios)</strong></a>.</sub>
 
 </div>
 
+<br>
+
+| **Sin telemetría** | **100 % reversible** | **Fuentes verificadas** | **Diseño nativo 240 Hz** |
+| :---: | :---: | :---: | :---: |
+| Sin cuentas, sin anuncios ni envío de datos | Respaldo previo obligatorio y botón *Deshacer* | SHA-256, firma Authenticode y canales oficiales | Windows 11 Acrylic, modo oscuro/claro y ES/EN |
+
 ---
 
-## Qué hace
+## Qué incluye
 
-**🖥️ Resumen y monitor en vivo.** Vista inicial con estado general de tu PC, checklist post-formateo, copia de especificaciones en 1 clic y **monitor en vivo** (CPU, RAM, disco del sistema y temperatura de GPU NVIDIA) con pausa automática. Interfaz fluida a 60–240 Hz con animaciones nativas de Windows 11, modo oscuro/claro, inglés/español y paleta de comandos **Spotlight (`Ctrl + K`)**.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Resumen y Monitor en vivo</h3>
+      Panel inicial con el estado real de tu equipo, checklist post-formateo, copia de especificaciones en 1 clic y <strong>monitor en vivo</strong> (CPU, RAM, disco del sistema y temperatura de GPU NVIDIA) con pausa automática en segundo plano.
+    </td>
+    <td width="50%" valign="top">
+      <h3>Piloto automático</h3>
+      Un flujo guiado deja tu PC recién formateado listo de principio a fin: respaldo, punto de restauración, drivers, runtimes, tus apps, ajustes de Windows, limpieza y chequeo final. Si necesita reiniciar, retoma solo al volver y avisa con <strong>notificaciones nativas</strong>.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Chequeo de PC y Asistente de BIOS</h3>
+      Detecta lo que Windows no avisa: RAM sin XMP/EXPO, monitor conectado a la placa madre o atascado en 60 Hz, salud de batería en portátiles, <strong>pantallazos azules (BSOD) y apagados <code>Kernel-Power 41</code></strong> (30 días), Resizable BAR, Secure Boot y SSD limitado. Incluye guía exacta por marca (ASUS, MSI, Gigabyte, ASRock) y reinicio directo a la BIOS.
+    </td>
+    <td width="50%" valign="top">
+      <h3>Drivers reales y BIOS por USB</h3>
+      Detecta CPU, GPU dedicada/integrada, placa madre, audio, red y discos en PCs armados, portátiles y equipos de marca. Compara drivers con <strong>Windows Update por Hardware ID exacto</strong> y prepara memorias USB en FAT32 con BIOS verificada por SHA-256 (sin flashear desde Windows).
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Catálogo oficial y Mis perfiles</h3>
+      Más de <strong>100 programas</strong> por WinGet o sitios oficiales (con <strong>desinstalador integrado</strong>), emuladores open-source desde GitHub y búsqueda en Microsoft Store. Guarda tus selecciones en <strong>Mis perfiles</strong> o compártelas mediante código <code>XHZ1-…</code>, enlace, QR o JSON.
+    </td>
+    <td width="50%" valign="top">
+      <h3>Windows y Red (Comparador DNS)</h3>
+      Ajustes post-formateo 100 % reversibles (Modo Juego, HAGS, mouse 1:1, extensiones, archivos ocultos, limpieza de Windows 11, energía e hibernación con avisos en portátiles), gestor de inicio, bloatware seguro y <strong>comparador de DNS en vivo</strong> (Cloudflare, Google, Quad9, AdGuard y OpenDNS) con aplicación en 1 clic.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Migrar mi PC y Mantenimiento</h3>
+      Antes de formatear, respalda tus programas, ajustes y carpetas a un USB y restáuralos en el equipo nuevo sin sobrescribir archivos. Incluye reparación de Windows (<code>SFC</code>, <code>DISM</code>, Windows Update), limpieza de <code>Windows.old</code> y cachés de sombreadores, y actualizaciones semanales automáticas.
+    </td>
+    <td width="50%" valign="top">
+      <h3>Rendimiento e Informe PDF</h3>
+      Compara tu PC <strong>antes y después</strong> de optimizarlo, valida la estabilidad de la RAM tras activar XMP/EXPO (detectando errores WHEA) y genera un <strong>informe técnico en PDF</strong> listo para entregar a clientes.
+    </td>
+  </tr>
+</table>
 
-**🚀 Piloto automático.** Un botón deja tu PC recién formateado listo: respaldo, punto de restauración, drivers, runtimes, tus apps, ajustes de Windows, limpieza y chequeo final. Si hace falta reiniciar, la app se vuelve a abrir sola y sigue donde quedó, con **notificaciones nativas de Windows** al terminar.
+---
 
-**🩺 Chequeo de PC.** Encuentra los errores que Windows no avisa al armar o formatear: RAM sin XMP/EXPO, monitor conectado a la placa madre o atascado en 60 Hz, salud de batería en portátiles, **pantallazos azules (BSOD) y apagados inesperados (`Kernel-Power 41`)** de los últimos 30 días, Resizable BAR o Secure Boot apagados, SSD limitado y dispositivos sin driver. El **Asistente de BIOS** te muestra la ruta exacta del menú para tu placa (ASUS, MSI, Gigabyte, ASRock) y reinicia directo a la BIOS.
+## Seguridad por diseño
 
-**🧩 Drivers con detección real de hardware.** CPU, GPU dedicada e integrada, placa madre, audio, red y almacenamiento, comparados con los canales oficiales de cada fabricante. Los dispositivos sin driver se resuelven desde Windows Update por su Hardware ID exacto.
+XHANNIZER0 modifica configuraciones del sistema, por eso cada acción crítica pasa por capas de verificación en el proceso principal:
 
-**📦 Catálogo oficial y perfiles.** Más de 100 programas por WinGet o desde su sitio oficial (con **desinstalador integrado**), emuladores open-source desde GitHub, búsqueda en Microsoft Store y **Mis perfiles guardados** para reutilizar o compartir tus configuraciones (`XHZ1-…` o JSON).
+| Capa de protección | Qué garantiza |
+| --- | --- |
+| **Respaldo obligatorio y diario de deshacer** | Ningún cambio de registro, DNS, inicio o carpeta se aplica sin respaldo verificado en disco; todo queda registrado para revertirse en orden inverso. |
+| **Avisos explícitos en cambios sensibles** | Confirmación nativa antes de tocar hibernación (`hiberfil.sys`), plan *Máximo rendimiento* en portátiles, HAGS, reinicio del Explorador, reinicios del sistema o borrado permanente. |
+| **Protección de servicios y rutas críticas** | Los scripts de Windows Update garantizan reactivar `wuauserv`/`bits`/`cryptsvc`/`msiserver` mediante `try/finally`, y las acciones de disco bloquean `C:\Windows`, `Program Files` y raíces de unidad. |
+| **Descargas y firmas verificadas** | Panel de auditoría en tiempo real con origen exacto, huella **SHA-256** y verificación de firma digital **Authenticode** (los instaladores sin firma no se ejecutan automáticamente). |
+| **Aislamiento de Electron** | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, CSP estricta y parametrización completa de PowerShell (sin interpolación de texto). |
 
-**🌐 Windows y Red.** Ajustes post-formateo 100 % reversibles (Modo Juego, HAGS, aceleración de mouse 1:1, extensiones y archivos ocultos, plan de energía, limpieza de Windows 11, hibernación con avisos en portátiles), gestor de inicio, limpiador de bloatware seguro y **comparador de DNS en vivo** (Cloudflare, Google, Quad9, AdGuard y OpenDNS) para aplicar el más rápido en 1 clic.
-
-**🔁 Migrar mi PC.** Antes de formatear, guarda tus programas, ajustes y carpetas en un USB; después, restáuralos en el PC nuevo sin sobrescribir nada.
-
-**🛠️ Mantenimiento.** Reparar Windows (SFC, DISM, Windows Update), actualizar tus apps cada semana, limpiar Windows.old y cachés de sombreadores, crear puntos de restauración y ver el historial de todo lo que hizo la app.
-
-**📊 Rendimiento e informe.** Compara tu PC antes y después de optimizarlo, prueba que la RAM aguante con XMP/EXPO y genera un **informe PDF para tu cliente** si formateas equipos por trabajo.
-
-**🛡️ Seguro por diseño.** Cada cambio exige un respaldo verificado y se puede deshacer. Los cambios sensibles piden confirmación nativa con avisos claros, se bloquean carpetas críticas del sistema, ves el origen exacto de cada descarga (SHA-256 y firma digital) y los instaladores sin firma se bloquean. Sin cuentas, sin publicidad y sin telemetría ([detalles](PRIVACY.md)).
+> [!NOTE]
+> XHANNIZER0 no tiene cuentas, publicidad ni telemetría. Consulta todos los detalles de archivos locales y conexiones de red en [PRIVACY.md](PRIVACY.md) y nuestra política de reportes en [SECURITY.md](SECURITY.md).
 
 ---
 
 ## Descargar e instalar
 
-1. Baja la última versión desde **[Releases](https://github.com/Xanssj/XHANNIZER0/releases/latest)**:
-   - `XHANNIZER0-x.x.x-x64-nsis.exe`: instalador de Windows (con actualizaciones automáticas).
-2. Si Windows muestra **«Windows protegió su PC»**, toca **Más información → Ejecutar de todas formas**. Aparece mientras la app no tenga firma de código.
+**Requisitos:** Windows 10 u 11 de 64 bits. Algunas acciones solicitan elevación de administrador (UAC) solo cuando es necesario.
 
-Necesitas Windows 10 u 11 de 64 bits. Algunas acciones piden permiso de administrador (UAC).
+1. Descarga el instalador oficial desde **[GitHub Releases](https://github.com/Xanssj/XHANNIZER0/releases/latest)**:
+   `XHANNIZER0-2.3.0-x64-nsis.exe` *(incluye actualizaciones automáticas)*.
+2. Ejecuta el instalador y sigue el asistente de bienvenida inicial.
+
+> [!TIP]
+> Si Windows muestra **«Windows protegió su PC»** (SmartScreen), haz clic en **Más información → Ejecutar de todas formas**. Este aviso aparece mientras el binario no cuente con certificado comercial de firma de código; puedes verificar el código fuente completo en este repositorio o compilarlo tú mismo.
+
+---
+
+## Atajos de teclado
+
+| Atajo | Acción |
+| :---: | --- |
+| `Ctrl + K` | Abrir paleta de comandos **Spotlight** (buscar secciones, programas o acciones) |
+| `Ctrl + 1` … `Ctrl + 9` | Saltar directamente entre las secciones principales |
+| `Ctrl + ,` | Abrir **Ajustes** |
+| `Esc` | Cerrar modal, búsqueda o panel activo |
+
+---
 
 ## Soporte
 
-¿Algo no funciona? En la app ve a **Acerca de y soporte → Reportar un problema**: se guarda un diagnóstico `.zip` y se abre el [Discord oficial](https://discord.gg/QKmUekvX2X), donde puedes abrir un ticket. Te responde quien hizo la app.
+¿Encontraste un fallo o tienes una sugerencia?
 
-Para fallos de seguridad, lee [SECURITY.md](SECURITY.md).
+- Desde la app ve a **Acerca de y soporte → Reportar un problema**: se genera un paquete de diagnóstico `.zip` (sin contraseñas ni archivos personales) y se abre el **[Discord oficial de xhanni](https://discord.gg/QKmUekvX2X)** para crear un ticket.
+- Para vulnerabilidades de seguridad, sigue el proceso privado descrito en [SECURITY.md](SECURITY.md).
+
+---
 
 ## Para desarrolladores
 
@@ -66,25 +154,37 @@ npm install
 npm start
 ```
 
-| Comando | Qué hace |
+| Comando | Descripción |
 | --- | --- |
-| `npm test` | Pruebas automáticas (29 tests) |
-| `npm run dist:nsis` | Compila el instalador oficial de Windows en `dist/` |
-| `npx electron scripts/build-icon.js` | Regenera `build/icon.ico` desde `assets/icon.svg` |
-| `npm run validate:catalog` | Revisa que los IDs de WinGet del catálogo sigan existiendo |
+| `npm start` | Inicia la aplicación en modo desarrollo con Electron |
+| `npm test` | Ejecuta la suite completa de pruebas unitarias y de seguridad (29 tests) |
+| `npm run dist:nsis` | Compila el instalador oficial de Windows (`x64`) en `dist/` |
+| `npm run validate:catalog` | Verifica la disponibilidad de los IDs de WinGet del catálogo |
+| `npx electron scripts/build-icon.js` | Regenera `build/icon.ico` y `build/icon.png` desde `assets/icon.svg` |
 
-**Publicar una versión:** sube la versión en `package.json`, crea la etiqueta y súbela (`git tag v2.3.0` y `git push origin v2.3.0`). GitHub Actions corre las pruebas, compila y publica la versión. Si existen los secretos `CSC_LINK` y `CSC_KEY_PASSWORD`, también la firma.
+<details>
+<summary><strong>Publicación de versiones y mantenimiento del catálogo</strong></summary>
 
-**Corregir el catálogo sin publicar una versión:** edita [`catalog-overrides.json`](catalog-overrides.json). Las apps instaladas lo descargan al abrirse.
+<br>
 
-## Licencia, marca y aviso legal
+- **Publicar una versión:** actualiza `version` en `package.json` y los changelogs (`CHANGELOG.md` y `CHANGELOG.en.md`), crea y sube la etiqueta (`git tag -a v2.3.0 -m "XHANNIZER0 v2.3.0"` y `git push origin v2.3.0`). GitHub Actions ejecuta las pruebas, compila el instalador NSIS y publica el release automáticamente. Si están configurados `CSC_LINK` y `CSC_KEY_PASSWORD`, también firma el ejecutable.
+- **Correcciones rápidas del catálogo:** edita [`catalog-overrides.json`](catalog-overrides.json). Las instancias instaladas sincronizan correcciones válidas (mismo dominio HTTPS / ID de WinGet válido) al abrirse sin necesidad de nueva versión.
 
-- **Licencia de código fuente:** XHANNIZER0 se entrega bajo la licencia **[GNU GPLv3](LICENSE)** (`GPL-3.0-or-later`), sin garantías: úsala bajo tu responsabilidad y mantén tus respaldos. Cualquier copia o modificación redistribuida debe mantenerse abierta bajo GPLv3 y conservar la atribución original *(las versiones anteriores hasta v2.3.0 fueron publicadas bajo licencia MIT)*.
-- **Marca e identidad:** los nombres **XHANNIZER0**, **Xhanni Studios**, el logotipo oficial y el dominio `xhannistudios.org` están reservados. Si haces un fork, debes cambiar el nombre, el ícono y el `appId` — consulta [TRADEMARK.md](TRADEMARK.md).
-- **Terceros:** los avisos de librerías de terceros están en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Los emuladores se descargan desde sus proyectos oficiales; XHANNIZER0 no incluye ni distribuye BIOS, firmware ni juegos. Las marcas mencionadas pertenecen a sus dueños y se nombran solo para identificar el software que instala la app.
+</details>
+
+---
+
+## Licencia, marca y avisos legales
+
+| Documento | Alcance |
+| --- | --- |
+| **[GNU GPLv3](LICENSE)** | El código fuente se distribuye bajo `GPL-3.0-or-later`, sin garantías. Cualquier derivado redistribuido debe mantener el código abierto bajo GPLv3 y conservar la atribución original *(versiones hasta v2.3.0 fueron publicadas bajo MIT)*. |
+| **[Política de marca](TRADEMARK.md)** | Los nombres **XHANNIZER0**, **Xhanni Studios**, el logotipo oficial, `studio.xhanni.xhannizer0` y `xhannistudios.org` están reservados. Los forks deben usar nombre, ícono e identificador propios. |
+| **[Terceros](THIRD-PARTY-NOTICES.md)** | Licencias de dependencias empaquetadas (`Electron`, `electron-updater`, `qrcode`). XHANNIZER0 no incluye ni distribuye BIOS, firmware ni juegos; las marcas mencionadas pertenecen a sus propietarios. |
 
 ---
 
 <div align="center">
-  <sub>Hecho por <a href="https://xhannistudios.org/nosotros">xhanni</a> · <a href="https://xhannistudios.org">xhannistudios.org</a> · <a href="https://discord.gg/QKmUekvX2X">Discord</a></sub>
+  <br>
+  <sub>Hecho con cuidado por <a href="https://xhannistudios.org/nosotros"><strong>xhanni</strong></a> · <a href="https://xhannistudios.org">xhannistudios.org</a> · <a href="https://discord.gg/QKmUekvX2X">Discord</a></sub>
 </div>
