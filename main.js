@@ -2,7 +2,7 @@
 // Utilidad post-formateo para Windows con estética macOS / Apple Design y arquitectura limpia.
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -17,9 +17,17 @@ const {
   createSafetyBackup,
   listBackups,
   verifyBackup,
+  isProtectedSystemDir,
   scanDisksAndFolders,
   executeDiskOrFolderAction,
 } = require('./src/backend/safetyBackup');
+const {
+  LOCAL_DRIVE_PATH_RE,
+  isAllowedRendererNavigation,
+  createAllowedExeRegistry,
+  confirmOrFailClosed,
+  isSafeDestinationDir,
+} = require('./src/backend/securityGuards');
 const {
   getFeaturedStoreApps,
   searchMicrosoftStore,
@@ -182,10 +190,11 @@ function createWindow() {
     openExternalSafe(url);
     return { action: 'deny' };
   });
+  const RENDERER_INDEX_HTML = path.join(__dirname, 'src', 'renderer', 'index.html');
   contents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://')) {
+    if (!isAllowedRendererNavigation(url, RENDERER_INDEX_HTML)) {
       event.preventDefault();
-      openExternalSafe(url);
+      if (/^https?:\/\//i.test(String(url || ''))) openExternalSafe(url);
     }
   });
 
@@ -519,9 +528,19 @@ ipcMain.handle('xh:install-device-driver', withVerifiedBackup(async (payload) =>
   }
 }));
 
+const allowedExeRegistry = createAllowedExeRegistry();
+const allowedMigrationWingetIds = new Set();
+
+function confirmDialog(options) {
+  return confirmOrFailClosed(win, dialog.showMessageBox.bind(dialog), options);
+}
+
 // ---------- Catálogo de software (con detección real de apps instaladas en Windows)
 ipcMain.handle('xh:get-catalog', async () => {
   const [items, winget] = await Promise.all([getCatalogWithStatusAsync(), hasWinget()]);
+  for (const item of items) {
+    if (item.installedPath) allowedExeRegistry.add(item.installedPath);
+  }
   const installedCount = items.filter((i) => i.installed).length;
   return { items, wingetAvailable: winget, installedCount };
 });
@@ -563,8 +582,31 @@ ipcMain.handle('xh:install-batch', async (_event, payload) => {
       };
     }
   }
+  const wingetTasks = tasks.filter((t) => t.type === 'winget');
+  if (wingetTasks.length) {
+    const unauthorized = wingetTasks.find((t) => !allowedMigrationWingetIds.has(String(t.wingetId || '').toLowerCase()));
+    if (unauthorized) {
+      return {
+        ok: false,
+        error: 'Solo se permiten paquetes WinGet externos provenientes de un archivo de migración abierto en esta sesión.',
+      };
+    }
+    const listPreview = wingetTasks.slice(0, 8).map((t) => `• ${t.name || t.wingetId} (${t.wingetId})`).join('\n');
+    const extra = wingetTasks.length > 8 ? `\n• …y ${wingetTasks.length - 8} más` : '';
+    const ask = await confirmDialog({
+      type: 'question',
+      buttons: ['Instalar paquetes', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Instalar paquetes de migración — XHANNIZER0',
+      message: `¿Instalar ${wingetTasks.length} paquete(s) externo(s) vía WinGet?`,
+      detail: `${listPreview}${extra}\n\nSe instalarán usando WinGet oficial desde el archivo de migración que abriste.`,
+    });
+    if (!ask.confirmed) return { ok: false, canceled: true };
+  }
   installBusy = true;
   const emit = (update) => {
+    if (update?.installedPath) allowedExeRegistry.add(update.installedPath);
     if (win && !win.isDestroyed()) win.webContents.send('xh:install-progress', update);
   };
   try {
@@ -577,12 +619,18 @@ ipcMain.handle('xh:install-batch', async (_event, payload) => {
 });
 
 // ---------- Abrir app instalada / URL oficial / Carpeta local
-const LOCAL_DRIVE_PATH_RE = /^[A-Za-z]:\\/;
 ipcMain.handle('xh:open-app', async (_event, exePath) => {
   if (!exePath || typeof exePath !== 'string') return { ok: false };
   const resolved = path.resolve(exePath);
   if (!LOCAL_DRIVE_PATH_RE.test(resolved) || !/\.exe$/i.test(resolved)) {
     return { ok: false, error: 'Ruta de aplicación no permitida.' };
+  }
+  // Sincroniza ejecutables de companion apps detectados en el último escaneo de hardware
+  for (const drv of getLastHardwareScan()?.drivers || []) {
+    if (drv?.companionApp?.exePath) allowedExeRegistry.add(drv.companionApp.exePath);
+  }
+  if (!allowedExeRegistry.has(resolved)) {
+    return { ok: false, error: 'Solo se pueden abrir aplicaciones verificadas del catálogo o hardware detectado.' };
   }
   try {
     if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'Archivo no encontrado.' };
@@ -717,8 +765,8 @@ ipcMain.handle('xh:apply-windows-setting', withVerifiedBackup(async (payload) =>
   const isLaptop = getLastHardwareScan()?.system?.formFactor === 'laptop';
   const warnBuilder = SENSITIVE_WIN_WARNINGS[id];
   const warn = typeof warnBuilder === 'function' ? warnBuilder(isLaptop) : null;
-  if (warn && win && !win.isDestroyed()) {
-    const { response } = await dialog.showMessageBox(win, {
+  if (warn) {
+    const ask = await confirmDialog({
       type: 'warning',
       buttons: ['Aplicar de todos modos', 'Cancelar'],
       defaultId: 1,
@@ -727,7 +775,7 @@ ipcMain.handle('xh:apply-windows-setting', withVerifiedBackup(async (payload) =>
       message: warn.message,
       detail: warn.detail,
     });
-    if (response !== 0) return { ok: false, canceled: true };
+    if (!ask.confirmed) return { ok: false, canceled: true };
   }
   return withUndo(payload.backupId, 'windows-setting', payload, () => applyWindowsSetting(payload));
 }));
@@ -753,18 +801,16 @@ ipcMain.handle('xh:uninstall-app', async (_event, payload) => {
   if (uninstallBusy) return { ok: false, error: 'Ya hay una desinstalación en curso.' };
   const item = getCatalogItem(String(payload?.id || ''));
   if (!item || !item.wingetId) return { ok: false, error: 'Este programa no admite desinstalación automática por WinGet.' };
-  if (win && !win.isDestroyed()) {
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'warning',
-      buttons: ['Desinstalar', 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Desinstalar programa — XHANNIZER0',
-      message: `¿Desinstalar ${item.name}?`,
-      detail: `Se ejecutará la desinstalación oficial vía WinGet (${item.wingetId}). Cierra el programa antes si está abierto.`,
-    });
-    if (response !== 0) return { ok: false, canceled: true };
-  }
+  const ask = await confirmDialog({
+    type: 'warning',
+    buttons: ['Desinstalar', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Desinstalar programa — XHANNIZER0',
+    message: `¿Desinstalar ${item.name}?`,
+    detail: `Se ejecutará la desinstalación oficial vía WinGet (${item.wingetId}). Cierra el programa antes si está abierto.`,
+  });
+  if (!ask.confirmed) return { ok: false, canceled: true };
   uninstallBusy = true;
   try {
     const res = await uninstallWingetApp({ wingetId: item.wingetId, name: item.name });
@@ -945,8 +991,8 @@ ipcMain.handle('xh:delete-backup', async (_event, backupId) => {
     return { ok: false, error: 'Ruta de respaldo no autorizada.' };
   }
   const pendingUndo = pendingEntries(String(backupId)).length;
-  if (pendingUndo > 0 && win && !win.isDestroyed()) {
-    const { response } = await dialog.showMessageBox(win, {
+  if (pendingUndo > 0) {
+    const ask = await confirmDialog({
       type: 'warning',
       buttons: ['Eliminar de todos modos', 'Cancelar'],
       defaultId: 1,
@@ -955,7 +1001,7 @@ ipcMain.handle('xh:delete-backup', async (_event, backupId) => {
       message: `Este respaldo tiene ${pendingUndo} cambio(s) que todavía se pueden deshacer.`,
       detail: 'Si lo eliminas, ya no podrás revertir esos cambios desde XHANNIZER0.',
     });
-    if (response !== 0) return { ok: false, canceled: true };
+    if (!ask.confirmed) return { ok: false, canceled: true };
   }
   try {
     fs.rmSync(target, { recursive: true, force: true });
@@ -978,7 +1024,7 @@ ipcMain.handle('xh:restore-backup', async (_event, backupId) => {
   // La confirmación vive en el proceso principal: el renderer no puede saltársela
   const shown = pending.slice(-12).reverse().map((e) => `• ${e.label}`);
   if (pending.length > 12) shown.push(`• …y ${pending.length - 12} más`);
-  const { response } = await dialog.showMessageBox(win, {
+  const ask = await confirmDialog({
     type: 'question',
     buttons: ['Deshacer cambios', 'Cancelar'],
     defaultId: 1,
@@ -987,7 +1033,7 @@ ipcMain.handle('xh:restore-backup', async (_event, backupId) => {
     message: `¿Deshacer ${pending.length} cambio(s) hechos con este respaldo?`,
     detail: `${shown.join('\n')}\n\nSe revierten del más reciente al más antiguo. Algunos pasos pueden pedir permisos de administrador.`,
   });
-  if (response !== 0) return { ok: false, canceled: true };
+  if (!ask.confirmed) return { ok: false, canceled: true };
 
   restoreBusy = true;
   try {
@@ -1009,7 +1055,7 @@ ipcMain.handle('xh:run-repair', async (_event, kind) => {
   const repair = maintenance.REPAIRS[kind];
   if (!repair) return { ok: false, error: 'Reparación desconocida.' };
   if (repairBusy) return { ok: false, error: 'Ya hay una reparación en curso.' };
-  const { response } = await dialog.showMessageBox(win, {
+  const ask = await confirmDialog({
     type: 'question',
     buttons: ['Iniciar', 'Cancelar'],
     defaultId: 0,
@@ -1020,7 +1066,7 @@ ipcMain.handle('xh:run-repair', async (_event, kind) => {
       ? 'Detiene los servicios de Windows Update y renombra sus carpetas de caché (se conserva una copia .old). Pide permisos de administrador.'
       : `Puede tardar hasta ${repair.timeoutMin} minutos y pide permisos de administrador. No apagues el PC mientras se ejecuta.`,
   });
-  if (response !== 0) return { ok: false, canceled: true };
+  if (!ask.confirmed) return { ok: false, canceled: true };
   repairBusy = true;
   try {
     const res = await maintenance.runRepair(kind);
@@ -1080,18 +1126,16 @@ ipcMain.handle('xh:export-diagnostics', async () => {
 
 // ---------- Reiniciar el Explorador (para ver ajustes de Windows 11)
 ipcMain.handle('xh:restart-explorer', async () => {
-  if (win && !win.isDestroyed()) {
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'question',
-      buttons: ['Reiniciar Explorador', 'Cancelar'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Reiniciar Explorador de Windows — XHANNIZER0',
-      message: '¿Reiniciar el Explorador de Windows ahora?',
-      detail: 'La barra de tareas parpadeará unos segundos y se cerrarán las ventanas abiertas del Explorador de archivos (cancela si estás copiando archivos en este momento).',
-    });
-    if (response !== 0) return { ok: false, canceled: true };
-  }
+  const ask = await confirmDialog({
+    type: 'question',
+    buttons: ['Reiniciar Explorador', 'Cancelar'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Reiniciar Explorador de Windows — XHANNIZER0',
+    message: '¿Reiniciar el Explorador de Windows ahora?',
+    detail: 'La barra de tareas parpadeará unos segundos y se cerrarán las ventanas abiertas del Explorador de archivos (cancela si estás copiando archivos en este momento).',
+  });
+  if (!ask.confirmed) return { ok: false, canceled: true };
   return restartExplorer();
 });
 
@@ -1132,9 +1176,8 @@ ipcMain.handle('xh:migration-export', async (_event, payload) => {
   if (!destDir || !LOCAL_DRIVE_PATH_RE.test(destDir)) {
     return { ok: false, error: 'Elige una carpeta o unidad USB de destino.' };
   }
-  const sysDrive = (process.env.SystemDrive || 'C:').toLowerCase();
-  if (destDir.toLowerCase().startsWith(`${sysDrive}\\windows`) || destDir.toLowerCase().startsWith(`${sysDrive}\\program files`)) {
-    return { ok: false, error: 'Por seguridad no se puede exportar una migración dentro de carpetas del sistema.' };
+  if (!isSafeDestinationDir(destDir, isProtectedSystemDir)) {
+    return { ok: false, error: 'Por seguridad no se puede exportar una migración dentro de carpetas del sistema ni raíces protegidas.' };
   }
   const folders = (Array.isArray(payload?.folders) ? payload.folders : [])
     .map((f) => {
@@ -1180,6 +1223,10 @@ ipcMain.handle('xh:migration-open', async () => {
   if (res.canceled || !res.filePaths?.[0]) return { canceled: true };
   const mig = migration.readMigration(res.filePaths[0]);
   if (!mig.ok) return mig;
+  allowedMigrationWingetIds.clear();
+  for (const p of mig.packages || []) {
+    if (p?.wingetId) allowedMigrationWingetIds.add(String(p.wingetId).toLowerCase());
+  }
   const importedBaseline = mig.before ? benchmark.importBaseline(mig.before).imported : false;
   delete mig.before;
   const catalog = await getCatalogWithStatusAsync();
@@ -1215,6 +1262,9 @@ ipcMain.handle('xh:create-usb-kit', async (_event, payload) => {
     : [];
   if (!destBase || !LOCAL_DRIVE_PATH_RE.test(destBase)) {
     return { ok: false, error: 'Selecciona una carpeta o unidad USB de destino.' };
+  }
+  if (!isSafeDestinationDir(destBase, isProtectedSystemDir)) {
+    return { ok: false, error: 'Por seguridad no se puede crear el Kit USB dentro de carpetas críticas de Windows.' };
   }
 
   const kitDir = path.join(destBase, 'XHANNIZER0_USB_Kit');
@@ -1276,58 +1326,58 @@ ipcMain.handle('xh:bios-usb', async () => {
   if (!look?.isNewer || !look.latest?.sha256 || !look.boardCode) {
     return { ok: false, error: 'No hay una BIOS nueva verificada para tu placa. Vuelve a escanear el hardware.' };
   }
-  const drives = await biosUpdate.listUsbDrives();
-  if (!drives.length) {
-    return { ok: false, error: 'Conecta una memoria USB en FAT32 y vuelve a intentarlo.' };
-  }
-  const shown = drives.slice(0, 4);
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'question',
-    buttons: [...shown.map((d) => `${d.letter} ${d.label} (${d.sizeGb} GB, ${d.fileSystem || '?'})`), 'Cancelar'],
-    defaultId: shown.length,
-    cancelId: shown.length,
-    title: 'BIOS por USB — XHANNIZER0',
-    message: `¿En qué memoria USB copio la BIOS ${look.latest.version}?`,
-    detail: 'Se descarga desde el servidor oficial de MSI, se verifica su huella SHA-256 y se copia a la raíz de la USB. No se toca la BIOS desde Windows. Si la USB no está en FAT32 te preguntaré antes de formatearla.',
-  });
-  if (response >= shown.length) return { ok: false, canceled: true };
-  const chosen = shown[response];
-
-  // M-Flash solo lee FAT32: si no lo está, se ofrece formatear con doble confirmación (borra todo).
-  if (!/^FAT32$/i.test(chosen.fileSystem)) {
-    const first = await dialog.showMessageBox(win, {
-      type: 'warning',
-      buttons: ['Formatear en FAT32', 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'La USB no está en FAT32 — XHANNIZER0',
-      message: `La USB ${chosen.letter} «${chosen.label}» está en ${chosen.fileSystem || 'formato desconocido'}.`,
-      detail: 'La BIOS solo lee memorias en FAT32. Puedo formatearla, pero eso BORRA TODO lo que tiene. Si tienes archivos ahí, cancela y cópialos antes.',
-    });
-    if (first.response !== 0) return { ok: false, canceled: true };
-    const second = await dialog.showMessageBox(win, {
-      type: 'warning',
-      buttons: [`Sí, borrar ${chosen.letter} y formatear`, 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Confirmar formateo — XHANNIZER0',
-      message: `¿Seguro? Se borrará todo en ${chosen.letter} «${chosen.label}» (${chosen.sizeGb} GB).`,
-      detail: 'Esto no se puede deshacer.',
-    });
-    if (second.response !== 0) return { ok: false, canceled: true };
-    const fmt = await biosUpdate.formatUsbFat32(chosen.letter);
-    logAction('bios', { label: `USB ${chosen.letter} formateada en FAT32`, ok: fmt.ok, detail: fmt.error });
-    if (!fmt.ok) return fmt;
-  }
   biosUsbBusy = true;
-  const emit = (detail) => {
-    if (win && !win.isDestroyed()) win.webContents.send('xh:bios-usb-progress', { detail });
-  };
   try {
+    const drives = await biosUpdate.listUsbDrives();
+    if (!drives.length) {
+      return { ok: false, error: 'Conecta una memoria USB en FAT32 y vuelve a intentarlo.' };
+    }
+    const shown = drives.slice(0, 4);
+    const pick = await confirmDialog({
+      type: 'question',
+      buttons: [...shown.map((d) => `${d.letter} ${d.label} (${d.sizeGb} GB, ${d.fileSystem || '?'})`), 'Cancelar'],
+      defaultId: shown.length,
+      cancelId: shown.length,
+      title: 'BIOS por USB — XHANNIZER0',
+      message: `¿En qué memoria USB copio la BIOS ${look.latest.version}?`,
+      detail: 'Se descarga desde el servidor oficial de MSI, se verifica su huella SHA-256 y se copia a la raíz de la USB. No se toca la BIOS desde Windows. Si la USB no está en FAT32 te preguntaré antes de formatearla.',
+    });
+    if (pick.response < 0 || pick.response >= shown.length) return { ok: false, canceled: true };
+    const chosen = shown[pick.response];
+
+    // M-Flash solo lee FAT32: si no lo está, se ofrece formatear con doble confirmación (borra todo).
+    if (!/^FAT32$/i.test(chosen.fileSystem)) {
+      const first = await confirmDialog({
+        type: 'warning',
+        buttons: ['Formatear en FAT32', 'Cancelar'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'La USB no está en FAT32 — XHANNIZER0',
+        message: `La USB ${chosen.letter} «${chosen.label}» está en ${chosen.fileSystem || 'formato desconocido'}.`,
+        detail: 'La BIOS solo lee memorias en FAT32. Puedo formatearla, pero eso BORRA TODO lo que tiene. Si tienes archivos ahí, cancela y cópialos antes.',
+      });
+      if (!first.confirmed) return { ok: false, canceled: true };
+      const second = await confirmDialog({
+        type: 'warning',
+        buttons: [`Sí, borrar ${chosen.letter} y formatear`, 'Cancelar'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Confirmar formateo — XHANNIZER0',
+        message: `¿Seguro? Se borrará todo en ${chosen.letter} «${chosen.label}» (${chosen.sizeGb} GB).`,
+        detail: 'Esto no se puede deshacer.',
+      });
+      if (!second.confirmed) return { ok: false, canceled: true };
+      const fmt = await biosUpdate.formatUsbFat32(chosen);
+      logAction('bios', { label: `USB ${chosen.letter} formateada en FAT32`, ok: fmt.ok, detail: fmt.error });
+      if (!fmt.ok) return fmt;
+    }
+    const emit = (detail) => {
+      if (win && !win.isDestroyed()) win.webContents.send('xh:bios-usb-progress', { detail });
+    };
     const res = await biosUpdate.prepareBiosUsb({ latest: look.latest, boardCode: look.boardCode, drive: chosen.letter, onProgress: emit });
     logAction('bios', { label: `BIOS ${look.latest.version} copiada a USB`, ok: res.ok, detail: res.error || res.file });
     if (!res.ok) return res;
-    const steps = await dialog.showMessageBox(win, {
+    const steps = await confirmDialog({
       type: 'info',
       buttons: ['Reiniciar a la BIOS', 'Más tarde'],
       defaultId: 1,
@@ -1343,7 +1393,7 @@ ipcMain.handle('xh:bios-usb', async () => {
         '5. Al terminar, la BIOS vuelve a valores de fábrica: reactiva XMP/EXPO y revisa el arranque.',
       ].join('\n'),
     });
-    if (steps.response === 0) {
+    if (steps.confirmed) {
       const reboot = await bios.rebootToFirmware();
       return { ...res, reboot };
     }
@@ -1370,7 +1420,7 @@ ipcMain.handle('xh:windows-usb', async () => {
 });
 
 ipcMain.handle('xh:reboot-to-bios', async () => {
-  const { response } = await dialog.showMessageBox(win, {
+  const ask = await confirmDialog({
     type: 'warning',
     buttons: ['Reiniciar a la BIOS', 'Cancelar'],
     defaultId: 1,
@@ -1379,7 +1429,7 @@ ipcMain.handle('xh:reboot-to-bios', async () => {
     message: '¿Reiniciar ahora y entrar directo a la BIOS?',
     detail: 'Guarda tu trabajo y cierra los programas abiertos. El PC se reiniciará en 5 segundos. Para salir de la BIOS sin cambios, elige «Exit without saving».',
   });
-  if (response !== 0) return { ok: false, canceled: true };
+  if (!ask.confirmed) return { ok: false, canceled: true };
   const res = await bios.rebootToFirmware();
   logAction('bios', { label: 'Reinicio a la BIOS', ok: res.ok });
   return res;
@@ -1393,7 +1443,7 @@ ipcMain.handle('xh:cleanup-run', async (_event, payload) => {
   const ids = (Array.isArray(payload?.ids) ? payload.ids : []).filter((id) => cleanup.ITEMS[id]);
   if (!ids.length) return { ok: false, error: 'No elegiste nada para limpiar.' };
   const names = ids.map((id) => `• ${cleanup.ITEMS[id].name}`).join('\n');
-  const { response } = await dialog.showMessageBox(win, {
+  const ask = await confirmDialog({
     type: 'warning',
     buttons: ['Borrar definitivamente', 'Cancelar'],
     defaultId: 1,
@@ -1402,7 +1452,7 @@ ipcMain.handle('xh:cleanup-run', async (_event, payload) => {
     message: 'Se borrará lo siguiente (no va a la papelera y no se puede deshacer):',
     detail: `${names}${ids.includes('windows-old') ? '\n\nAl borrar Windows.old ya no podrás volver a la versión anterior de Windows.' : ''}`,
   });
-  if (response !== 0) return { ok: false, canceled: true };
+  if (!ask.confirmed) return { ok: false, canceled: true };
   cleanupBusy = true;
   try {
     const res = await cleanup.runCleanup(ids, (p) => {
@@ -1539,9 +1589,17 @@ ipcMain.handle('xh:report-pdf', async (_event, payload) => {
     filters: [{ name: 'Documento PDF', extensions: ['pdf'] }],
   });
   if (res.canceled || !res.filePath) return { canceled: true };
-  const tmp = path.join(os.tmpdir(), `xhannizer0-informe-${Date.now()}.html`);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhannizer0-informe-'));
+  const tmp = path.join(tmpDir, 'informe.html');
   fs.writeFileSync(tmp, finalHtml, 'utf8');
-  const pdfWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, javascript: false } });
+  const pdfWin = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+  });
+  pdfWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  pdfWin.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedRendererNavigation(url, tmp)) event.preventDefault();
+  });
   try {
     await pdfWin.loadFile(tmp);
     const pdf = await pdfWin.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true });
@@ -1552,7 +1610,7 @@ ipcMain.handle('xh:report-pdf', async (_event, payload) => {
     return { ok: false, error: `No se pudo crear el PDF: ${err.message}` };
   } finally {
     pdfWin.destroy();
-    fs.rmSync(tmp, { force: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 
@@ -1564,18 +1622,16 @@ ipcMain.handle('xh:autopilot-get', async () => ({
 }));
 ipcMain.handle('xh:autopilot-save', async (_event, data) => autopilot.saveAutopilot(data || null));
 ipcMain.handle('xh:autopilot-reboot', async () => {
-  if (win && !win.isDestroyed()) {
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'warning',
-      buttons: ['Reiniciar en 15 s', 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Reiniciar PC — Piloto automático',
-      message: '¿Reiniciar Windows ahora para continuar el Piloto automático?',
-      detail: 'Guarda tu trabajo y cierra los programas abiertos. El equipo se reiniciará en 15 segundos y XHANNIZER0 volverá a abrirse solo al iniciar sesión.',
-    });
-    if (response !== 0) return { ok: false, canceled: true };
-  }
+  const ask = await confirmDialog({
+    type: 'warning',
+    buttons: ['Reiniciar en 15 s', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Reiniciar PC — Piloto automático',
+    message: '¿Reiniciar Windows ahora para continuar el Piloto automático?',
+    detail: 'Guarda tu trabajo y cierra los programas abiertos. El equipo se reiniciará en 15 segundos y XHANNIZER0 volverá a abrirse solo al iniciar sesión.',
+  });
+  if (!ask.confirmed) return { ok: false, canceled: true };
   const res = await autopilot.scheduleResumeAndReboot({
     execPath: process.execPath,
     appPath: app.getAppPath(),
@@ -1634,6 +1690,7 @@ function refreshRemoteCatalog() {
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   loadCachedCatalogOverrides();
   refreshRemoteCatalog();
   if (app.isPackaged) app.setAsDefaultProtocolClient('xhannizer0');

@@ -11,8 +11,10 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { runPowerShell, runElevated, psData } = require('./powershell');
+const { isStrictHttpsHostUrl } = require('./securityGuards');
 
 const MSI_DOWNLOAD_HOST = 'download.msi.com';
+const MAX_BIOS_BYTES = 128 * 1024 * 1024;
 const WORK_DIR = path.join(os.tmpdir(), 'XHANNIZER0_bios');
 
 function electronNet() {
@@ -126,13 +128,7 @@ async function lookupLatestBios({ manufacturer, product, biosVersion }) {
     const candidates = entries
       .map((e) => ({ e, v: parseMsiVersion(e.download_version) }))
       .filter(({ e, v }) => v && String(e.download_version || '').toUpperCase().startsWith(boardCode) && v.major === installed.major)
-      .filter(({ e }) => {
-        try {
-          return new URL(e.download_url).hostname === MSI_DOWNLOAD_HOST;
-        } catch {
-          return false;
-        }
-      })
+      .filter(({ e }) => isStrictHttpsHostUrl(e.download_url, MSI_DOWNLOAD_HOST))
       .sort((a, b) => compareMsiVersions(b.v, a.v));
     const top = candidates[0];
     if (!top) {
@@ -166,10 +162,25 @@ async function lookupLatestBios({ manufacturer, product, biosVersion }) {
   return result;
 }
 
-// Memorias USB conectadas (unidades extraíbles con letra).
+// Memorias USB conectadas (unidades extraíbles con letra + identidad física del disco).
 async function listUsbDrives() {
   const r = await runPowerShell(
-    `@(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=2" | Select-Object DeviceID, VolumeName, Size, FreeSpace, FileSystem) | ConvertTo-Json -Compress`,
+    `$disks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=2" | ForEach-Object {
+  $l = ($_.DeviceID -replace ':','').Trim()
+  $disk = $null
+  try { $disk = Get-Partition -DriveLetter $l -ErrorAction SilentlyContinue | Get-Disk -ErrorAction SilentlyContinue | Select-Object -First 1 } catch {}
+  [PSCustomObject]@{
+    DeviceID = $_.DeviceID
+    VolumeName = $_.VolumeName
+    Size = $_.Size
+    FreeSpace = $_.FreeSpace
+    FileSystem = $_.FileSystem
+    UniqueId = if ($disk) { [string]$disk.UniqueId } else { '' }
+    DiskSize = if ($disk) { [int64]$disk.Size } else { 0 }
+    BusType = if ($disk) { [string]$disk.BusType } else { '' }
+  }
+})
+$disks | ConvertTo-Json -Compress`,
     15000
   );
   let list = [];
@@ -185,6 +196,9 @@ async function listUsbDrives() {
       letter: String(d.DeviceID).toUpperCase(),
       label: d.VolumeName || 'USB',
       sizeGb: Math.round((Number(d.Size) / 1024 ** 3) * 10) / 10,
+      sizeBytes: Number(d.Size) || 0,
+      diskSizeBytes: Number(d.DiskSize) || 0,
+      uniqueId: String(d.UniqueId || ''),
       freeBytes: Number(d.FreeSpace) || 0,
       fileSystem: String(d.FileSystem || ''),
     }));
@@ -192,18 +206,29 @@ async function listUsbDrives() {
 
 // Formatea una memoria USB extraíble en FAT32 (borra todo su contenido). Solo unidades
 // extraíbles (DriveType=2) de hasta 32 GB: Windows no crea FAT32 en volúmenes más grandes.
-async function formatUsbFat32(letter) {
+async function formatUsbFat32(target) {
+  const expectedLetter = typeof target === 'string' ? target : target?.letter;
+  const expectedUniqueId = typeof target === 'object' && target ? String(target.uniqueId || '') : '';
+  const expectedDiskSize = typeof target === 'object' && target ? Number(target.diskSizeBytes || 0) : 0;
   const drives = await listUsbDrives();
-  const usb = drives.find((d) => d.letter === String(letter || '').toUpperCase());
+  const usb = drives.find((d) => d.letter === String(expectedLetter || '').toUpperCase());
   if (!usb) return { ok: false, error: 'No encuentro esa memoria USB.' };
+  if (expectedUniqueId && usb.uniqueId && usb.uniqueId !== expectedUniqueId) {
+    return { ok: false, error: 'La memoria USB conectada cambió desde la confirmación. Se canceló el formateo por seguridad.' };
+  }
+  if (expectedDiskSize > 0 && usb.diskSizeBytes > 0 && usb.diskSizeBytes !== expectedDiskSize) {
+    return { ok: false, error: 'El tamaño físico de la USB cambió desde la confirmación. Se canceló el formateo por seguridad.' };
+  }
   if (usb.sizeGb > 32.5) {
     return { ok: false, error: `La USB ${usb.letter} tiene ${usb.sizeGb} GB y Windows solo formatea en FAT32 hasta 32 GB. Usa una USB de 32 GB o menos.` };
   }
   const elev = await runElevated(
-    `$l = ${psData(usb.letter.slice(0, 1))}
-$v = Get-Volume -DriveLetter $l
-if ((Get-Partition -DriveLetter $l | Get-Disk).BusType -ne 'USB') { exit 3 }
-Format-Volume -DriveLetter $l -FileSystem FAT32 -NewFileSystemLabel 'BIOS' -Force -Confirm:$false | Out-Null`,
+    `$cfg = ${psData({ letter: usb.letter.slice(0, 1), uniqueId: expectedUniqueId || usb.uniqueId || '', diskSize: expectedDiskSize || usb.diskSizeBytes || 0 })}
+$disk = Get-Partition -DriveLetter $cfg.letter | Get-Disk | Select-Object -First 1
+if (-not $disk -or $disk.BusType -ne 'USB') { exit 3 }
+if ($cfg.uniqueId -and ([string]$disk.UniqueId -ne [string]$cfg.uniqueId)) { exit 4 }
+if ($cfg.diskSize -gt 0 -and ([int64]$disk.Size -ne [int64]$cfg.diskSize)) { exit 5 }
+Format-Volume -DriveLetter $cfg.letter -FileSystem FAT32 -NewFileSystemLabel 'BIOS' -Force -Confirm:$false | Out-Null`,
     5 * 60 * 1000
   );
   if (elev.cancelled) return { ok: false, error: 'Formateo cancelado: Windows pidió permisos de administrador.' };
@@ -219,13 +244,8 @@ function sha256(buf) {
 // Descarga, verifica y copia la BIOS a la USB. `latest` viene del proceso principal (nunca de la interfaz).
 async function prepareBiosUsb({ latest, boardCode, drive, onProgress = () => {} }) {
   if (!latest?.url || !latest.sha256) return { ok: false, error: 'MSI no publicó la huella SHA-256 de esta BIOS: descárgala desde su web.' };
-  let host;
-  try {
-    host = new URL(latest.url).hostname;
-  } catch {
-    host = '';
-  }
-  if (host !== MSI_DOWNLOAD_HOST) return { ok: false, error: 'La descarga no viene del servidor oficial de MSI.' };
+  if (!/^[0-9A-Z]{4}$/i.test(String(boardCode || ''))) return { ok: false, error: 'Código de placa madre inválido.' };
+  if (!isStrictHttpsHostUrl(latest.url, MSI_DOWNLOAD_HOST)) return { ok: false, error: 'La descarga no viene por HTTPS del servidor oficial de MSI.' };
 
   // La unidad debe seguir conectada, ser extraíble y estar en FAT32 (M-Flash no lee NTFS).
   const drives = await listUsbDrives();
@@ -241,7 +261,13 @@ async function prepareBiosUsb({ latest, boardCode, drive, onProgress = () => {} 
   try {
     const res = await fetchWithTimeout(latest.url, 180000);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (res.url && !isStrictHttpsHostUrl(res.url, MSI_DOWNLOAD_HOST)) {
+      throw new Error('la redirección salió del servidor oficial HTTPS de MSI');
+    }
+    const cl = Number(res.headers?.get?.('content-length') || 0);
+    if (cl > MAX_BIOS_BYTES) throw new Error('el archivo excede el tamaño máximo esperado para una BIOS');
     buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > MAX_BIOS_BYTES) throw new Error('el archivo excede el tamaño máximo esperado para una BIOS');
   } catch (err) {
     return { ok: false, error: `No se pudo descargar la BIOS (${err.message}).` };
   }
@@ -258,43 +284,45 @@ async function prepareBiosUsb({ latest, boardCode, drive, onProgress = () => {} 
   if (!work.startsWith(workRoot)) return { ok: false, error: 'Nombre de versión de BIOS no válido.' };
   fs.rmSync(work, { recursive: true, force: true });
   fs.mkdirSync(work, { recursive: true });
-  const zipPath = path.join(work, `${safeVer}.zip`);
-  fs.writeFileSync(zipPath, buf);
-
-  onProgress('Descomprimiendo…');
-  const outDir = path.join(work, 'x');
-  const ex = await runPowerShell(
-    `$d = ${psData({ zip: zipPath, out: outDir })}; Expand-Archive -LiteralPath $d.zip -DestinationPath $d.out -Force`,
-    60000
-  );
-  if (!ex.ok) return { ok: false, error: 'No se pudo descomprimir el archivo de la BIOS.' };
-
-  // El archivo de BIOS de MSI se llama E<código><plataforma>MS.<versión>:
-  // E7D43IMS.1P0 en placas Intel, E7E27AMS.1J3 en placas AMD.
-  const files = [];
-  const walk = (dir) => {
-    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, ent.name);
-      if (ent.isDirectory()) walk(p);
-      else files.push(p);
-    }
-  };
-  walk(outDir);
-  const image = files.find((f) => new RegExp(`^E${boardCode}[A-Z]MS\\.[0-9A-Z]{3}$`, 'i').test(path.basename(f)));
-  if (!image) return { ok: false, error: 'El archivo descargado no contiene una BIOS para tu placa. No se copió nada.' };
-
-  onProgress(`Copiando a la USB ${usb.letter}…`);
-  const dest = path.join(`${usb.letter}\\`, path.basename(image));
   try {
-    fs.copyFileSync(image, dest);
-    const copied = fs.readFileSync(dest);
-    if (sha256(copied) !== sha256(fs.readFileSync(image))) throw new Error('la copia no coincide');
-  } catch (err) {
-    return { ok: false, error: `No se pudo copiar a la USB (${err.message}).` };
+    const zipPath = path.join(work, `${safeVer}.zip`);
+    fs.writeFileSync(zipPath, buf);
+
+    onProgress('Descomprimiendo…');
+    const outDir = path.join(work, 'x');
+    const ex = await runPowerShell(
+      `$d = ${psData({ zip: zipPath, out: outDir })}; Expand-Archive -LiteralPath $d.zip -DestinationPath $d.out -Force`,
+      60000
+    );
+    if (!ex.ok) return { ok: false, error: 'No se pudo descomprimir el archivo de la BIOS.' };
+
+    // El archivo de BIOS de MSI se llama E<código><plataforma>MS.<versión>:
+    // E7D43IMS.1P0 en placas Intel, E7E27AMS.1J3 en placas AMD.
+    const files = [];
+    const walk = (dir) => {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, ent.name);
+        if (ent.isDirectory()) walk(p);
+        else files.push(p);
+      }
+    };
+    walk(outDir);
+    const image = files.find((f) => new RegExp(`^E${boardCode}[A-Z]MS\\.[0-9A-Z]{3}$`, 'i').test(path.basename(f)));
+    if (!image) return { ok: false, error: 'El archivo descargado no contiene una BIOS para tu placa. No se copió nada.' };
+
+    onProgress(`Copiando a la USB ${usb.letter}…`);
+    const dest = path.join(`${usb.letter}\\`, path.basename(image));
+    try {
+      fs.copyFileSync(image, dest);
+      const copied = fs.readFileSync(dest);
+      if (sha256(copied) !== sha256(fs.readFileSync(image))) throw new Error('la copia no coincide');
+    } catch (err) {
+      return { ok: false, error: `No se pudo copiar a la USB (${err.message}).` };
+    }
+    return { ok: true, drive: usb.letter, file: path.basename(image), version: latest.version };
   } finally {
     fs.rmSync(work, { recursive: true, force: true });
   }
-  return { ok: true, drive: usb.letter, file: path.basename(image), version: latest.version };
 }
 
 module.exports = {

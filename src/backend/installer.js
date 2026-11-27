@@ -82,58 +82,146 @@ function hasWinget() {
   });
 }
 
-function downloadFile(url, destPath, onProgress) {
+const DEFAULT_MAX_DOWNLOAD_BYTES = 1024 * 1024 * 1024; // 1 GiB
+
+function downloadFile(url, destPath, onProgress = () => {}, opts = {}) {
+  const maxBytes = Number(opts.maxBytes) > 0 ? Number(opts.maxBytes) : DEFAULT_MAX_DOWNLOAD_BYTES;
+  const allowedHosts = Array.isArray(opts.allowedHosts) && opts.allowedHosts.length
+    ? new Set(opts.allowedHosts.map((h) => String(h).toLowerCase()))
+    : null;
+  const client = opts.httpsClient || https;
+  const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 25000;
+
   return new Promise((resolve, reject) => {
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    let settled = false;
+    let activeOut = null;
+    let activeRes = null;
+    let activeReq = null;
+    const unlinkPartial = () => {
+      try {
+        fs.rmSync(destPath, { force: true });
+      } catch {
+        // Ignorar
+      }
+    };
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      const errObj = err instanceof Error ? err : new Error(String(err));
+      try { activeRes?.unpipe?.(activeOut); } catch {}
+      try { activeReq?.destroy?.(); } catch {}
+      try { activeRes?.destroy?.(); } catch {}
+      const out = activeOut;
+      if (out && !out.closed) {
+        let finished = false;
+        const done = () => {
+          if (finished) return;
+          finished = true;
+          unlinkPartial();
+          reject(errObj);
+        };
+        out.once('close', done);
+        out.once('error', done);
+        try {
+          out.destroy();
+        } catch {
+          done();
+        }
+        return;
+      }
+      unlinkPartial();
+      reject(errObj);
+    };
+    const succeed = (filePath) => {
+      if (settled) return;
+      settled = true;
+      resolve(filePath);
+    };
+
+    try {
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    } catch (err) {
+      fail(err);
+      return;
+    }
+
     const follow = (currentUrl, redirects = 0) => {
+      if (settled) return;
       if (redirects > 5) {
-        reject(new Error('Demasiadas redirecciones al descargar.'));
+        fail(new Error('Demasiadas redirecciones al descargar.'));
         return;
       }
       let parsedUrl;
       try {
         parsedUrl = new URL(currentUrl);
       } catch {
-        reject(new Error('URL de descarga inválida.'));
+        fail(new Error('URL de descarga inválida.'));
         return;
       }
       if (parsedUrl.protocol !== 'https:') {
-        reject(new Error('Solo se permiten descargas por HTTPS.'));
+        fail(new Error('Solo se permiten descargas por HTTPS.'));
         return;
       }
-      const req = https.get(
+      if (allowedHosts && !allowedHosts.has(parsedUrl.hostname.toLowerCase())) {
+        fail(new Error(`Host de descarga no autorizado (${parsedUrl.hostname}).`));
+        return;
+      }
+      const req = client.get(
         parsedUrl.toString(),
-        { headers: { 'User-Agent': 'XHANNIZER0/2.2 (Xhanni Studios)' }, timeout: 25000 },
+        { headers: { 'User-Agent': 'XHANNIZER0/2.3 (Xhanni Studios)' }, timeout: timeoutMs },
         (res) => {
+          activeRes = res;
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
             res.resume();
-            follow(new URL(res.headers.location, currentUrl).toString(), redirects + 1);
+            let nextUrl;
+            try {
+              nextUrl = new URL(res.headers.location, currentUrl).toString();
+            } catch {
+              fail(new Error('Redirección con URL inválida.'));
+              return;
+            }
+            follow(nextUrl, redirects + 1);
             return;
           }
           if (res.statusCode !== 200) {
             res.resume();
-            reject(new Error(`HTTP ${res.statusCode}`));
+            fail(new Error(`HTTP ${res.statusCode}`));
             return;
           }
           const total = Number(res.headers['content-length']) || 0;
+          if (total > maxBytes) {
+            res.resume();
+            fail(new Error('El archivo excede el tamaño máximo permitido.'));
+            return;
+          }
           let received = 0;
           const out = fs.createWriteStream(destPath);
+          activeOut = out;
+          res.on('error', (err) => fail(err));
           res.on('data', (chunk) => {
+            if (settled) return;
             received += chunk.length;
+            if (received > maxBytes) {
+              fail(new Error('La descarga superó el tamaño máximo permitido.'));
+              return;
+            }
             if (total > 0) {
               const pct = Math.min(95, Math.round((received / total) * 100));
               onProgress(pct);
             }
           });
           res.pipe(out);
-          out.on('finish', () => out.close(() => resolve(destPath)));
-          out.on('error', (err) => reject(err));
+          out.on('finish', () => {
+            if (settled) return;
+            out.close(() => succeed(destPath));
+          });
+          out.on('error', (err) => fail(err));
         }
       );
-      req.on('error', reject);
+      activeReq = req;
+      req.on('error', (err) => fail(err));
       req.on('timeout', () => {
-        req.destroy();
-        reject(new Error('Tiempo de espera agotado'));
+        fail(new Error('Tiempo de espera agotado'));
       });
     };
     follow(url);
@@ -283,7 +371,8 @@ async function installWindowsUpdateDriver(target, onProgress) {
   }
 
   onProgress({ state: 'installing', progress: 60, detail: `Instalando ${matches.length} driver(s) WHQL (se pedirán permisos de administrador)…` });
-  const resultFile = path.join(os.tmpdir(), `xhannizer0-wu-${Date.now()}.json`);
+  const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhannizer0-wu-'));
+  const resultFile = path.join(resultDir, 'result.json');
   const installPs = `
 $ids = @(${psData(matches.map((m) => m.id))})
 $session = New-Object -ComObject Microsoft.Update.Session
@@ -298,17 +387,21 @@ if ($coll.Count -gt 0) {
   $result = @{ status = $(if ($r.ResultCode -eq 2) { 'installed' } else { 'failed' }); count = $coll.Count; reboot = [bool]$r.RebootRequired }
 }
 $result | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psData(resultFile)} -Encoding UTF8`;
-  const elev = await runElevated(installPs, 15 * 60 * 1000);
-  let result = { status: elev.cancelled ? 'needs_admin' : 'failed', count: matches.length };
+  let result = { status: 'failed', count: matches.length };
   try {
-    result = { ...JSON.parse(fs.readFileSync(resultFile, 'utf8').replace(/^﻿/, '')), titles: matches.map((m) => m.title) };
-  } catch {
-    // Sin archivo de resultado: UAC cancelado o error
-  }
-  try {
-    fs.rmSync(resultFile, { force: true });
-  } catch {
-    // Ignorar
+    const elev = await runElevated(installPs, 15 * 60 * 1000);
+    result = { status: elev.cancelled ? 'needs_admin' : 'failed', count: matches.length };
+    try {
+      result = { ...JSON.parse(fs.readFileSync(resultFile, 'utf8').replace(/^﻿/, '')), titles: matches.map((m) => m.title) };
+    } catch {
+      // Sin archivo de resultado: UAC cancelado o error
+    }
+  } finally {
+    try {
+      fs.rmSync(resultDir, { recursive: true, force: true });
+    } catch {
+      // Ignorar
+    }
   }
   return result;
 }
@@ -722,7 +815,7 @@ async function runBatchInstall(tasks, emit) {
 }
 
 module.exports = {
-  _internals: { resolveHardwareIds, searchDriverUpdates },
+  _internals: { resolveHardwareIds, searchDriverUpdates, downloadFile },
   DOWNLOAD_DIR,
   EMULATOR_DOWNLOAD_DIR,
   hasWinget,

@@ -3,6 +3,10 @@
 (function () {
   const api = window.xhApi;
 
+  // Bloquea arrastre de archivos/enlaces hacia la ventana para evitar navegaciones accidentales a file://
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+
   // =========================================================================
   // Estado global de la aplicación
   // =========================================================================

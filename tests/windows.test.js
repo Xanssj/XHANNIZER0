@@ -38,3 +38,31 @@ test('powershell: psData no permite inyectar comandos', { skip: !isWin }, async 
   const r = await runPowerShell(psData(evil), 15000);
   assert.strictEqual(r.stdout, evil);
 });
+
+test('seguridad: cleanup emptyDir nunca sigue junctions de Windows hacia fuera de la carpeta', { skip: !isWin }, async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const { emptyDir } = require(path.join(__dirname, '..', 'src', 'backend', 'cleanup.js'));
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'xhz-junc-test-'));
+  const victim = path.join(base, 'victim');
+  const tempDir = path.join(base, 'temp');
+  const linkDir = path.join(tempDir, 'enlace-malicioso');
+  const victimFile = path.join(victim, 'intacto.txt');
+  const normalFile = path.join(tempDir, 'borrar.tmp');
+  try {
+    fs.mkdirSync(victim, { recursive: true });
+    fs.mkdirSync(tempDir, { recursive: true });
+    fs.writeFileSync(victimFile, 'no-borrar', 'utf8');
+    fs.writeFileSync(normalFile, 'temporal', 'utf8');
+    execFileSync('cmd.exe', ['/c', 'mklink', '/J', linkDir, victim], { windowsHide: true });
+
+    await emptyDir(tempDir);
+
+    assert.strictEqual(fs.existsSync(normalFile), false);
+    assert.strictEqual(fs.existsSync(victimFile), true);
+    assert.strictEqual(fs.readFileSync(victimFile, 'utf8'), 'no-borrar');
+  } finally {
+    try { fs.unlinkSync(linkDir); } catch {}
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

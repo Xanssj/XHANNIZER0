@@ -410,3 +410,124 @@ test('hardware: getLiveSystemMetrics devuelve CPU, RAM y disco del sistema váli
   assert.ok(m.ramTotalGb > 0 && m.ramPct >= 0 && m.ramPct <= 100);
   if (m.disk) assert.ok(m.disk.totalGb > 0 && m.disk.freeGb >= 0);
 });
+
+test('seguridad: navegación Electron, registro de ejecutables, rutas protegidas y diálogos fail-closed', async () => {
+  const { pathToFileURL } = require('url');
+  const guards = backend('securityGuards');
+  const { isProtectedSystemDir } = backend('safetyBackup');
+  const indexPath = path.join(__dirname, '..', 'src', 'renderer', 'index.html');
+  const allowedUrl = pathToFileURL(path.resolve(indexPath)).toString();
+
+  assert.strictEqual(guards.isAllowedRendererNavigation(allowedUrl, indexPath), true);
+  assert.strictEqual(guards.isAllowedRendererNavigation('file:///C:/Windows/win.ini', indexPath), false);
+  assert.strictEqual(guards.isAllowedRendererNavigation('file://attacker/share/evil.html', indexPath), false);
+  assert.strictEqual(guards.isAllowedRendererNavigation('https://example.com', indexPath), false);
+  assert.strictEqual(guards.isAllowedRendererNavigation('javascript:alert(1)', indexPath), false);
+
+  const reg = guards.createAllowedExeRegistry();
+  assert.strictEqual(reg.add('C:\\Program Files\\App\\app.exe'), true);
+  assert.strictEqual(reg.add('C:\\Windows\\notepad.txt'), false);
+  assert.strictEqual(reg.has('c:\\program files\\app\\app.exe'), true);
+  assert.strictEqual(reg.has('C:\\Users\\Public\\evil.exe'), false);
+
+  let dialogCalled = false;
+  const fakeShow = async () => { dialogCalled = true; return { response: 0 }; };
+  const nullRes = await guards.confirmOrFailClosed(null, fakeShow, {});
+  assert.strictEqual(nullRes.confirmed, false);
+  assert.strictEqual(nullRes.canceled, true);
+  const destroyedRes = await guards.confirmOrFailClosed({ isDestroyed: () => true }, fakeShow, {});
+  assert.strictEqual(destroyedRes.confirmed, false);
+  assert.strictEqual(destroyedRes.canceled, true);
+  assert.strictEqual(dialogCalled, false);
+
+  assert.strictEqual(guards.isSafeDestinationDir('C:\\Windows', isProtectedSystemDir), false);
+  assert.strictEqual(guards.isSafeDestinationDir('C:\\Program Files\\Test', isProtectedSystemDir), false);
+  assert.strictEqual(guards.isSafeDestinationDir('C:\\', isProtectedSystemDir), false);
+  assert.strictEqual(guards.isSafeDestinationDir(path.join(os.homedir(), 'Desktop'), isProtectedSystemDir), true);
+});
+
+test('seguridad: cleanup elevado filtra ReparsePoint y biosUpdate exige HTTPS y boardCode válido', async () => {
+  const cleanup = backend('cleanup');
+  const script = cleanup._internals.elevatedScript(['win-temp', 'wu-cache', 'windows-old']);
+  assert.match(script, /!ReparsePoint/);
+  assert.match(script, /Remove-SafeChildren/);
+  assert.match(script, /finally\s*\{[\s\S]*StateFlags0742/i);
+
+  const bu = backend('biosUpdate');
+  const fakeSha = 'a'.repeat(64);
+  const httpRes = await bu.prepareBiosUsb({
+    latest: { url: 'http://download.msi.com/bos_exe/mb/7D43v1P.zip', sha256: fakeSha, version: '7D43v1P' },
+    boardCode: '7D43',
+    drive: 'Z:',
+  });
+  assert.strictEqual(httpRes.ok, false);
+  assert.match(httpRes.error, /HTTPS/i);
+
+  const badCodeRes = await bu.prepareBiosUsb({
+    latest: { url: 'https://download.msi.com/bos_exe/mb/7D43v1P.zip', sha256: fakeSha, version: '7D43v1P' },
+    boardCode: '7D43.*',
+    drive: 'Z:',
+  });
+  assert.strictEqual(badCodeRes.ok, false);
+  assert.match(badCodeRes.error, /inválido/i);
+});
+
+test('seguridad: downloadFile aplica límite de tamaño, bloquea redirecciones inseguras y limpia parciales; powershell usa ruta absoluta', async () => {
+  const { EventEmitter } = require('events');
+  const { PassThrough } = require('stream');
+  const { downloadFile } = backend('installer')._internals;
+  const psMod = backend('powershell');
+
+  assert.doesNotThrow(() => psMod.psData(undefined));
+  if (process.platform === 'win32') {
+    assert.match(psMod.POWERSHELL_EXE, /\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/i);
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xhz-dl-test-'));
+  try {
+    // 1. Límite de tamaño excedido -> rechaza y borra archivo parcial
+    const overDest = path.join(tmpDir, 'over.bin');
+    const mockOversize = {
+      get: (_url, _opts, cb) => {
+        const req = new EventEmitter();
+        req.destroy = () => {};
+        const res = new PassThrough();
+        res.statusCode = 200;
+        res.headers = {};
+        setImmediate(() => {
+          cb(res);
+          res.write(Buffer.alloc(2048, 0x41));
+          res.end();
+        });
+        return req;
+      },
+    };
+    await assert.rejects(
+      () => downloadFile('https://example.com/file.bin', overDest, () => {}, { maxBytes: 1024, httpsClient: mockOversize }),
+      /tamaño máximo/i
+    );
+    assert.strictEqual(fs.existsSync(overDest), false);
+
+    // 2. Redirección a http:// o host no autorizado -> rechaza
+    const redirDest = path.join(tmpDir, 'redir.bin');
+    const mockHttpRedir = {
+      get: (_url, _opts, cb) => {
+        const req = new EventEmitter();
+        req.destroy = () => {};
+        const res = new EventEmitter();
+        res.statusCode = 302;
+        res.headers = { location: 'http://evil.example.com/drop.exe' };
+        res.resume = () => {};
+        setImmediate(() => cb(res));
+        return req;
+      },
+    };
+    await assert.rejects(
+      () => downloadFile('https://trusted.example.com/app.exe', redirDest, () => {}, { allowedHosts: ['trusted.example.com'], httpsClient: mockHttpRedir }),
+      /HTTPS/i
+    );
+    assert.strictEqual(fs.existsSync(redirDest), false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

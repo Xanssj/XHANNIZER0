@@ -159,23 +159,44 @@ async function freeSpace() {
   return Number(r.stdout) || 0;
 }
 
+// Función PowerShell segura: borra hijos sin seguir nunca junctions ni symlinks (ReparsePoint).
+const PS_SAFE_CLEAR_DIR = `function Remove-SafeChildren([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root)) { return }
+  $rootItem = Get-Item -LiteralPath $Root -Force -ErrorAction SilentlyContinue
+  if (-not $rootItem -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return }
+  foreach ($item in (Get-ChildItem -LiteralPath $Root -Force -Attributes !ReparsePoint -ErrorAction SilentlyContinue)) {
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+    if ($item.PSIsContainer) {
+      Remove-SafeChildren $item.FullName
+      Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
+    } else {
+      Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
+    }
+  }
+}`;
+
 function elevatedScript(ids) {
   const parts = [];
+  const needsSafeClear = ids.includes('win-temp') || ids.includes('wu-cache');
+  if (needsSafeClear) parts.push(PS_SAFE_CLEAR_DIR);
   if (ids.includes('windows-old')) {
     // Liberador de espacio oficial de Windows: maneja los permisos especiales de Windows.old
     parts.push(`$vc = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VolumeCaches'
 $keys = 'Previous Installations','Temporary Setup Files','Windows Upgrade Log Files'
-foreach ($k in $keys) { if (Test-Path "$vc\\$k") { Set-ItemProperty "$vc\\$k" -Name StateFlags0742 -Value 2 -Type DWord } }
-Start-Process cleanmgr.exe -ArgumentList '/sagerun:742' -Wait -WindowStyle Hidden
-foreach ($k in $keys) { Remove-ItemProperty "$vc\\$k" -Name StateFlags0742 -ErrorAction SilentlyContinue }`);
+try {
+  foreach ($k in $keys) { if (Test-Path "$vc\\$k") { Set-ItemProperty "$vc\\$k" -Name StateFlags0742 -Value 2 -Type DWord } }
+  Start-Process cleanmgr.exe -ArgumentList '/sagerun:742' -Wait -WindowStyle Hidden
+} finally {
+  foreach ($k in $keys) { Remove-ItemProperty "$vc\\$k" -Name StateFlags0742 -ErrorAction SilentlyContinue }
+}`);
   }
   if (ids.includes('win-temp')) {
-    parts.push(`Get-ChildItem -LiteralPath ${psData(path.join(WINDIR, 'Temp'))} -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue`);
+    parts.push(`Remove-SafeChildren ${psData(path.join(WINDIR, 'Temp'))}`);
   }
   if (ids.includes('wu-cache')) {
     parts.push(`try {
   Stop-Service wuauserv,bits -Force -ErrorAction SilentlyContinue
-  Get-ChildItem -LiteralPath ${psData(path.join(WINDIR, 'SoftwareDistribution', 'Download'))} -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-SafeChildren ${psData(path.join(WINDIR, 'SoftwareDistribution', 'Download'))}
 } finally {
   Start-Service wuauserv,bits -ErrorAction SilentlyContinue
 }`);
@@ -186,6 +207,8 @@ foreach ($k in $keys) { Remove-ItemProperty "$vc\\$k" -Name StateFlags0742 -Erro
   return parts.length ? `$ErrorActionPreference = 'Continue'\n${parts.join('\n')}\nexit 0` : null;
 }
 
+const XH_TEMP_KEEP_RE = /^xhannizer0[_-]/i;
+
 async function runCleanup(ids, onProgress = () => {}) {
   const chosen = (Array.isArray(ids) ? ids : []).filter((id) => ITEMS[id]);
   if (!chosen.length) return { ok: false, error: 'No elegiste nada para limpiar.' };
@@ -194,7 +217,13 @@ async function runCleanup(ids, onProgress = () => {}) {
 
   if (chosen.includes('user-temp')) {
     onProgress({ step: 'Borrando temporales de tu usuario…', percent: 10 });
-    const r = await emptyDir(os.tmpdir());
+    let keep = new Set();
+    try {
+      keep = new Set(fs.readdirSync(os.tmpdir()).filter((name) => XH_TEMP_KEEP_RE.test(name)));
+    } catch {
+      // Ignorar
+    }
+    const r = await emptyDir(os.tmpdir(), keep);
     if (r.skipped) notes.push(`${r.skipped} temporales en uso se dejaron.`);
   }
   if (chosen.includes('shader-cache')) {
@@ -219,4 +248,4 @@ async function runCleanup(ids, onProgress = () => {}) {
   return { ok: true, freedBytes: freed, cancelledElevation: cancelled, notes };
 }
 
-module.exports = { scanCleanup, runCleanup, measureDir, emptyDir, ITEMS };
+module.exports = { scanCleanup, runCleanup, measureDir, emptyDir, ITEMS, _internals: { elevatedScript } };

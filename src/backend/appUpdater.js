@@ -29,7 +29,9 @@ function getUpdater() {
   // Se carga aquí para no costar tiempo de arranque cuando no se usa (desarrollo / portable).
   ({ autoUpdater: updater } = require('electron-updater'));
   updater.autoDownload = true;
-  updater.autoInstallOnAppQuit = true;
+  // Sin certificado comercial de firma de código, nunca instalamos silenciosamente al cerrar:
+  // la actualización se aplica solo cuando el usuario hace clic explícito en «Reiniciar y actualizar».
+  updater.autoInstallOnAppQuit = false;
   updater.allowPrerelease = false;
   updater.logger = null;
   updater.on('checking-for-update', () => setState({ state: 'checking' }));
@@ -58,7 +60,7 @@ async function checkNow(checkLatest) {
     await checkPortable(checkLatest);
     return state;
   }
-  if (state.state === 'downloading' || state.state === 'ready') return state;
+  if (state.state === 'checking' || state.state === 'downloading' || state.state === 'ready') return state;
   try {
     await getUpdater().checkForUpdates();
   } catch (err) {
@@ -71,7 +73,8 @@ function init({ onState, checkLatest }) {
   send = onState;
   state.currentVersion = app.getVersion();
   // Primera revisión unos segundos después de abrir, para no competir con el escaneo inicial.
-  setTimeout(() => checkNow(checkLatest), 8000);
+  const initTimer = setTimeout(() => checkNow(checkLatest), 8000);
+  initTimer.unref?.();
   timer = setInterval(() => checkNow(checkLatest), CHECK_EVERY_MS);
   timer.unref?.();
 }
