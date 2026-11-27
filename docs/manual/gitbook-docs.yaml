@@ -1,0 +1,13 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: XHANNIZER0 — Manual de usuario
+  structure:
+    - type: space
+      key: space-manual
+      title: Manual de usuario
+      path: manual
+      default: true
+      content:
+        directory: ./
+        language: es
