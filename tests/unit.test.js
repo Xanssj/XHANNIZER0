@@ -595,3 +595,95 @@ test('estabilidad y catálogo: emulators no cuelga >400KB y evita win32; pcCheck
   const maintSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'backend', 'maintenance.js'), 'utf8');
   assert.match(maintSrc, /finally\s*\{[\s\S]*SystemRestorePointCreationFrequency/i);
 });
+
+test('hardwareCapabilities: clasifica GPUs, CPUs, chipsets y modelos desconocidos de forma conservadora', () => {
+  const { detectCapabilities } = backend('hardwareCapabilities');
+
+  // 1. GTX 1650 SUPER + Intel i5-10400F + B460
+  const c1 = detectCapabilities({
+    cpuName: 'Intel(R) Core(TM) i5-10400F CPU @ 2.90GHz',
+    gpuNames: ['NVIDIA GeForce GTX 1650 SUPER'],
+    motherboardVendor: 'ASUSTeK COMPUTER INC.',
+    motherboardModel: 'PRIME B460M-A',
+    formFactor: 'desktop',
+    ramType: 'DDR4',
+  });
+  assert.strictEqual(c1.supportsRebar, false);
+  assert.strictEqual(c1.supportsHags, true);
+  assert.strictEqual(c1.supportsFrameGen, false);
+  assert.strictEqual(c1.maxPlatformPcieGen, 3);
+  assert.strictEqual(c1.supportsXmpExpo, false);
+  assert.strictEqual(c1.ramProfileName, 'XMP');
+
+  // 2. GTX 970 + Intel i7-4790K + DDR3
+  const c2 = detectCapabilities({
+    cpuName: 'Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz',
+    gpuNames: ['NVIDIA GeForce GTX 970'],
+    motherboardVendor: 'Gigabyte Technology Co., Ltd.',
+    motherboardModel: 'Z97X-Gaming 5',
+    formFactor: 'desktop',
+    ramType: 'DDR3',
+  });
+  assert.strictEqual(c2.supportsRebar, false);
+  assert.strictEqual(c2.supportsHags, false);
+  assert.strictEqual(c2.supportsFrameGen, false);
+  assert.strictEqual(c2.supportsTpm2Firmware, false);
+
+  // 3. RX 580 + AMD Ryzen 5 2600 + B450
+  const c3 = detectCapabilities({
+    cpuName: 'AMD Ryzen 5 2600 Six-Core Processor',
+    gpuNames: ['Radeon RX 580 Series'],
+    motherboardVendor: 'Micro-Star International Co., Ltd.',
+    motherboardModel: 'B450 TOMAHAWK MAX',
+    formFactor: 'desktop',
+    ramType: 'DDR4',
+  });
+  assert.strictEqual(c3.supportsRebar, false);
+  assert.strictEqual(c3.supportsHags, false);
+  assert.strictEqual(c3.maxPlatformPcieGen, 3);
+  assert.strictEqual(c3.ramProfileName, 'DOCP / XMP');
+
+  // 4. RTX 4070 + AMD Ryzen 7 7800X3D + B650 + DDR5
+  const c4 = detectCapabilities({
+    cpuName: 'AMD Ryzen 7 7800X3D 8-Core Processor',
+    gpuNames: ['NVIDIA GeForce RTX 4070'],
+    motherboardVendor: 'Micro-Star International Co., Ltd.',
+    motherboardModel: 'MAG B650 TOMAHAWK WIFI',
+    formFactor: 'desktop',
+    ramType: 'DDR5',
+  });
+  assert.strictEqual(c4.supportsRebar, true);
+  assert.strictEqual(c4.supportsHags, true);
+  assert.strictEqual(c4.supportsFrameGen, true);
+  assert.strictEqual(c4.ramProfileName, 'EXPO');
+  assert.strictEqual(c4.maxPlatformPcieGen, 5);
+
+  // 5. Intel Arc A750 + Intel i5-12400F
+  const c5 = detectCapabilities({
+    cpuName: '12th Gen Intel(R) Core(TM) i5-12400F',
+    gpuNames: ['Intel(R) Arc(TM) A750 Graphics'],
+    motherboardVendor: 'ASRock',
+    motherboardModel: 'B660M Pro RS',
+    formFactor: 'desktop',
+    ramType: 'DDR4',
+  });
+  assert.strictEqual(c5.supportsRebar, true);
+  assert.strictEqual(c5.rebarCritical, true);
+  assert.strictEqual(c5.supportsHags, true);
+  assert.strictEqual(c5.supportsFrameGen, false);
+
+  // 6. Modelo futuro / desconocido -> conservador ('unknown', nunca falsos true/warn)
+  const c6 = detectCapabilities({
+    cpuName: 'QuantumCore Z9000',
+    gpuNames: ['FutureGPU Nova 999'],
+    motherboardVendor: 'Unknown Corp',
+    motherboardModel: 'ProtoBoard X',
+    formFactor: 'desktop',
+  });
+  assert.strictEqual(c6.supportsRebar, 'unknown');
+  assert.strictEqual(c6.supportsHags, 'unknown');
+  assert.strictEqual(c6.supportsFrameGen, false);
+  assert.strictEqual(c6.supportsTpm2Firmware, 'unknown');
+  assert.strictEqual(c6.supportsXmpExpo, 'unknown');
+});
+
