@@ -732,7 +732,12 @@ ipcMain.handle('xh:apply-preset-opt', withVerifiedBackup((payload) =>
 
 // ---------- Auditoría de Configuraciones de Windows
 ipcMain.handle('xh:scan-windows-audit', async (_event, system) => {
-  return scanWindowsSettings(system);
+  const board = motherboardInfo();
+  return scanWindowsSettings({
+    ...(system || getLastHardwareScan()?.system || {}),
+    motherboardVendor: board.manufacturer,
+    motherboardModel: board.product,
+  });
 });
 
 const SENSITIVE_WIN_WARNINGS = {
@@ -1326,8 +1331,11 @@ const motherboardInfo = () => {
 };
 
 ipcMain.handle('xh:bios-guide', async (_event, payload) => {
-  const checks = payload?.all ? undefined : getLastPcCheck()?.checks || [];
-  return { ok: true, ...bios.getBiosGuide({ ...motherboardInfo(), checks }) };
+  const showAll = Boolean(payload?.all);
+  const lastCheck = getLastPcCheck();
+  const checks = showAll ? undefined : lastCheck?.checks || [];
+  const capabilities = lastCheck?.capabilities || null;
+  return { ok: true, ...bios.getBiosGuide({ ...motherboardInfo(), checks, capabilities, showAll }) };
 });
 
 // Prepara una USB con la última BIOS oficial (descarga + SHA-256 + copia). Nunca flashea desde Windows.

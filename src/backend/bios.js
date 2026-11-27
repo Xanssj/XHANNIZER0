@@ -111,7 +111,8 @@ function topicForCheck(checkId) {
 }
 
 // Devuelve la guía para la placa detectada. Si se pasan `checks`, solo los temas con aviso.
-function getBiosGuide({ manufacturer, product, checks, brandSystem } = {}) {
+// Si se pasa `capabilities` (y no `showAll`), filtra los temas que el hardware no soporta.
+function getBiosGuide({ manufacturer, product, checks, brandSystem, capabilities, showAll = false } = {}) {
   const oemKeys = brandSystem ? OEM_KEYS.find(([re]) => re.test(String(manufacturer || ''))) : null;
   const key = brandSystem ? 'generic' : brandFromManufacturer(manufacturer);
   const guide = oemKeys
@@ -121,6 +122,14 @@ function getBiosGuide({ manufacturer, product, checks, brandSystem } = {}) {
   if (Array.isArray(checks)) {
     const warned = new Set(checks.filter((c) => c.status === 'warn').map((c) => topicForCheck(c.id)).filter(Boolean));
     topics = topics.filter((t) => warned.has(t));
+  }
+  if (capabilities && !showAll) {
+    topics = topics.filter((t) => {
+      if (t === 'rebar' && capabilities.supportsRebar === false) return false;
+      if (t === 'ram-xmp' && capabilities.supportsXmpExpo === false) return false;
+      if (t === 'tpm' && capabilities.supportsTpm2Firmware === false) return false;
+      return true;
+    });
   }
   return {
     brandKey: key,

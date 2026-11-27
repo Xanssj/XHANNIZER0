@@ -2,6 +2,7 @@
 
 const { execFile } = require('child_process');
 const { runElevated, psData } = require('./powershell');
+const { detectCapabilities } = require('./hardwareCapabilities');
 
 // =========================================================================
 // Windows 11: limpieza opcional (todos reversibles con «Deshacer cambios»)
@@ -144,58 +145,33 @@ function runPowerShell(script, timeout = 15000) {
   });
 }
 
-async function scanWindowsSettings(hardwareSystem) {
-  const psScript = `
-$ErrorActionPreference = 'SilentlyContinue'
-$gameMode = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AllowAutoGameMode').AllowAutoGameMode
-$hags = (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' -Name 'HwSchMode').HwSchMode
-$hideExt = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced' -Name 'HideFileExt').HideFileExt
-$showHidden = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced' -Name 'Hidden').Hidden
-$mouseSpeed = (Get-ItemProperty -Path 'HKCU:\\Control Panel\\Mouse' -Name 'MouseSpeed').MouseSpeed
-$advId = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Name 'Enabled').Enabled
-$clipboard = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Clipboard' -Name 'EnableClipboardHistory').EnableClipboardHistory
-$darkApps = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize' -Name 'AppsUseLightTheme').AppsUseLightTheme
-$powerRaw = (powercfg /getactivescheme) -join ' '
-$hiberEnabled = (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power' -Name 'HibernateEnabled').HibernateEnabled
-$hiberFile = Test-Path -LiteralPath "$env:SystemDrive\\hiberfil.sys"
-$refreshRates = @(Get-CimInstance Win32_VideoController | Where-Object { $_.CurrentRefreshRate -gt 0 } | Select-Object -ExpandProperty CurrentRefreshRate)
-$maxHz = if ($refreshRates.Count -gt 0) { ($refreshRates | Measure-Object -Maximum).Maximum } else { 60 }
-$build = [Environment]::OSVersion.Version.Build
-$startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' | ForEach-Object { $_.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } }).Count
-
-@{
-  gameMode = $gameMode
-  hags = $hags
-  hideExt = $hideExt
-  showHidden = $showHidden
-  mouseSpeed = $mouseSpeed
-  advId = $advId
-  clipboard = $clipboard
-  darkApps = $darkApps
-  powerRaw = $powerRaw
-  hiberEnabled = $hiberEnabled
-  hiberFile = $hiberFile
-  maxHz = $maxHz
-  startupCount = $startupCount
-  build = $build
-} | ConvertTo-Json -Compress
-`;
-
-  const res = await runPowerShell(psScript, 15000);
-  let data = {};
-  if (res.ok && res.stdout) {
-    try {
-      data = JSON.parse(res.stdout);
-    } catch {
-      data = {};
-    }
-  }
+function buildCoreAuditItems(data = {}, hardwareSystem = null, overrideCaps = null) {
+  const gpuNames = [hardwareSystem?.dedicatedGpuName, hardwareSystem?.integratedGpuName].filter(Boolean);
+  const capabilities = overrideCaps || detectCapabilities({
+    cpuName: hardwareSystem?.cpuName || '',
+    gpuNames,
+    motherboardVendor: hardwareSystem?.motherboardVendor || '',
+    motherboardModel: hardwareSystem?.motherboardModel || '',
+    formFactor: hardwareSystem?.formFactor || 'desktop',
+    osBuild: Number(data.build) || 0,
+  });
 
   const hasDedicatedGpu = Boolean(hardwareSystem?.dedicatedGpuName);
   const powerRaw = String(data.powerRaw || '');
   const isHighPerf = /8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c|e9a42b02-d5df-448d-aa00-03f14749eb61|alto rendimiento|high performance|ultimate/i.test(powerRaw);
   const isBalanced = /381b4222-f694-41f0-9685-ff5bb260df2e|equilibrado|balanced/i.test(powerRaw);
   const powerLabel = isHighPerf ? 'Alto rendimiento' : isBalanced ? 'Equilibrado' : 'Plan personalizado';
+
+  const curHz = Number(data.curHz || data.maxHz || 60);
+  const panelMaxHz = Number(data.panelMaxHz || data.maxHz || curHz);
+  const is60HzPanel = panelMaxHz <= 65;
+  const hzBelowMax = !is60HzPanel && curHz < panelMaxHz - 10;
+  const refreshOptimal = is60HzPanel || !hzBelowMax;
+  const refreshState = is60HzPanel
+    ? `Monitor a ${curHz} Hz (máximo del panel)`
+    : hzBelowMax
+    ? `${curHz} Hz de ${panelMaxHz} Hz`
+    : `${curHz} Hz detectados`;
 
   const items = [
     {
@@ -208,30 +184,40 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
       canApply: true,
       impact: 'Recomendado',
     },
-    {
+  ];
+
+  // HAGS: solo mostrar si la GPU lo soporta (o es 'unknown', nunca en GPUs antiguas / sin soporte)
+  if (capabilities.supportsHags !== false) {
+    const hagsDesc = hasDedicatedGpu
+      ? (capabilities.supportsFrameGen
+          ? `Tu ${hardwareSystem.dedicatedGpuName} aprovecha HAGS para menor latencia y soporte de Frame Generation.`
+          : `Tu ${hardwareSystem.dedicatedGpuName} aprovecha HAGS para reducir latencia en el planificador de GPU.`)
+      : 'Permite a la GPU gestionar su propia cola de memoria de video para reducir sobrecarga en CPU.';
+    items.push({
       id: 'win-hags',
       category: 'Gráficos',
       name: 'Programación de GPU acelerada por hardware (HAGS)',
-      description: hasDedicatedGpu
-        ? `Tu ${hardwareSystem.dedicatedGpuName} aprovecha HAGS para menor latencia y soporte de Frame Generation.`
-        : 'Permite a la GPU gestionar su propia cola de memoria de video para reducir sobrecarga en CPU.',
+      description: hagsDesc,
       currentState: data.hags === 2 ? 'Activado' : 'Desactivado',
       isOptimal: data.hags === 2,
       canApply: true,
       requiresRestart: true,
-      impact: hasDedicatedGpu ? 'Alta prioridad' : 'Opcional',
+      impact: hasDedicatedGpu && capabilities.supportsHags === true ? 'Alta prioridad' : 'Opcional',
       caution: 'Requiere reiniciar Windows. En tarjetas muy antiguas o ciertos flujos con OBS/VR puede causar tirones; es 100 % reversible.',
-    },
+    });
+  }
+
+  items.push(
     {
       id: 'win-refresh-rate',
       category: 'Monitor',
       name: 'Frecuencia de actualización del monitor (Hz)',
       description: 'Tras formatear, Windows suele dejar los monitores de 144Hz/165Hz/240Hz limitados a 60 Hz. Verifica que estés usando el máximo real de tu pantalla.',
-      currentState: `${data.maxHz || 60} Hz detectados`,
-      isOptimal: Number(data.maxHz || 60) > 60,
+      currentState: refreshState,
+      isOptimal: refreshOptimal,
       canApply: true,
       applyLabel: 'Abrir pantalla',
-      impact: Number(data.maxHz || 60) <= 60 ? 'Revisar tras formateo' : 'Óptimo',
+      impact: refreshOptimal ? 'Óptimo' : 'Revisar tras formateo',
     },
     {
       id: 'win-mouse-accel',
@@ -294,8 +280,68 @@ $startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\C
       isOptimal: data.darkApps === 0,
       canApply: true,
       impact: 'Estética',
-    },
-  ];
+    }
+  );
+
+  return { items, capabilities };
+}
+
+async function scanWindowsSettings(hardwareSystem) {
+  const psScript = `
+$ErrorActionPreference = 'SilentlyContinue'
+$gameMode = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\GameBar' -Name 'AllowAutoGameMode').AllowAutoGameMode
+$hags = (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' -Name 'HwSchMode').HwSchMode
+$hideExt = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced' -Name 'HideFileExt').HideFileExt
+$showHidden = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced' -Name 'Hidden').Hidden
+$mouseSpeed = (Get-ItemProperty -Path 'HKCU:\\Control Panel\\Mouse' -Name 'MouseSpeed').MouseSpeed
+$advId = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Name 'Enabled').Enabled
+$clipboard = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Clipboard' -Name 'EnableClipboardHistory').EnableClipboardHistory
+$darkApps = (Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize' -Name 'AppsUseLightTheme').AppsUseLightTheme
+$powerRaw = (powercfg /getactivescheme) -join ' '
+$hiberEnabled = (Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Power' -Name 'HibernateEnabled').HibernateEnabled
+$hiberFile = Test-Path -LiteralPath "$env:SystemDrive\\hiberfil.sys"
+$displays = @(Get-CimInstance Win32_VideoController | Where-Object { $_.CurrentRefreshRate -gt 0 -and $_.Name -notmatch 'Basic|Virtual|Parsec|Meta' } | ForEach-Object {
+  [pscustomobject]@{ curHz = [int]$_.CurrentRefreshRate; maxHz = [int]$_.MaxRefreshRate; res = $_.CurrentHorizontalResolution }
+})
+$activeDisp = $displays | Where-Object { $_.res -gt 0 } | Sort-Object maxHz -Descending | Select-Object -First 1
+if (-not $activeDisp) { $activeDisp = $displays | Sort-Object maxHz -Descending | Select-Object -First 1 }
+$curHz = if ($activeDisp -and $activeDisp.curHz -gt 0) { $activeDisp.curHz } else { 60 }
+$panelMaxHz = if ($activeDisp -and $activeDisp.maxHz -gt 0) { $activeDisp.maxHz } else { $curHz }
+$build = [Environment]::OSVersion.Version.Build
+$startupCount = @(Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' | ForEach-Object { $_.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } }).Count
+
+@{
+  gameMode = $gameMode
+  hags = $hags
+  hideExt = $hideExt
+  showHidden = $showHidden
+  mouseSpeed = $mouseSpeed
+  advId = $advId
+  clipboard = $clipboard
+  darkApps = $darkApps
+  powerRaw = $powerRaw
+  hiberEnabled = $hiberEnabled
+  hiberFile = $hiberFile
+  curHz = $curHz
+  panelMaxHz = $panelMaxHz
+  maxHz = $curHz
+  startupCount = $startupCount
+  build = $build
+} | ConvertTo-Json -Compress
+`;
+
+  const res = await runPowerShell(psScript, 15000);
+  let data = {};
+  if (res.ok && res.stdout) {
+    try {
+      data = JSON.parse(res.stdout);
+    } catch {
+      data = {};
+    }
+  }
+
+  const { items, capabilities } = buildCoreAuditItems(data, hardwareSystem);
+  const powerRaw = String(data.powerRaw || '');
 
   const pendingCount = items.filter((i) => !i.isOptimal).length;
   const build = Number(data.build || 0);
@@ -484,4 +530,5 @@ module.exports = {
   applyWindowsSetting,
   restartExplorer,
   WIN11_TWEAKS,
+  _internals: { buildCoreAuditItems },
 };

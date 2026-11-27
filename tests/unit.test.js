@@ -687,3 +687,92 @@ test('hardwareCapabilities: clasifica GPUs, CPUs, chipsets y modelos desconocido
   assert.strictEqual(c6.supportsXmpExpo, 'unknown');
 });
 
+test('integración hardwareCapabilities: pcCheck, windowsAudit y bios filtran falsos positivos por hardware', () => {
+  const { analyze } = backend('pcCheck')._internals;
+  const { buildCoreAuditItems } = backend('windowsAudit')._internals;
+  const { getBiosGuide } = backend('bios');
+  const fakeBarOff = 'FB Memory Usage\n  Total : 4096 MiB\nBAR1 Memory Usage\n  Total : 256 MiB\n';
+
+  // 1. GTX 1650 SUPER + i5-10400F + B460: cero aviso ReBAR, RAM degradada a info, HAGS sin Frame Gen
+  const pc1 = analyze({
+    cpuName: 'Intel(R) Core(TM) i5-10400F CPU @ 2.90GHz',
+    boardVendor: 'ASUSTeK COMPUTER INC.',
+    boardModel: 'PRIME B460M-A',
+    ram: [{ capacity: 8 * 1024 ** 3, configured: 2666, speed: 2666, type: 26, part: 'CMK16GX4M2B3200C16', slot: 'DIMM_A1', bank: 'BANK 0' }],
+    gpus: [{ name: 'NVIDIA GeForce GTX 1650 SUPER', res: 1920, curHz: 60, maxHz: 60 }],
+    bar: fakeBarOff,
+    pci: [], secureBoot: 1, firmware: 'UEFI', tpm: '2.0', problems: [],
+  });
+  assert.strictEqual(pc1.checks.some((c) => c.id === 'rebar'), false);
+  assert.strictEqual(pc1.checks.find((c) => c.id === 'ram-xmp')?.status, 'info');
+
+  const wa1 = buildCoreAuditItems({ hags: 1, curHz: 60, panelMaxHz: 60 }, {
+    cpuName: 'Intel(R) Core(TM) i5-10400F',
+    dedicatedGpuName: 'NVIDIA GeForce GTX 1650 SUPER',
+    formFactor: 'desktop',
+  });
+  const hags1 = wa1.items.find((i) => i.id === 'win-hags');
+  assert.ok(hags1 && !/Frame Generation/i.test(hags1.description));
+  // Monitor 60 Hz real -> isOptimal: true
+  const hz1 = wa1.items.find((i) => i.id === 'win-refresh-rate');
+  assert.strictEqual(hz1?.isOptimal, true);
+
+  // 2. GTX 970 + i7-4790K + DDR3: DDR3 reconocida, sin TPM BIOS fix, sin HAGS en windowsAudit
+  const pc2 = analyze({
+    cpuName: 'Intel(R) Core(TM) i7-4790K CPU @ 4.00GHz',
+    ram: [{ capacity: 8 * 1024 ** 3, configured: 1600, speed: 1600, type: 24, part: 'KHX1600C10D3', slot: 'A1', bank: 'B0' }],
+    gpus: [{ name: 'NVIDIA GeForce GTX 970', res: 1920 }],
+    bar: fakeBarOff,
+    pci: [], secureBoot: 1, firmware: 'UEFI', tpm: '', problems: [],
+  });
+  assert.match(pc2.checks.find((c) => c.id === 'ram-xmp')?.detail || '', /DDR3/);
+  assert.strictEqual(pc2.checks.some((c) => c.id === 'rebar'), false);
+  assert.strictEqual(pc2.checks.find((c) => c.id === 'tpm')?.fix, undefined);
+  const wa2 = buildCoreAuditItems({ hags: 1, curHz: 60, panelMaxHz: 60 }, {
+    cpuName: 'Intel(R) Core(TM) i7-4790K',
+    dedicatedGpuName: 'NVIDIA GeForce GTX 970',
+    formFactor: 'desktop',
+  });
+  assert.strictEqual(wa2.items.some((i) => i.id === 'win-hags'), false);
+
+  // 3. RX 580 + Ryzen 5 2600 + B450 + SSD PCIe 4.0 en PCIe 3.0 -> SSD marcado ok al máximo de la placa
+  const pc3 = analyze({
+    cpuName: 'AMD Ryzen 5 2600 Six-Core Processor',
+    boardVendor: 'Micro-Star International Co., Ltd.',
+    boardModel: 'B450 TOMAHAWK MAX',
+    ram: [],
+    gpus: [{ name: 'Radeon RX 580 Series', res: 1920 }],
+    pci: [{ name: 'Samsung 980 PRO', cls: 'SCSIAdapter', id: 'nvme0', curSpeed: 3, maxSpeed: 4, curWidth: 4, maxWidth: 4 }],
+    secureBoot: 1, firmware: 'UEFI', tpm: '2.0', problems: [],
+  });
+  const ssd3 = pc3.checks.find((c) => c.id === 'pcie-nvme0');
+  assert.strictEqual(ssd3?.status, 'ok');
+  assert.match(ssd3?.title || '', /máximo de la placa/i);
+
+  // 4. RTX 4070 + Ryzen 7 7800X3D + B650 + DDR5 -> ReBAR warn si apagado, HAGS menciona Frame Gen, EXPO
+  const pc4 = analyze({
+    cpuName: 'AMD Ryzen 7 7800X3D 8-Core Processor',
+    boardVendor: 'Micro-Star International Co., Ltd.',
+    boardModel: 'MAG B650 TOMAHAWK WIFI',
+    ram: [{ capacity: 16 * 1024 ** 3, configured: 4800, speed: 4800, type: 34, part: 'F5-6000J3038F16G', slot: 'A2', bank: 'B0' }],
+    gpus: [{ name: 'NVIDIA GeForce RTX 4070', res: 2560 }],
+    bar: fakeBarOff,
+    pci: [], secureBoot: 1, firmware: 'UEFI', tpm: '2.0', problems: [],
+  });
+  assert.strictEqual(pc4.checks.find((c) => c.id === 'rebar')?.status, 'warn');
+  assert.match(pc4.checks.find((c) => c.id === 'ram-xmp')?.fix || '', /EXPO/);
+  const wa4 = buildCoreAuditItems({ hags: 1, curHz: 60, panelMaxHz: 144 }, {
+    cpuName: 'AMD Ryzen 7 7800X3D',
+    dedicatedGpuName: 'NVIDIA GeForce RTX 4070',
+    formFactor: 'desktop',
+  });
+  assert.match(wa4.items.find((i) => i.id === 'win-hags')?.description || '', /Frame Generation/);
+  assert.strictEqual(wa4.items.find((i) => i.id === 'win-refresh-rate')?.isOptimal, false);
+
+  // 5. bios.getBiosGuide filtra temas no soportados salvo showAll: true
+  const gFiltered = getBiosGuide({ manufacturer: 'ASUS', product: 'PRIME B460M-A', capabilities: pc1.capabilities });
+  assert.strictEqual(gFiltered.sections.some((s) => s.id === 'rebar'), false);
+  assert.strictEqual(gFiltered.sections.some((s) => s.id === 'ram-xmp'), false);
+  const gAll = getBiosGuide({ manufacturer: 'ASUS', product: 'PRIME B460M-A', capabilities: pc1.capabilities, showAll: true });
+  assert.strictEqual(gAll.sections.length, 5);
+});

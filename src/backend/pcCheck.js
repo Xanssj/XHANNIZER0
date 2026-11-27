@@ -4,6 +4,7 @@
 // Todo se lee sin permisos de administrador.
 const { runPowerShell } = require('./powershell');
 const { getLastHardwareScan, isIntegratedGpuName } = require('./hardware');
+const { detectCapabilities } = require('./hardwareCapabilities');
 
 const PROBLEM_CODES = {
   1: 'Dispositivo no configurado correctamente',
@@ -79,6 +80,7 @@ $problems = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.ConfigManagerE
   [pscustomobject]@{ name = $(if ($_.Name) { $_.Name } else { $_.Description }); id = $_.PNPDeviceID; code = $_.ConfigManagerErrorCode; cls = $_.PNPClass }
 })
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+$board = Get-CimInstance Win32_BaseBoard | Select-Object -First 1
 $bat = $null
 $bs = Get-CimInstance -Namespace root\wmi -ClassName BatteryStaticData -ErrorAction SilentlyContinue | Select-Object -First 1
 $bf = Get-CimInstance -Namespace root\wmi -ClassName BatteryFullChargedCapacity -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -106,6 +108,7 @@ $crashes = @{
 @{
   ram = $ram; gpus = $gpus; pci = $pci; secureBoot = $sb; firmware = $env:firmware_type; tpm = $tpm; bar = $bar
   disks = $disks; battery = $bat; crashes = $crashes; problems = $problems; virt = $cpu.VirtualizationFirmwareEnabled; hyperv = [bool](Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+  cpuName = [string]$cpu.Name; boardVendor = [string]$board.Manufacturer; boardModel = [string]$board.Product
 } | ConvertTo-Json -Depth 4 -Compress
 `;
 
@@ -120,20 +123,36 @@ function analyze(d, ctx = {}) {
   const checks = [];
   const push = (c) => checks.push(c);
 
-  // ---------- RAM: XMP/EXPO y canales
   const ram = arr(d.ram).filter((m) => m && m.capacity > 0);
+  const ramType = ram.length
+    ? (ram[0].type === 34 ? 'DDR5' : ram[0].type === 26 ? 'DDR4' : ram[0].type === 24 ? 'DDR3' : 'RAM')
+    : 'RAM';
+  const gpusAll = arr(d.gpus).filter((g) => g && g.name && !/Basic|Virtual|Parsec|Meta/i.test(g.name));
+  const caps = detectCapabilities({
+    cpuName: d.cpuName || ctx.cpuName || '',
+    gpuNames: gpusAll.map((g) => g.name),
+    motherboardVendor: d.boardVendor || ctx.motherboardVendor || '',
+    motherboardModel: d.boardModel || ctx.motherboardModel || '',
+    formFactor: ctx.formFactor || 'desktop',
+    ramType,
+  });
+
+  // ---------- RAM: XMP/EXPO y canales
   if (ram.length) {
-    const type = ram[0].type === 34 ? 'DDR5' : ram[0].type === 26 ? 'DDR4' : 'RAM';
+    const type = ramType;
     const speeds = ram.map((m) => Number(m.configured || m.speed || 0)).filter(Boolean);
     const configured = speeds.length ? Math.min(...speeds) : 0;
     const rated = Math.max(0, ...ram.map((m) => ratedSpeedFromPart(m.part) || 0));
     const totalGb = Math.round(ram.reduce((s, m) => s + m.capacity, 0) / 1024 ** 3);
-    const profile = 'XMP (Intel) o EXPO/DOCP (AMD)';
-    if (laptop && rated && configured && rated - configured >= 200) {
+    const profile = caps.ramProfileName || 'XMP (Intel) o EXPO/DOCP (AMD)';
+    const xmpLocked = laptop || caps.supportsXmpExpo === false;
+    if (xmpLocked && rated && configured && rated - configured >= 200) {
       push({
         id: 'ram-xmp', category: 'Memoria RAM', status: 'info',
         title: `RAM a ${configured} MHz (los módulos admiten ${rated} MHz)`,
-        detail: `${type} · ${totalGb} GB. En portátiles la velocidad la fija el fabricante y casi nunca se puede cambiar en la BIOS.`,
+        detail: laptop
+          ? `${type} · ${totalGb} GB. En portátiles la velocidad la fija el fabricante y casi nunca se puede cambiar en la BIOS.`
+          : `${type} · ${totalGb} GB. Esta placa/chipset o equipo de marca limita la velocidad máxima de la memoria y no permite activar ${profile} libremente.`,
       });
     } else if (rated && configured && rated - configured >= 200) {
       push({
@@ -142,7 +161,7 @@ function analyze(d, ctx = {}) {
         detail: `Módulos ${ram[0].part} (${type}, ${totalGb} GB). Estás perdiendo rendimiento, sobre todo en juegos.`,
         fix: `Entra a la BIOS y activa el perfil ${profile}.`,
       });
-    } else if (!laptop && !rated && configured && ((type === 'DDR4' && configured <= 2400) || (type === 'DDR5' && configured <= 4800))) {
+    } else if (!xmpLocked && !rated && configured && ((type === 'DDR3' && configured <= 1333) || (type === 'DDR4' && configured <= 2400) || (type === 'DDR5' && configured <= 4800))) {
       push({
         id: 'ram-xmp', category: 'Memoria RAM', status: 'info',
         title: `RAM a ${configured} MHz (velocidad base ${type})`,
@@ -238,18 +257,26 @@ function analyze(d, ctx = {}) {
     }
   }
 
-  // ---------- Resizable BAR (solo verificable en NVIDIA)
+  // ---------- Resizable BAR (solo avisar si la GPU y plataforma realmente lo soportan)
   if (d.bar) {
     const fb = d.bar.match(/FB Memory Usage[\s\S]*?Total\s*:\s*(\d+)\s*MiB/i);
     const b1 = d.bar.match(/BAR1 Memory Usage[\s\S]*?Total\s*:\s*(\d+)\s*MiB/i);
     if (fb && b1) {
       const on = Number(b1[1]) >= Number(fb[1]) * 0.9;
-      push({
-        id: 'rebar', category: 'Gráficos', status: on ? 'ok' : 'warn',
-        title: on ? 'Resizable BAR activado' : 'Resizable BAR desactivado',
-        detail: on ? `BAR1 de ${b1[1]} MiB (VRAM completa accesible).` : `BAR1 de solo ${b1[1]} MiB de ${fb[1]} MiB de VRAM. Algunos juegos rinden hasta un 10 % menos.`,
-        fix: on ? undefined : 'En la BIOS activa «Above 4G Decoding» y «Re-Size BAR Support» (requiere arranque UEFI y CSM desactivado).',
-      });
+      if (on) {
+        push({
+          id: 'rebar', category: 'Gráficos', status: 'ok',
+          title: 'Resizable BAR activado',
+          detail: `BAR1 de ${b1[1]} MiB (VRAM completa accesible).`,
+        });
+      } else if (caps.supportsRebar === true) {
+        push({
+          id: 'rebar', category: 'Gráficos', status: 'warn',
+          title: 'Resizable BAR desactivado',
+          detail: `BAR1 de solo ${b1[1]} MiB de ${fb[1]} MiB de VRAM. Algunos juegos rinden hasta un 10 % menos.`,
+          fix: 'En la BIOS activa «Above 4G Decoding» y «Re-Size BAR Support» (requiere arranque UEFI y CSM desactivado).',
+        });
+      }
     }
   }
 
@@ -257,11 +284,19 @@ function analyze(d, ctx = {}) {
   for (const dev of arr(d.pci)) {
     if (!dev.maxSpeed || !dev.maxWidth) continue;
     if (dev.cls === 'SCSIAdapter') {
-      const slow = dev.curSpeed < dev.maxSpeed || dev.curWidth < dev.maxWidth;
+      const expectedSpeed = caps.maxPlatformPcieGen ? Math.min(dev.maxSpeed, caps.maxPlatformPcieGen) : dev.maxSpeed;
+      const slow = dev.curSpeed < expectedSpeed || dev.curWidth < dev.maxWidth;
+      const platformLimited = !slow && dev.maxSpeed > expectedSpeed;
       push({
         id: `pcie-${dev.id}`, category: 'Almacenamiento', status: slow ? 'warn' : 'ok',
-        title: slow ? `SSD NVMe limitado: PCIe ${GEN(dev.curSpeed)} x${dev.curWidth} (soporta ${GEN(dev.maxSpeed)} x${dev.maxWidth})` : `SSD NVMe a máxima velocidad: PCIe ${GEN(dev.curSpeed)} x${dev.curWidth}`,
-        detail: dev.name,
+        title: slow
+          ? `SSD NVMe limitado: PCIe ${GEN(dev.curSpeed)} x${dev.curWidth} (soporta ${GEN(expectedSpeed)} x${dev.maxWidth})`
+          : platformLimited
+          ? `SSD NVMe al máximo de la placa: PCIe ${GEN(dev.curSpeed)} x${dev.curWidth}`
+          : `SSD NVMe a máxima velocidad: PCIe ${GEN(dev.curSpeed)} x${dev.curWidth}`,
+        detail: platformLimited
+          ? `${dev.name} (el SSD soporta PCIe ${GEN(dev.maxSpeed)}, pero tu placa/CPU trabaja hasta PCIe ${GEN(expectedSpeed)}).`
+          : dev.name,
         fix: slow ? 'Muévelo a la ranura M.2 principal (la más cercana al CPU) o revisa si comparte líneas con otra ranura.' : undefined,
       });
     } else if (dev.cls === 'Display' && !laptop && dev.curWidth < dev.maxWidth && dev.maxWidth >= 8) {
@@ -297,7 +332,20 @@ function analyze(d, ctx = {}) {
   if (/2\.0/.test(tpmText)) {
     push({ id: 'tpm', category: 'Seguridad', status: 'ok', title: 'TPM 2.0 presente' });
   } else if (/1\.2/.test(tpmText)) {
-    push({ id: 'tpm', category: 'Seguridad', status: 'warn', title: 'TPM 1.2 (antiguo)', detail: 'Windows 11 exige TPM 2.0.', fix: 'Activa fTPM (AMD) o PTT (Intel) en la BIOS si tu placa lo permite.' });
+    push({
+      id: 'tpm', category: 'Seguridad', status: caps.supportsTpm2Firmware === false ? 'info' : 'warn',
+      title: 'TPM 1.2 (antiguo)',
+      detail: caps.supportsTpm2Firmware === false
+        ? 'Tu procesador es anterior a los modelos con fTPM/PTT 2.0 integrado.'
+        : 'Windows 11 exige TPM 2.0.',
+      fix: caps.supportsTpm2Firmware === false ? undefined : 'Activa fTPM (AMD) o PTT (Intel) en la BIOS si tu placa lo permite.',
+    });
+  } else if (caps.supportsTpm2Firmware === false) {
+    push({
+      id: 'tpm', category: 'Seguridad', status: 'info',
+      title: 'Sin TPM 2.0 por firmware en esta generación',
+      detail: 'Tu procesador no incluye fTPM/PTT 2.0 integrado.',
+    });
   } else {
     push({ id: 'tpm', category: 'Seguridad', status: 'info', title: 'No se detectó TPM', detail: 'Puede estar desactivado en la BIOS.', fix: 'Activa fTPM (AMD) o PTT (Intel) en la BIOS.' });
   }
@@ -409,7 +457,7 @@ function analyze(d, ctx = {}) {
       canSearchDriver: [1, 10, 18, 28, 31, 37, 39, 43].includes(Number(p.code)),
     }));
 
-  return { checks, devices };
+  return { checks, devices, capabilities: caps };
 }
 
 let lastPcCheck = null;
@@ -422,7 +470,14 @@ async function runPcCheck() {
   } catch {
     return { ok: false, error: 'No se pudo analizar el hardware.' };
   }
-  const result = analyze(data, { formFactor: getLastHardwareScan()?.system?.formFactor });
+  const scan = getLastHardwareScan();
+  const board = scan?.drivers?.find((dr) => dr.category === 'motherboard');
+  const result = analyze(data, {
+    formFactor: scan?.system?.formFactor,
+    cpuName: scan?.system?.cpuName,
+    motherboardVendor: board?.vendor,
+    motherboardModel: board?.name,
+  });
   lastPcCheck = { ...result, scannedAt: new Date().toISOString() };
   return {
     ok: true,
