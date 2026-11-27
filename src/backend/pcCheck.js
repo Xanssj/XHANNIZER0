@@ -75,8 +75,6 @@ $disks = @(Get-PhysicalDisk | Where-Object { $_.BusType -ne 'USB' } | ForEach-Ob
   [pscustomobject]@{ name = $_.FriendlyName; health = [string]$_.HealthStatus; bus = [string]$_.BusType; media = [string]$_.MediaType
     temp = $rc.Temperature; wear = $rc.Wear; hours = $rc.PowerOnHours; readErr = $rc.ReadErrorsUncorrected }
 })
-$gpuTemp = $null
-if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { $gpuTemp = (nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu --format=csv,noheader,nounits 2>$null | Out-String) }
 $problems = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.ConfigManagerErrorCode -and @(0,22,24,45) -notcontains $_.ConfigManagerErrorCode } | ForEach-Object {
   [pscustomobject]@{ name = $(if ($_.Name) { $_.Name } else { $_.Description }); id = $_.PNPDeviceID; code = $_.ConfigManagerErrorCode; cls = $_.PNPClass }
 })
@@ -107,7 +105,7 @@ $crashes = @{
 }
 @{
   ram = $ram; gpus = $gpus; pci = $pci; secureBoot = $sb; firmware = $env:firmware_type; tpm = $tpm; bar = $bar
-  disks = $disks; gpuTemp = $gpuTemp; battery = $bat; crashes = $crashes; problems = $problems; virt = $cpu.VirtualizationFirmwareEnabled; hyperv = [bool](Get-CimInstance Win32_ComputerSystem).HypervisorPresent
+  disks = $disks; battery = $bat; crashes = $crashes; problems = $problems; virt = $cpu.VirtualizationFirmwareEnabled; hyperv = [bool](Get-CimInstance Win32_ComputerSystem).HypervisorPresent
 } | ConvertTo-Json -Depth 4 -Compress
 `;
 
@@ -312,8 +310,6 @@ function analyze(d, ctx = {}) {
       detail: 'Necesaria para WSL, Docker, máquinas virtuales y emuladores de Android.',
       fix: 'Activa SVM (AMD) o Intel VT-x en la BIOS.',
     });
-  } else {
-    push({ id: 'virt', category: 'Procesador', status: 'ok', title: 'Virtualización disponible' });
   }
 
   // ---------- Salud de discos (estado de Windows + contadores SMART cuando el disco los informa)
@@ -349,21 +345,6 @@ function analyze(d, ctx = {}) {
       });
     }
   });
-
-  // ---------- Temperatura de la GPU en reposo (NVIDIA: nvidia-smi viene con el driver)
-  for (const line of String(d.gpuTemp || '').split(/\r?\n/).filter((l) => l.includes(','))) {
-    const [name, t, util] = line.split(',').map((x) => x.trim());
-    const temp = Number(t);
-    if (!temp) continue;
-    const idle = Number(util) < 15;
-    const hot = idle ? temp >= 70 : temp >= 87;
-    push({
-      id: `gpu-temp-${name}`, category: 'Gráficos', status: hot ? 'warn' : 'ok',
-      title: hot ? `GPU caliente: ${temp} °C${idle ? ' en reposo' : ''}` : `GPU a ${temp} °C${idle ? ' en reposo' : ''}`,
-      detail: `${name} · uso ${util} %.`,
-      fix: hot ? 'Revisa que los ventiladores giren, el flujo de aire del gabinete y que no haya polvo.' : undefined,
-    });
-  }
 
   // ---------- Salud de la batería (portátiles)
   if (d.battery && Number(d.battery.designed) > 0 && Number(d.battery.full) > 0) {
