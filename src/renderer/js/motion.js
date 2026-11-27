@@ -12,6 +12,12 @@
     window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  const isLiteMode = () =>
+    typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-lite') === 'true';
+
+  const isMinimalMotion = () => prefersReduced() || isLiteMode();
+
   const GLOW_SELECTOR = '.app-card, .driver-card, .owner-metric-card, .preset-card, .checklist-card';
   const TILT_SELECTOR = '.app-card, .preset-card, button.owner-metric-card.dash-metric-btn';
   const MAGNETIC_SELECTOR = '.btn-primary, .btn-secondary, .xh-downloads-btn, .xh-svc-pill';
@@ -78,11 +84,30 @@
     activeMagBtn = null;
   }
 
+  function clearInteractiveEffects() {
+    if (glowRaf) {
+      cancelAnimationFrame(glowRaf);
+      glowRaf = null;
+    }
+    if (magRaf) {
+      cancelAnimationFrame(magRaf);
+      magRaf = null;
+    }
+    if (activeGlowCard) {
+      activeGlowCard.classList.remove('is-glow');
+      activeGlowCard = null;
+    }
+    releaseTilt(activeTiltCard);
+    activeTiltCard = null;
+    releaseMagnetic();
+    if (sideHoverPill) sideHoverPill.style.opacity = '0';
+  }
+
   function initPointerEffects() {
     document.addEventListener(
       'pointermove',
       (e) => {
-        if (prefersReduced() || e.pointerType !== 'mouse') return;
+        if (isMinimalMotion() || e.pointerType !== 'mouse') return;
 
         // Tarjetas: reflejo especular + 3D tilt
         const card = e.target && e.target.closest ? e.target.closest(GLOW_SELECTOR) : null;
@@ -166,7 +191,7 @@
     document.addEventListener(
       'pointerdown',
       (e) => {
-        if (prefersReduced() || e.button !== 0) return;
+        if (isMinimalMotion() || e.button !== 0) return;
         const btn = e.target && e.target.closest ? e.target.closest(RIPPLE_SELECTOR) : null;
         if (!btn || btn.disabled) return;
         const rect = btn.getBoundingClientRect();
@@ -203,7 +228,7 @@
       return;
     }
     const firstTime = !sliderInitialized.has(container);
-    if (instant || firstTime || prefersReduced()) slider.classList.add('no-anim');
+    if (instant || firstTime || isMinimalMotion()) slider.classList.add('no-anim');
 
     slider.style.width = `${active.offsetWidth}px`;
     slider.style.height = `${active.offsetHeight}px`;
@@ -261,7 +286,7 @@
     sideActiveBar.style.height = `${h}px`;
     sideActiveBar.style.opacity = '1';
 
-    const needSnap = instant || !sideActiveInit || prefersReduced();
+    const needSnap = instant || !sideActiveInit || isMinimalMotion();
     if (activeBarSpringY) {
       if (needSnap) activeBarSpringY.jump(y);
       else activeBarSpringY.setTarget(y);
@@ -367,7 +392,7 @@
     sideNav.addEventListener(
       'pointermove',
       (e) => {
-        if (prefersReduced() || e.pointerType !== 'mouse') return;
+        if (isMinimalMotion() || e.pointerType !== 'mouse') return;
         const btn = e.target && e.target.closest ? e.target.closest('.owner-menu-item > button') : null;
         if (!btn) {
           // Cursor pasando por encabezados (HARDWARE, PROGRAMAS, SISTEMA) o espacios:
@@ -448,7 +473,7 @@
   }
 
   function animatePanelEnter(panel) {
-    if (!panel || prefersReduced()) return;
+    if (!panel || isMinimalMotion()) return;
     panel.classList.remove('xh-panel-enter');
     void panel.offsetWidth;
     panel.classList.add('xh-panel-enter');
@@ -478,7 +503,7 @@
   // ---------- 7. Transición suave de tema (Oscuro <-> Claro)
   let themeTimer = null;
   function animateThemeSwitch() {
-    if (prefersReduced()) return;
+    if (isMinimalMotion()) return;
     document.documentElement.classList.add('xh-theme-switching');
     clearTimeout(themeTimer);
     themeTimer = setTimeout(() => {
@@ -520,6 +545,11 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
+  function setLiteMode(active) {
+    if (active) clearInteractiveEffects();
+    requestAnimationFrame(() => syncAllSliders(true));
+  }
+
   global.XhMotion = {
     syncAllSliders,
     syncSlider,
@@ -527,5 +557,6 @@
     animatePanelEnter,
     animateThemeSwitch,
     handleWindowEvent,
+    setLiteMode,
   };
 })(window);

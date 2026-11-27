@@ -951,9 +951,24 @@ function getLastHardwareScan() {
   return lastScan;
 }
 
-// Monitor en vivo liviano (CPU %, RAM, disco del sistema y temp GPU NVIDIA si está disponible)
+// Monitor en vivo liviano (CPU % y RAM en Node nativo, 0 PowerShell; disco y GPU con caché 7.5–8 s)
+const DISK_CACHE_TTL_MS = 8000;
+const GPU_CACHE_TTL_MS = 7500;
 let prevCpuSnap = null;
+let diskMetricsCache = { checkedAt: 0, data: null };
 let gpuProbeCache = { checkedAt: 0, available: true, data: null };
+
+function shouldAutoEnableLiteMode(system = null, opts = {}) {
+  if (opts?.reducedMotion) return true;
+  if (!system || typeof system !== 'object') return false;
+  const ramGb = Number(system.ramGb || 0);
+  const threads = Number(system.threads || system.cpuThreads || 0);
+  const hasDedicatedGpu = Boolean(system.dedicatedGpuName);
+  if (ramGb > 0 && ramGb <= 8) return true;
+  if (threads > 0 && threads <= 4) return true;
+  if (!hasDedicatedGpu) return true;
+  return false;
+}
 
 function readCpuUsagePct() {
   const cpus = os.cpus() || [];
@@ -975,6 +990,11 @@ function readCpuUsagePct() {
 }
 
 function readSystemDiskMetrics() {
+  const now = Date.now();
+  if (diskMetricsCache.checkedAt > 0 && now - diskMetricsCache.checkedAt < DISK_CACHE_TTL_MS) {
+    return diskMetricsCache.data;
+  }
+  diskMetricsCache.checkedAt = now;
   const sysDrive = (process.env.SystemDrive || 'C:') + '\\';
   try {
     if (typeof fs.statfsSync === 'function') {
@@ -985,19 +1005,26 @@ function readSystemDiskMetrics() {
         const totalGb = Math.round((totalBytes / 1024 ** 3) * 10) / 10;
         const freeGb = Math.round((freeBytes / 1024 ** 3) * 10) / 10;
         const usedPct = Math.max(0, Math.min(100, Math.round(((totalBytes - freeBytes) / totalBytes) * 100)));
-        return { drive: sysDrive.slice(0, 2), freeGb, totalGb, usedPct };
+        diskMetricsCache.data = { drive: sysDrive.slice(0, 2), freeGb, totalGb, usedPct };
+        return diskMetricsCache.data;
       }
     }
   } catch {
     // Ignorar si statfsSync falla
   }
+  diskMetricsCache.data = null;
   return null;
 }
 
 function probeNvidiaGpuLive() {
   const now = Date.now();
   if (!gpuProbeCache.available) return Promise.resolve(null);
-  if (now - gpuProbeCache.checkedAt < 4500) return Promise.resolve(gpuProbeCache.data);
+  if (lastScan?.system?.gpuVendor && lastScan.system.gpuVendor !== 'NVIDIA') {
+    return Promise.resolve(null);
+  }
+  if (gpuProbeCache.checkedAt > 0 && now - gpuProbeCache.checkedAt < GPU_CACHE_TTL_MS) {
+    return Promise.resolve(gpuProbeCache.data);
+  }
   gpuProbeCache.checkedAt = now;
   return new Promise((resolve) => {
     execFile(
@@ -1054,5 +1081,7 @@ module.exports = {
   detectHardwareAndDrivers,
   getLastHardwareScan,
   getLiveSystemMetrics,
+  shouldAutoEnableLiteMode,
   fetchJson,
+  _liveCacheConfig: { DISK_CACHE_TTL_MS, GPU_CACHE_TTL_MS },
 };

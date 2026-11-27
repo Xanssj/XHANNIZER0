@@ -1041,7 +1041,6 @@
   transform: translate3d(-50%, 110px, 0);
   opacity: 0;
   pointer-events: none;
-  will-change: transform, opacity;
 }
 
 #xh-batch-dock.is-visible {
@@ -1110,7 +1109,6 @@
   box-shadow: var(--shadow-float);
   display: grid;
   gap: 16px;
-  will-change: transform, opacity;
 }
 
 .driver-choice-grid {
@@ -1255,7 +1253,6 @@
   border: 0.5px solid var(--sep-strong);
   box-shadow: var(--shadow-float);
   overflow: hidden;
-  will-change: transform, opacity;
 }
 
 .spotlight-input-row {
@@ -2229,4 +2226,14 @@ button.app-card.dash-quick-card:hover {
 :root[data-theme="light"] .win-caution-note {
   color: #9a5700;
   background: rgba(255, 159, 10, 0.14);
+}
+
+/* ---------- Render liviano para listas largas (Catálogo, Drivers, Emuladores, Actualizaciones) */
+.app-grid .app-card,
+.driver-list .driver-card,
+#drivers-list .driver-card,
+#upgrades-list .driver-card,
+#emu-grid .app-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }

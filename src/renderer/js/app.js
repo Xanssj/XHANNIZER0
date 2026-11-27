@@ -77,8 +77,11 @@
     pilotSettingIds: [],
     theme: localStorage.getItem('xh_theme') || 'dark',
     lang: localStorage.getItem('xh_lang') || 'es',
+    liteMode: ['auto', 'on', 'off'].includes(localStorage.getItem('xh_lite_mode')) ? localStorage.getItem('xh_lite_mode') : 'auto',
+    liteActive: false,
     winNotify: localStorage.getItem('xh_win_notify') !== '0',
     livePaused: false,
+    liveUserToggled: false,
     windowFocused: true,
     pendingDriverConfirm: null,
     auditLog: new Map(), // id -> { id, name, state, progress, detail, sourceType, sourceOrigin, sha256, signatureStatus, signatureSigner, timestamp }
@@ -533,9 +536,56 @@
   };
   const groupForTab = (tab) => Object.keys(NAV_GROUPS).find((g) => NAV_GROUPS[g].includes(tab)) || null;
 
+  function shouldEnableLiteMode(mode, sys) {
+    if (mode === 'on') return true;
+    if (mode === 'off') return false;
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) return true;
+    if (sys) {
+      const ramGb = Number(sys.ramGb || 0);
+      const threads = Number(sys.threads || 0);
+      if (ramGb > 0 && ramGb <= 8) return true;
+      if (threads > 0 && threads <= 4) return true;
+      if (!sys.dedicatedGpuName) return true;
+      return false;
+    }
+    const hc = Number(navigator.hardwareConcurrency || 0);
+    return hc > 0 && hc <= 4;
+  }
+
+  function applyLiteMode({ fromHardware = false } = {}) {
+    const active = shouldEnableLiteMode(state.liteMode, state.hardware?.system || null);
+    state.liteActive = active;
+    if (active) document.documentElement.setAttribute('data-lite', 'true');
+    else document.documentElement.removeAttribute('data-lite');
+    window.XhMotion?.setLiteMode?.(active);
+
+    if (fromHardware && state.liteMode === 'auto' && active && !state.liveUserToggled) {
+      state.livePaused = true;
+    }
+    syncSettingsUi();
+    syncLiveMonitorSchedule();
+  }
+
   function syncSettingsUi() {
     $$('[data-settings-lang]').forEach((b) => b.classList.toggle('is-active', b.dataset.settingsLang === state.lang));
     $$('[data-settings-theme]').forEach((b) => b.classList.toggle('is-active', b.dataset.settingsTheme === state.theme));
+    $$('[data-settings-lite]').forEach((b) => b.classList.toggle('is-active', b.dataset.settingsLite === state.liteMode));
+    const liteHint = $('#settings-lite-hint');
+    if (liteHint) {
+      if (state.liteMode === 'on') {
+        liteHint.textContent = 'Activado manualmente: sin blur, sombras ni animaciones 3D.';
+      } else if (state.liteMode === 'off') {
+        liteHint.textContent = 'Desactivado: efectos visuales completos activos.';
+      } else if (state.liteActive) {
+        liteHint.textContent = 'Automático (activo en este PC): modo ligero encendido para máxima fluidez.';
+      } else {
+        liteHint.textContent = 'Automático (efectos completos): tu PC tiene recursos suficientes.';
+      }
+    }
     const techToggle = $('#toggle-tech-mode');
     if (techToggle) techToggle.checked = Boolean(state.techMode);
     const notifyToggle = $('#toggle-win-notify');
@@ -594,13 +644,13 @@
     const stEl = $('#live-monitor-state');
     const btn = $('#btn-live-toggle');
     if (dot) dot.classList.toggle('is-paused', !active);
-    if (stEl) stEl.textContent = state.livePaused ? 'En pausa' : active ? 'Actualizando cada 2.5 s' : 'En espera';
+    if (stEl) stEl.textContent = state.livePaused ? 'En pausa' : active ? 'Actualizando cada 3 s' : 'En espera';
     if (btn) btn.textContent = state.livePaused ? 'Reanudar' : 'Pausar';
 
     if (active) {
       if (!liveTimer) {
         pollLiveMetrics();
-        liveTimer = setInterval(pollLiveMetrics, 2500);
+        liveTimer = setInterval(pollLiveMetrics, 3000);
       }
     } else if (liveTimer) {
       clearInterval(liveTimer);
@@ -793,6 +843,24 @@
         if (state.applyTheme) state.applyTheme(btn.dataset.settingsTheme);
       });
     });
+    $$('[data-settings-lite]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.settingsLite;
+        if (!['auto', 'on', 'off'].includes(mode)) return;
+        state.liteMode = mode;
+        localStorage.setItem('xh_lite_mode', mode);
+        applyLiteMode();
+        showToast(
+          mode === 'on'
+            ? 'Modo ligero activado.'
+            : mode === 'off'
+            ? 'Modo ligero desactivado.'
+            : state.liteActive
+            ? 'Modo ligero en Automático (activo en este PC).'
+            : 'Modo ligero en Automático (efectos completos).'
+        );
+      });
+    });
     $('#toggle-tech-mode')?.addEventListener('change', (e) => {
       state.techMode = Boolean(e.target.checked);
       localStorage.setItem('xh_tech_mode', state.techMode ? '1' : '0');
@@ -805,6 +873,7 @@
       showToast(state.winNotify ? 'Notificaciones de Windows activadas.' : 'Notificaciones de Windows desactivadas.');
     });
     $('#btn-live-toggle')?.addEventListener('click', () => {
+      state.liveUserToggled = true;
       state.livePaused = !state.livePaused;
       syncLiveMonitorSchedule();
     });
@@ -987,7 +1056,7 @@
   // =========================================================================
   // Render de Drivers (Sección Principal — con iGPU/dGPU exacto)
   // =========================================================================
-  async function scanHardware(notify = false) {
+  async function scanHardware(notify = false, { deferSecondary = false } = {}) {
     $('#hw-scan-meta').textContent = 'Analizando CPU, gráficos, placa madre, audio, red, Bluetooth y discos…';
     $('#pop-hw-state').textContent = 'Escaneando…';
     try {
@@ -1017,14 +1086,19 @@
         drvBadge.hidden = true;
       }
 
+      applyLiteMode({ fromHardware: true });
       renderDrivers();
       renderDashboard();
       loadPresets();
-      loadWindowsAudit();
+      if (!deferSecondary) {
+        loadWindowsAudit();
+      }
       renderPostFormatChecklist();
       updateStatusPill();
       if (notify) showToast('Escaneo de hardware actualizado.');
-      liveCheckDrivers(notify);
+      if (!deferSecondary) {
+        liveCheckDrivers(notify);
+      }
     } catch (err) {
       $('#hw-scan-meta').textContent = 'Error al escanear hardware.';
       showToast(`Error al detectar hardware: ${err.message}`);
@@ -4832,14 +4906,34 @@
     initExtraFeatures();
     initAbout();
     initSettings();
+    applyLiteMode();
     initSetup();
     startOnboarding();
-    await Promise.all([scanHardware(false), loadCatalog(), loadEmulators(), refreshBackupCount(), loadStartupApps(false)]);
+
+    // Arranque escalonado: primero escaneo principal de hardware + datos livianos sin saturar con múltiples PowerShell
+    await Promise.all([scanHardware(false, { deferSecondary: true }), loadEmulators(), refreshBackupCount()]);
     renderDashboard();
     renderPostFormatChecklist();
     syncLiveMonitorSchedule();
     initAppUpdates();
     resumePilotIfNeeded();
+
+    // Escaneos secundarios escalonados en segundo plano para mantener la UI fluida incluso en PCs modestas
+    const staggerDelay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    (async () => {
+      try {
+        await staggerDelay(250);
+        await loadCatalog();
+        await staggerDelay(350);
+        if (!state.startupApps.length) await loadStartupApps(false);
+        await staggerDelay(450);
+        if (!state.winAudit) await loadWindowsAudit(false);
+        await staggerDelay(500);
+        liveCheckDrivers(false);
+      } catch {
+        // Los escaneos secundarios pueden reintentarse al abrir cada pestaña
+      }
+    })();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

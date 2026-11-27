@@ -886,3 +886,33 @@ test('presets por niveles: adapta desktop/laptop y HAGS, bloquea Experimental fa
   assert.strictEqual(elevOk, true);
 });
 
+test('rendimiento y Modo ligero: auto-detección de PC modesta, caché de monitor en vivo y reglas CSS/motion', async () => {
+  const { shouldAutoEnableLiteMode, getLiveSystemMetrics, _liveCacheConfig } = backend('hardware');
+
+  // 1. Auto-detección de Modo ligero
+  assert.strictEqual(shouldAutoEnableLiteMode({ ramGb: 8, threads: 8, dedicatedGpuName: 'GTX 1650' }), true);
+  assert.strictEqual(shouldAutoEnableLiteMode({ ramGb: 16, threads: 4, dedicatedGpuName: 'GTX 1650' }), true);
+  assert.strictEqual(shouldAutoEnableLiteMode({ ramGb: 16, threads: 8, dedicatedGpuName: null }), true);
+  assert.strictEqual(shouldAutoEnableLiteMode({ ramGb: 32, threads: 16, dedicatedGpuName: 'RTX 4070' }, { reducedMotion: true }), true);
+  assert.strictEqual(shouldAutoEnableLiteMode({ ramGb: 16, threads: 12, dedicatedGpuName: 'RTX 3060' }), false);
+
+  // 2. Caché de consultas lentas en monitor en vivo (6–8 s) + CPU/RAM nativos
+  assert.ok(_liveCacheConfig.DISK_CACHE_TTL_MS >= 6000 && _liveCacheConfig.DISK_CACHE_TTL_MS <= 10000);
+  assert.ok(_liveCacheConfig.GPU_CACHE_TTL_MS >= 6000 && _liveCacheConfig.GPU_CACHE_TTL_MS <= 10000);
+  const m1 = await getLiveSystemMetrics();
+  const t0 = Date.now();
+  const m2 = await getLiveSystemMetrics();
+  assert.strictEqual(m1.ok, true);
+  assert.strictEqual(m2.ok, true);
+  assert.ok(Date.now() - t0 < 500, 'La segunda lectura en caché debe ser prácticamente instantánea');
+
+  // 3. Reglas CSS de Modo ligero y content-visibility en listas largas
+  const tokensCss = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles', 'tokens.css'), 'utf8');
+  const appCss = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles', 'app.css'), 'utf8');
+  const motionJs = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'js', 'motion.js'), 'utf8');
+  assert.match(tokensCss, /:root\[data-lite="true"\]/);
+  assert.match(tokensCss, /backdrop-filter:\s*none\s*!important/);
+  assert.match(appCss, /content-visibility:\s*auto/);
+  assert.match(motionJs, /data-lite/);
+  assert.match(motionJs, /setLiteMode/);
+});

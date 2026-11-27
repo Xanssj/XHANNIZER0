@@ -184,7 +184,6 @@ html.xh-theme-switching #xh-toast {
   pointer-events: none;
   opacity: 0;
   z-index: 0;
-  will-change: transform, opacity;
   transition: opacity 180ms var(--ease-out);
 }
 
@@ -199,7 +198,6 @@ html.xh-theme-switching #xh-toast {
   pointer-events: none;
   opacity: 0;
   z-index: 2;
-  will-change: transform, opacity;
   transition: height 200ms var(--ease-out), opacity 160ms var(--ease-out);
 }
 
@@ -461,6 +459,51 @@ html.xh-theme-switching #xh-toast {
   .spotlight-item.is-active {
     transform: translate3d(3px, 0, 0);
   }
+}
+
+/* ---------- Modo ligero / bajo consumo (desactiva sombras, shimmer, glow y animaciones costosas) */
+:root[data-lite="true"] .app-card::after,
+:root[data-lite="true"] .driver-card::after,
+:root[data-lite="true"] .owner-metric-card::after,
+:root[data-lite="true"] .preset-card::after,
+:root[data-lite="true"] .checklist-card::after,
+:root[data-lite="true"] .btn-primary::after,
+:root[data-lite="true"] .btn-action-small.is-primary::after,
+:root[data-lite="true"] .progress-bar::after,
+:root[data-lite="true"] .xh-ripple,
+:root[data-lite="true"] .xh-side-hover-pill {
+  display: none !important;
+}
+
+:root[data-lite="true"] .owner-tab-panel.is-active.xh-panel-enter,
+:root[data-lite="true"] .xh-stagger-in,
+:root[data-lite="true"] .xh-check input:checked,
+:root[data-lite="true"] #xh-status-wrap[data-level="busy"] .xh-svc-dot {
+  animation: none !important;
+}
+
+:root[data-lite="true"] .app-card:hover,
+:root[data-lite="true"] .driver-card:hover,
+:root[data-lite="true"] .preset-card:hover,
+:root[data-lite="true"] .app-card:hover .app-monogram,
+:root[data-lite="true"] .driver-card:hover .driver-icon,
+:root[data-lite="true"] #sidebar-nav .owner-menu-item button:hover svg,
+:root[data-lite="true"] #sidebar-nav .owner-menu-item button:hover > span,
+:root[data-lite="true"] .spotlight-item:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+:root[data-lite="true"] .xh-side-active-bar,
+:root[data-lite="true"] .xh-pill-slider,
+:root[data-lite="true"] .xh-scroll-visible {
+  transition: none !important;
+  box-shadow: none !important;
+}
+
+:root[data-lite="true"] .xh-scroll-hidden {
+  opacity: 1 !important;
+  transform: none !important;
 }
 
 /* ---------- Respeto estricto a prefers-reduced-motion */
