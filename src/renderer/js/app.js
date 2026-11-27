@@ -79,6 +79,7 @@
     lang: localStorage.getItem('xh_lang') || 'es',
     liteMode: ['auto', 'on', 'off'].includes(localStorage.getItem('xh_lite_mode')) ? localStorage.getItem('xh_lite_mode') : 'auto',
     liteActive: false,
+    isAdmin: null,
     winNotify: localStorage.getItem('xh_win_notify') !== '0',
     livePaused: false,
     liveUserToggled: false,
@@ -4892,6 +4893,47 @@
     });
   }
 
+  async function initAdminBanner() {
+    const banner = $('#xh-admin-banner');
+    const cta = $('#xh-admin-banner-cta');
+    if (!banner || !api.getAdminState) return;
+    try {
+      const st = await api.getAdminState();
+      state.isAdmin = Boolean(st?.isAdmin);
+      banner.hidden = state.isAdmin;
+    } catch {
+      banner.hidden = true;
+      return;
+    }
+
+    banner.addEventListener('click', async () => {
+      if (banner.disabled || state.isAdmin || !api.relaunchAsAdmin) return;
+      banner.disabled = true;
+      const origCta = cta ? cta.textContent : '';
+      if (cta) cta.textContent = 'Elevando…';
+      try {
+        const res = await api.relaunchAsAdmin();
+        if (res?.alreadyAdmin) {
+          state.isAdmin = true;
+          banner.hidden = true;
+          return;
+        }
+        if (res?.ok) {
+          showToast('Reiniciando XHANNIZER0 como Administrador…');
+          return;
+        }
+        showToast(res?.cancelled ? 'Elevación UAC cancelada. Sigues en modo estándar.' : res?.error || 'No se pudo activar el modo Administrador.');
+      } catch {
+        showToast('No se pudo activar el modo Administrador.');
+      } finally {
+        if (!state.isAdmin) {
+          banner.disabled = false;
+          if (cta) cta.textContent = origCta;
+        }
+      }
+    });
+  }
+
   // =========================================================================
   // Arranque inicial
   // =========================================================================
@@ -4909,6 +4951,7 @@
     applyLiteMode();
     initSetup();
     startOnboarding();
+    initAdminBanner();
 
     // Arranque escalonado: primero escaneo principal de hardware + datos livianos sin saturar con múltiples PowerShell
     await Promise.all([scanHardware(false, { deferSecondary: true }), loadEmulators(), refreshBackupCount()]);

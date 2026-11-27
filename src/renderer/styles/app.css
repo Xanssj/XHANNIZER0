@@ -2237,3 +2237,78 @@ button.app-card.dash-quick-card:hover {
   content-visibility: auto;
   contain-intrinsic-size: auto 96px;
 }
+
+/* ---------- Banner superior de elevación a Administrador en 1 clic */
+.xh-admin-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 11px 15px;
+  border-radius: 14px;
+  border: 0.5px solid rgba(255, 159, 10, 0.42);
+  background: rgba(255, 159, 10, 0.12);
+  color: var(--label);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.xh-admin-banner[hidden] {
+  display: none !important;
+}
+
+.xh-admin-banner:hover:not(:disabled) {
+  background: rgba(255, 159, 10, 0.18);
+  border-color: rgba(255, 159, 10, 0.65);
+}
+
+.xh-admin-banner:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.xh-admin-banner svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--orange);
+}
+
+.xh-admin-banner-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.xh-admin-banner-copy strong {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--label);
+}
+
+.xh-admin-banner-copy span {
+  font-size: 12px;
+  color: var(--label-2);
+}
+
+.xh-admin-banner-cta {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 99px;
+  background: var(--orange);
+  color: #111113;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:root[data-theme="light"] .xh-admin-banner {
+  background: rgba(255, 159, 10, 0.14);
+}
+
+:root[data-theme="light"] .xh-admin-banner-copy strong {
+  color: #8a4b00;
+}

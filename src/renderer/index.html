@@ -177,6 +177,16 @@
 
     <!-- Workspace principal -->
     <main class="owner-content">
+      <!-- Banner de elevación a Administrador en 1 clic (oculto automáticamente cuando ya corre elevada) -->
+      <button type="button" class="xh-admin-banner" id="xh-admin-banner" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span class="xh-admin-banner-copy">
+          <strong>Modo estándar — Permisos de Administrador desactivados</strong>
+          <span>Haz clic para activar permisos de Administrador en 1 clic y evitar avisos UAC repetidos.</span>
+        </span>
+        <span class="xh-admin-banner-cta" id="xh-admin-banner-cta">Activar Admin</span>
+      </button>
+
       <!-- Barras de sub-navegación segmentada (estilo macOS) para secciones agrupadas -->
       <nav class="xh-subnav" id="subnav-catalog" aria-label="Categorías del catálogo" hidden>
         <button type="button" class="xh-subnav-btn" data-tab="herramientas"><span>Herramientas</span><em class="xh-subnav-badge" id="badge-herramientas" hidden></em></button>

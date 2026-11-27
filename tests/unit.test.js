@@ -916,3 +916,58 @@ test('rendimiento y Modo ligero: auto-detección de PC modesta, caché de monito
   assert.match(motionJs, /data-lite/);
   assert.match(motionJs, /setLiteMode/);
 });
+
+test('powershell: runElevated omite Start-Process -Verb RunAs si ya es Admin y lo usa si es estándar', async () => {
+  const { runElevated, relaunchAsAdmin, POWERSHELL_EXE } = backend('powershell');
+
+  // 1. Cuando ya corre como Admin: ejecuta POWERSHELL_EXE directo con -EncodedCommand (cero -Verb RunAs)
+  let directCall = null;
+  let psLauncherCalled = false;
+  const rAdmin = await runElevated('Write-Output "ok"', 10000, {
+    isAdmin: true,
+    execFile: (exe, args, _opts, cb) => {
+      directCall = { exe, args };
+      cb(null, 'ok', '');
+    },
+    runPowerShell: async () => {
+      psLauncherCalled = true;
+      return { ok: true, stdout: '' };
+    },
+  });
+  assert.strictEqual(rAdmin.ok, true);
+  assert.strictEqual(rAdmin.cancelled, false);
+  assert.strictEqual(rAdmin.directAdmin, true);
+  assert.strictEqual(psLauncherCalled, false);
+  assert.strictEqual(directCall.exe, POWERSHELL_EXE);
+  assert.ok(directCall.args.includes('-EncodedCommand'));
+
+  // 2. Cuando NO es Admin: usa Start-Process -Verb RunAs y detecta cancelación UAC
+  let capturedLauncher = '';
+  const rStdCancel = await runElevated('Write-Output "ok"', 10000, {
+    isAdmin: false,
+    runPowerShell: async (script) => {
+      capturedLauncher = script;
+      return { ok: false, stdout: 'UAC_CANCELLED' };
+    },
+  });
+  assert.strictEqual(rStdCancel.ok, false);
+  assert.strictEqual(rStdCancel.cancelled, true);
+  assert.match(capturedLauncher, /Start-Process\s+-FilePath\s+\$psExe\s+-Verb\s+RunAs/);
+
+  // 3. relaunchAsAdmin codifica argumentos vía psData (sin interpolación) y reporta UAC cancelado
+  let capturedRelaunch = '';
+  const rRelCancel = await relaunchAsAdmin(
+    { execPath: 'C:\\Program Files\\XHANNIZER0\\XHANNIZER0.exe', args: ["C:\\path with 'quote'"], cwd: 'C:\\' },
+    {
+      runPowerShell: async (script) => {
+        capturedRelaunch = script;
+        return { ok: false, stdout: 'UAC_CANCELLED' };
+      },
+    }
+  );
+  assert.strictEqual(rRelCancel.ok, false);
+  assert.strictEqual(rRelCancel.cancelled, true);
+  assert.match(capturedRelaunch, /FromBase64String/);
+  assert.match(capturedRelaunch, /Verb\s*=\s*'RunAs'/);
+  assert.strictEqual(capturedRelaunch.includes("path with 'quote'"), false);
+});

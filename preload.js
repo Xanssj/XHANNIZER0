@@ -126,6 +126,8 @@ contextBridge.exposeInMainWorld('xhApi', {
   getActionLog: () => ipcRenderer.invoke('xh:get-action-log'),
   exportDiagnostics: () => ipcRenderer.invoke('xh:export-diagnostics'),
   appInfo: () => ipcRenderer.invoke('xh:app-info'),
+  getAdminState: () => ipcRenderer.invoke('xh:get-admin-state'),
+  relaunchAsAdmin: () => ipcRenderer.invoke('xh:relaunch-as-admin'),
   openDataFolder: () => ipcRenderer.invoke('xh:open-data-folder'),
   createRestorePoint: () => ipcRenderer.invoke('xh:create-restore-point'),
 

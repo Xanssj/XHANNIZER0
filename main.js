@@ -47,6 +47,7 @@ const {
   applyNetworkAction,
 } = require('./src/backend/postFormatTools');
 const { withUndo, restoreBackup, pendingEntries } = require('./src/backend/restore');
+const { isRunningAsAdmin, relaunchAsAdmin } = require('./src/backend/powershell');
 const { runPcCheck, getLastPcCheck } = require('./src/backend/pcCheck');
 const migration = require('./src/backend/migration');
 const maintenance = require('./src/backend/maintenance');
@@ -1137,7 +1138,34 @@ ipcMain.handle('xh:app-info', async () => ({
   electron: process.versions.electron,
   portable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
   packaged: app.isPackaged,
+  isAdmin: await isRunningAsAdmin(),
 }));
+
+ipcMain.handle('xh:get-admin-state', async () => ({
+  ok: true,
+  isAdmin: await isRunningAsAdmin(),
+}));
+
+ipcMain.handle('xh:relaunch-as-admin', async () => {
+  if (await isRunningAsAdmin()) {
+    return { ok: true, alreadyAdmin: true };
+  }
+  const launchArgs = app.isPackaged ? [] : [app.getAppPath()];
+  // Liberamos el bloqueo de instancia única antes de abrir la instancia elevada para que no se cierre sola
+  app.releaseSingleInstanceLock();
+  const res = await relaunchAsAdmin({
+    execPath: process.execPath,
+    args: launchArgs,
+    cwd: process.cwd(),
+  });
+  if (res.ok) {
+    setTimeout(() => app.quit(), 150);
+    return { ok: true, relaunching: true };
+  }
+  // Si el usuario canceló UAC o falló el lanzamiento, recuperamos el bloqueo y NO cerramos la app
+  app.requestSingleInstanceLock();
+  return res;
+});
 
 ipcMain.handle('xh:open-data-folder', async () => {
   const err = await shell.openPath(app.getPath('userData'));
