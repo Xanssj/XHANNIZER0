@@ -10,6 +10,12 @@ on:
       - 'src/backend/emulators.js'
       - 'catalog-overrides.json'
       - 'scripts/validate-catalog.js'
+  pull_request:
+    paths:
+      - 'src/backend/catalog.js'
+      - 'src/backend/emulators.js'
+      - 'catalog-overrides.json'
+      - 'scripts/validate-catalog.js'
   workflow_dispatch:
 
 permissions:

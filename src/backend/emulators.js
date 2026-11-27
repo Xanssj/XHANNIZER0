@@ -246,41 +246,58 @@ function getEmulatorById(id) {
   return getEmulatorsCatalog().find((e) => e.id === id) || null;
 }
 
-function fetchGithubJson(apiPath, timeoutMs = 6000) {
+const RELEASE_CACHE_TTL_MS = 10 * 60 * 1000;
+const releaseCache = new Map();
+
+function fetchGithubJson(apiPath, timeoutMs = 6000, httpsClient = https) {
   return new Promise((resolve) => {
-    const req = https.get(
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      resolve(val);
+    };
+    const token = process.env.GITHUB_TOKEN || '';
+    const req = httpsClient.get(
       `https://api.github.com${apiPath}`,
       {
         headers: {
-          'User-Agent': 'XHANNIZER0/1.2 (Xhanni Studios)',
+          'User-Agent': 'XHANNIZER0/2.3 (Xhanni Studios)',
           Accept: 'application/vnd.github+json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         timeout: timeoutMs,
       },
       (res) => {
         if (res.statusCode !== 200) {
           res.resume();
-          resolve(null);
+          finish(null);
           return;
         }
         let raw = '';
+        res.on('error', () => finish(null));
         res.on('data', (chunk) => {
+          if (settled) return;
           raw += chunk;
-          if (raw.length > 400000) req.destroy();
+          if (raw.length > 400000) {
+            req.destroy();
+            finish(null);
+          }
         });
         res.on('end', () => {
+          if (settled) return;
           try {
-            resolve(JSON.parse(raw));
+            finish(JSON.parse(raw));
           } catch {
-            resolve(null);
+            finish(null);
           }
         });
       }
     );
-    req.on('error', () => resolve(null));
+    req.on('error', () => finish(null));
     req.on('timeout', () => {
       req.destroy();
-      resolve(null);
+      finish(null);
     });
   });
 }
@@ -292,16 +309,17 @@ function pickWindowsAsset(assets) {
     const n = String(a.name || '').toLowerCase();
     if (!/\.(exe|msi|zip|7z)$/.test(n)) return false;
     if (/linux|macos|darwin|osx|android|arm64|aarch64|symbols|pdb|debug|source|sha256/.test(n)) return false;
+    if (/(?:^|[-_.\s])(win32|x86(?!_64)|i[36]86|32bit)(?:$|[-_.\s])/.test(n)) return false;
     return true;
   });
 
-  // Prioridad 1: instalador o zip que mencione win/windows + x64/qt
+  // Prioridad 1: instalador o zip que mencione win/windows + win64/x64/qt
   const scored = valid
     .map((a) => {
       const n = String(a.name || '').toLowerCase();
       let score = 0;
       if (/win|windows|msvc/.test(n)) score += 10;
-      if (/x64|x86_64|64bit|amd64/.test(n)) score += 6;
+      if (/win64|x64|x86_64|64bit|amd64/.test(n)) score += 6;
       if (/\.exe$|\.msi$/.test(n)) score += 4;
       if (/\.zip$|\.7z$/.test(n)) score += 3;
       if (/qt/.test(n)) score += 2;
@@ -314,6 +332,8 @@ function pickWindowsAsset(assets) {
 }
 
 async function resolveGithubLatestRelease(repo) {
+  const cached = releaseCache.get(repo);
+  if (cached && Date.now() - cached.at < RELEASE_CACHE_TTL_MS) return cached.result;
   let data = await fetchGithubJson(`/repos/${repo}/releases/latest`);
   if (!data) {
     // Algunos emuladores publican solo prereleases / nightlies (ej. Xenia Canary, Vita3K, RPCS3)
@@ -330,7 +350,7 @@ async function resolveGithubLatestRelease(repo) {
     };
   }
   const best = pickWindowsAsset(data.assets);
-  return {
+  const result = {
     ok: true,
     repo,
     tag: data.tag_name || data.name || 'latest',
@@ -344,9 +364,12 @@ async function resolveGithubLatestRelease(repo) {
         }
       : null,
   };
+  releaseCache.set(repo, { at: Date.now(), result });
+  return result;
 }
 
 module.exports = {
+  _internals: { fetchGithubJson, pickWindowsAsset },
   EMULATORS,
   getEmulatorsCatalog,
   getEmulatorById,

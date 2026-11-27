@@ -1,10 +1,6 @@
 {
   "format": 1,
-  "updatedAt": "2026-11-22",
-  "items": {
-    "riot-client": {
-      "wingetId": "RiotGames.Valorant.LATAM"
-    }
-  },
+  "updatedAt": "2026-11-27",
+  "items": {},
   "added": []
 }

@@ -31,6 +31,23 @@ if (fs.existsSync(overridesFile)) {
     process.exit(1);
   }
   const clean = validateOverrides(raw);
+  const rawItems = raw.items && typeof raw.items === 'object' ? raw.items : {};
+  for (const [itemId, rawFields] of Object.entries(rawItems)) {
+    const cleanFields = clean.items[itemId];
+    if (!cleanFields) {
+      console.error(`catalog-overrides.json: el override "${itemId}" fue descartado por validateOverrides.`);
+      process.exitCode = 1;
+      continue;
+    }
+    if (rawFields && typeof rawFields === 'object') {
+      for (const key of Object.keys(rawFields)) {
+        if (!(key in cleanFields)) {
+          console.error(`catalog-overrides.json: el campo "${itemId}.${key}" fue descartado por validateOverrides.`);
+          process.exitCode = 1;
+        }
+      }
+    }
+  }
   const rawAdded = Array.isArray(raw.added) ? raw.added.length : 0;
   if (clean.added.length !== rawAdded) {
     console.error(`catalog-overrides.json: ${rawAdded - clean.added.length} programa(s) en "added" no pasan la validación y la app los ignorará.`);
@@ -38,6 +55,20 @@ if (fs.existsSync(overridesFile)) {
   }
   for (const [id, o] of Object.entries(clean.items)) if (o.wingetId) ids.set(o.wingetId, `override: ${id}`);
   for (const a of clean.added) ids.set(a.wingetId, `override añadido: ${a.id}`);
+}
+
+function repoExists(repo) {
+  return new Promise((resolve) => {
+    const req = https.get(
+      { host: 'api.github.com', path: `/repos/${repo}`, headers: { 'User-Agent': 'xhannizer0-catalog-check', Accept: 'application/vnd.github+json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, timeout: 15000 },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode === 200 ? 'ok' : res.statusCode === 404 ? 'missing' : `http ${res.statusCode}`);
+      }
+    );
+    req.on('error', () => resolve('error'));
+    req.on('timeout', () => { req.destroy(); resolve('timeout'); });
+  });
 }
 
 // manifests/<inicial>/<Editor>/<Paquete>/ — p. ej. Brave.Brave → manifests/b/Brave/Brave
@@ -72,11 +103,20 @@ function manifestExists(id) {
     })
   );
   console.log(`IDs revisados: ${list.length}`);
+  const emuRepos = getEmulatorsCatalog().filter((e) => e.githubRepo).slice(0, limit);
+  const missingRepos = [];
+  for (const emu of emuRepos) {
+    const st = await repoExists(emu.githubRepo);
+    if (st === 'missing') missingRepos.push(`${emu.githubRepo}  (emulador: ${emu.id})`);
+    else if (st !== 'ok') errors.push(`repo ${emu.githubRepo}: ${st}`);
+  }
+  console.log(`Repos de emuladores revisados: ${emuRepos.length}`);
   if (errors.length) console.log(`No se pudieron comprobar (${errors.length}):\n  ${errors.join('\n  ')}`);
-  if (missing.length) {
-    console.error(`IDs de WinGet que ya NO existen (${missing.length}):\n  ${missing.join('\n  ')}`);
+  if (missing.length || missingRepos.length) {
+    if (missing.length) console.error(`IDs de WinGet que ya NO existen (${missing.length}):\n  ${missing.join('\n  ')}`);
+    if (missingRepos.length) console.error(`Repos de emuladores que ya NO existen (${missingRepos.length}):\n  ${missingRepos.join('\n  ')}`);
     process.exit(1);
   }
   if (errors.length) process.exit(2);
-  console.log('Todos los IDs de WinGet existen.');
+  console.log('Todos los IDs de WinGet y repos de emuladores existen.');
 })();

@@ -940,21 +940,33 @@ ipcMain.handle('xh:update-install', async () => {
 function checkLatestRelease() {
   const currentVersion = app.getVersion();
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      resolve(val);
+    };
     const req = https.get(
       'https://api.github.com/repos/Xanssj/XHANNIZER0/releases/latest',
       { headers: { 'User-Agent': `XHANNIZER0/${currentVersion} (Xhanni Studios)`, Accept: 'application/vnd.github+json' }, timeout: 5000 },
       (res) => {
         if (res.statusCode !== 200) {
           res.resume();
-          resolve({ ok: false, currentVersion, hasUpdate: false });
+          finish({ ok: false, currentVersion, hasUpdate: false });
           return;
         }
         let raw = '';
+        res.on('error', () => finish({ ok: false, currentVersion, hasUpdate: false }));
         res.on('data', (c) => {
+          if (settled) return;
           raw += c;
-          if (raw.length > 512 * 1024) req.destroy();
+          if (raw.length > 512 * 1024) {
+            req.destroy();
+            finish({ ok: false, currentVersion, hasUpdate: false });
+          }
         });
         res.on('end', () => {
+          if (settled) return;
           try {
             const data = JSON.parse(raw);
             const latestTag = String(data.tag_name || '').replace(/^v/i, '');
@@ -962,7 +974,7 @@ function checkLatestRelease() {
             const safeUrl = typeof data.html_url === 'string' && data.html_url.startsWith('https://github.com/Xanssj/XHANNIZER0/')
               ? data.html_url
               : 'https://github.com/Xanssj/XHANNIZER0/releases';
-            resolve({
+            finish({
               ok: true,
               currentVersion,
               latestVersion: latestTag || currentVersion,
@@ -970,13 +982,13 @@ function checkLatestRelease() {
               url: safeUrl,
             });
           } catch {
-            resolve({ ok: false, currentVersion, hasUpdate: false });
+            finish({ ok: false, currentVersion, hasUpdate: false });
           }
         });
       }
     );
-    req.on('error', () => resolve({ ok: false, currentVersion, hasUpdate: false }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, currentVersion, hasUpdate: false }); });
+    req.on('error', () => finish({ ok: false, currentVersion, hasUpdate: false }));
+    req.on('timeout', () => { req.destroy(); finish({ ok: false, currentVersion, hasUpdate: false }); });
   });
 }
 

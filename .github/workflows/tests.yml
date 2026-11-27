@@ -25,7 +25,7 @@ jobs:
       - name: Revisar sintaxis
         shell: pwsh
         run: |
-          $files = @('main.js', 'preload.js') + (Get-ChildItem src -Recurse -Filter *.js).FullName
+          $files = @('main.js', 'preload.js') + (Get-ChildItem src, scripts, tests -Recurse -Filter *.js).FullName
           foreach ($f in $files) { node --check $f; if ($LASTEXITCODE) { exit 1 } }
       - name: Pruebas
         run: npm test
