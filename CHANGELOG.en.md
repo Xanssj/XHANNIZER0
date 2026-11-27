@@ -2,6 +2,32 @@
 
 English notes for the "What's new" window. The full history is in CHANGELOG.md (Spanish).
 
+## 2.4.0 — 2026-11-27
+
+### Real hardware compatibility (no false warnings)
+- **Hardware compatibility engine**: XHANNIZER0 now evaluates your actual GPU, CPU, motherboard/chipset, laptop form factor, and OEM locks before suggesting tweaks, eliminating false warnings when a feature isn't supported.
+- **Smarter PC Check, Windows Audit & BIOS Guide**:
+  - **Resizable BAR** is only suggested on supported GPUs and platforms (no more false warnings on cards like GTX 1650 SUPER or older GPUs).
+  - **HAGS** is only offered on supported GPUs, mentioning **Frame Generation** exclusively on RTX 40 and RTX 50 cards.
+  - **NVMe / PCIe SSDs** compare active link speed against your motherboard/CPU's real maximum (e.g., a PCIe 4.0 SSD in a PCIe 3.0 board is reported as running at motherboard max).
+  - **RAM checks** recognize DDR3, use the right profile name (**XMP**, **EXPO**, or **DOCP / XMP**), and skip false warnings on locked chipsets or OEM PCs.
+  - **TPM 2.0 & 60 Hz displays**: avoids sending older CPUs without fTPM/PTT to BIOS, and native 60 Hz monitors running at 60 Hz are properly marked optimal.
+  - **BIOS Guide** automatically hides unsupported options for your hardware (with "Show all" still available anytime).
+
+### Tiered professional presets & mandatory Restore Points
+- **Selectable hardware-aware tiers**:
+  - **Gaming**: choose between *Basic / Safe*, *Medium / Optimized*, and *Full Competitive (Experimental)* (for dedicated gaming PCs).
+  - **Programming / Dev**: *Standard* or *Pro* (includes Docker Desktop with ≥ 16 GB RAM and Ollama with ≥ 8 GB VRAM).
+  - **Office / Work**: *Stable* or *Clean Productivity*.
+  - **Study / Home**: *Light / Quiet*.
+- **100% real & reversible**: every optimization listed is genuinely applied and recorded in **Undo** (registry, power plan, safe non-critical services set to Manual, and created folders). Windows Defender, Windows Update, Audio, Xbox, and anti-cheat services are never touched.
+- **Real Windows Restore Points**: created automatically before advanced tiers; in **Full Competitive (Experimental)** it is **mandatory** and blocks execution if System Protection fails. Disabling VBS / Memory Integrity is strictly opt-in with explicit security confirmation.
+
+### Updates skip/restore, Lite Mode & 1-click Administrator
+- **Skip / Restore in Updates**: persistently skip individual apps in WinGet Updates (remembered across restarts); skipped apps are excluded from the sidebar counter and always respected by **"Update all"**.
+- **Lower CPU, GPU & RAM usage + Lite Mode**: native live metrics with short caching for disk/GPU, lightweight off-screen card rendering, staggered startup scans to avoid launch spikes, and a new **Lite Mode** setting (*Automatic*, *On*, *Off*) that auto-enables on modest PCs by disabling blur, shadows, and 3D animations.
+- **1-click Administrator mode & no repeated UAC**: when running in standard mode, a clickable top banner lets you relaunch as Administrator in 1 click; once elevated, the banner disappears and admin tasks run without repeated UAC prompts while keeping all built-in confirmations and mandatory backups active.
+
 ## 2.3.1 — 2026-11-27
 
 ### Security

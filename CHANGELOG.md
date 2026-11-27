@@ -1,5 +1,31 @@
 # Cambios
 
+## 2.4.0 — 2026-11-27
+
+### Compatibilidad real de hardware (sin falsos avisos)
+- **Motor de compatibilidad de hardware**: XHANNIZER0 ahora evalúa tu GPU, procesador, placa madre/chipset y si tu equipo es portátil o OEM antes de sugerir cambios, evitando falsas advertencias cuando un componente no soporta una función.
+- **Chequeo de PC, Auditoría Windows y Guía BIOS inteligentes**:
+  - **Resizable BAR** solo se sugiere en tarjetas gráficas y plataformas compatibles (y nunca genera falsos avisos en GPUs como GTX 1650 SUPER o modelos antiguos).
+  - **HAGS** solo se ofrece en GPUs compatibles, mencionando **Frame Generation** únicamente en RTX 40 y RTX 50.
+  - **SSD NVMe / PCIe** compara la velocidad real contra el máximo real de tu placa y CPU (p. ej. un SSD PCIe 4.0 en una placa PCIe 3.0 figura como *al máximo de la placa*).
+  - **Memoria RAM** reconoce DDR3, muestra el nombre real del perfil (**XMP**, **EXPO** o **DOCP / XMP**) y evita advertencias en chipsets o equipos OEM bloqueados.
+  - **TPM 2.0 y monitores 60 Hz**: no te envía a la BIOS si tu CPU no soporta fTPM/PTT, y los monitores nativos de 60 Hz funcionando a 60 Hz se marcan como óptimos.
+  - La **Guía de BIOS** filtra automáticamente opciones no soportadas por tu equipo (conservando «Ver todas» si deseas consultarlas).
+
+### Presets profesionales por niveles y Punto de Restauración obligatorio
+- **Perfiles por niveles adaptados a tu equipo**:
+  - **Gaming**: elige entre *Básico / Seguro*, *Medio / Optimizado* y *Full Competitivo (Experimental)* (solo para PC dedicado a jugar).
+  - **Programación / Dev**: *Estándar* o *Pro* (incluye Docker Desktop con ≥ 16 GB de RAM y Ollama con ≥ 8 GB de VRAM).
+  - **Oficina / Trabajo**: *Estable* o *Productividad limpia*.
+  - **Estudios / Casa**: *Ligero / Silencioso*.
+- **100 % reales y reversibles**: cada ajuste listado se aplica de verdad y queda registrado en el diario de **Deshacer** (incluyendo registro, plan de energía, servicios no críticos seguros a Manual y carpetas creadas). Nunca se tocan Windows Defender, Windows Update, Audio, Xbox ni sistemas anticheat.
+- **Punto de Restauración real de Windows**: se crea automáticamente antes de aplicar niveles avanzados; en **Full Competitivo (Experimental)** es **obligatorio** y bloquea la aplicación si Protección del sistema falla. La opción avanzada de desactivar VBS / Integridad de memoria es opcional y requiere confirmación explícita.
+
+### Actualizaciones (WinGet), Modo ligero y Administrador en 1 clic
+- **Omitir / Restaurar en Actualizaciones**: ahora puedes omitir programas individuales de forma persistente (se recuerda al reiniciar); las apps omitidas se descuentan del contador lateral y **«Actualizar todo»** las respeta siempre.
+- **Menor consumo de CPU, GPU y RAM + Modo ligero**: monitor en vivo con métricas nativas y caché para disco/GPU, listas largas con renderizado bajo demanda, arranque escalonado para evitar picos al abrir la app y nuevo **Modo ligero** en **Ajustes** (*Automático*, *Activado* o *Desactivado*) que se activa solo en PCs modestas desactivando blur, sombras y animaciones 3D.
+- **Modo Administrador en 1 clic y sin UAC repetidos**: si abres XHANNIZER0 en modo estándar, aparece un aviso arriba para reiniciar como Administrador en 1 clic; cuando ya corre elevada, el aviso desaparece y todas las tareas administrativas corren sin ventanas UAC repetidas (manteniendo siempre las confirmaciones internas y el respaldo obligatorio).
+
 ## 2.3.1 — 2026-11-27
 
 ### Seguridad
