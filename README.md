@@ -25,6 +25,8 @@ Sin anuncios, sin telemetría, sin instaladores ocultos — 100 % reversible.
 <p>
   <a href="https://github.com/Xanssj/XHANNIZER0/releases/latest"><strong>Descargar</strong></a>
   &nbsp;·&nbsp;
+  <a href="docs/manual/README.md">Manual de usuario</a>
+  &nbsp;·&nbsp;
   <a href="CHANGELOG.md">Novedades</a>
   &nbsp;·&nbsp;
   <a href="SECURITY.md">Seguridad</a>
