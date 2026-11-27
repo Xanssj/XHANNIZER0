@@ -776,3 +776,113 @@ test('integración hardwareCapabilities: pcCheck, windowsAudit y bios filtran fa
   const gAll = getBiosGuide({ manufacturer: 'ASUS', product: 'PRIME B460M-A', capabilities: pc1.capabilities, showAll: true });
   assert.strictEqual(gAll.sections.length, 5);
 });
+
+test('presets por niveles: adapta desktop/laptop y HAGS, bloquea Experimental fail-closed y soporta deshacer completo', async () => {
+  const {
+    buildHardwarePresets,
+    resolvePresetPlan,
+    getPresetUndoTarget,
+    applyPresetOptimizations,
+    SAFE_COMPETITIVE_SERVICES,
+  } = backend('storeAndPresets');
+
+  // 1. Desktop con RTX 4070 + 32 GB RAM: Gaming Medio incluye HAGS, Competitivo usa Ultimate, Dev Pro incluye Docker + Ollama
+  const desktopSys = {
+    cpuName: 'AMD Ryzen 7 7800X3D',
+    gpuVendor: 'NVIDIA',
+    dedicatedGpuName: 'NVIDIA GeForce RTX 4070',
+    dedicatedGpuVramGb: 12,
+    ramGb: 32,
+    formFactor: 'desktop',
+  };
+  const presetsDesktop = buildHardwarePresets(desktopSys);
+  assert.strictEqual(presetsDesktop.find((p) => p.id === 'preset-gaming')?.tiers.length, 3);
+  assert.strictEqual(presetsDesktop.find((p) => p.id === 'preset-dev')?.tiers.length, 2);
+
+  const gMedDesktop = resolvePresetPlan({ presetId: 'preset-gaming', tierId: 'gaming-medium' }, desktopSys);
+  assert.strictEqual(gMedDesktop.powerMode, 'high');
+  assert.strictEqual(gMedDesktop.requiresRestorePoint, true);
+  assert.strictEqual(gMedDesktop.regValues.some((v) => v.name === 'HwSchMode' && v.value === 2), true);
+
+  const gCompDesktop = resolvePresetPlan({ presetId: 'preset-gaming', tierId: 'gaming-competitive' }, desktopSys);
+  assert.strictEqual(gCompDesktop.powerMode, 'ultimate');
+  assert.strictEqual(gCompDesktop.experimental, true);
+  assert.strictEqual(gCompDesktop.failClosedRestorePoint, true);
+  assert.strictEqual(gCompDesktop.regValues.some((v) => v.name === 'NetworkThrottlingIndex'), true);
+  assert.strictEqual(gCompDesktop.regValues.some((v) => v.name === 'EnableVirtualizationBasedSecurity'), false);
+  assert.deepStrictEqual(gCompDesktop.services, SAFE_COMPETITIVE_SERVICES);
+  // Nunca toca Defender, Windows Update, Audio, Xbox ni Anticheats
+  for (const forbidden of ['WinDefend', 'wuauserv', 'Audiosrv', 'XblAuthManager', 'vgc', 'EasyAntiCheat']) {
+    assert.strictEqual(gCompDesktop.services.includes(forbidden), false);
+  }
+
+  const devProDesktop = resolvePresetPlan({ presetId: 'preset-dev', tierId: 'dev-pro' }, desktopSys);
+  assert.strictEqual(devProDesktop.appIds.includes('docker-desktop'), true);
+  assert.strictEqual(devProDesktop.appIds.includes('ollama'), true);
+  assert.strictEqual(devProDesktop.regValues.some((v) => v.name === 'Hidden' && v.value === 1), true);
+  assert.ok(devProDesktop.workspaceDir);
+
+  // 2. Laptop con GTX 970M / 8 GB RAM: nunca Ultimate ni High, sin HAGS, Dev Pro omite Docker y Ollama
+  const laptopSys = {
+    cpuName: 'Intel(R) Core(TM) i7-6700HQ',
+    gpuVendor: 'NVIDIA',
+    dedicatedGpuName: 'NVIDIA GeForce GTX 970',
+    dedicatedGpuVramGb: 4,
+    ramGb: 8,
+    formFactor: 'laptop',
+  };
+  const gMedLaptop = resolvePresetPlan({ presetId: 'preset-gaming', tierId: 'gaming-medium' }, laptopSys);
+  assert.strictEqual(gMedLaptop.powerMode, 'balanced');
+  assert.strictEqual(gMedLaptop.regValues.some((v) => v.name === 'HwSchMode'), false);
+  const gCompLaptop = resolvePresetPlan({ presetId: 'preset-gaming', tierId: 'gaming-competitive' }, laptopSys);
+  assert.strictEqual(gCompLaptop.powerMode, 'balanced');
+  const devProLaptop = resolvePresetPlan({ presetId: 'preset-dev', tierId: 'dev-pro' }, laptopSys);
+  assert.strictEqual(devProLaptop.appIds.includes('docker-desktop'), false);
+  assert.strictEqual(devProLaptop.appIds.includes('ollama'), false);
+
+  // 3. Reversibilidad: getPresetUndoTarget cubre todos los valores de registro + servicios Start + carpetas
+  const undoComp = getPresetUndoTarget({ presetId: 'preset-gaming', tierId: 'gaming-competitive' }, desktopSys);
+  assert.strictEqual(undoComp.power, true);
+  assert.strictEqual(undoComp.reg.some((r) => r.name === 'HwSchMode'), true);
+  assert.strictEqual(undoComp.reg.some((r) => r.path.endsWith('\\Services\\DiagTrack') && r.name === 'Start'), true);
+  const undoDev = getPresetUndoTarget({ presetId: 'preset-dev', tierId: 'dev-pro' }, desktopSys);
+  assert.ok(undoDev.workspaceDirs.length > 0);
+
+  // 4. Fail-closed en Experimental: si falla createRestorePoint, BLOQUEA y NO ejecuta PowerShell ni Elevación
+  let psCalled = false;
+  let elevCalled = false;
+  const blockedRes = await applyPresetOptimizations(
+    { presetId: 'preset-gaming', tierId: 'gaming-competitive', backupId: 'bkp-test' },
+    {
+      system: desktopSys,
+      createRestorePoint: async () => ({ ok: false, error: 'Protección del sistema desactivada.' }),
+      runPowerShell: async () => { psCalled = true; return { ok: true }; },
+      runElevated: async () => { elevCalled = true; return { ok: true }; },
+    }
+  );
+  assert.strictEqual(blockedRes.ok, false);
+  assert.strictEqual(blockedRes.blocked, true);
+  assert.strictEqual(blockedRes.restorePointFailed, true);
+  assert.match(blockedRes.error, /Protección del sistema/i);
+  assert.strictEqual(psCalled, false);
+  assert.strictEqual(elevCalled, false);
+
+  // 5. Cuando createRestorePoint funciona, Experimental sí aplica y marca restorePointCreated: true
+  let psOk = false;
+  let elevOk = false;
+  const appliedRes = await applyPresetOptimizations(
+    { presetId: 'preset-gaming', tierId: 'gaming-competitive', backupId: 'bkp-test' },
+    {
+      system: desktopSys,
+      skipFilesystem: true,
+      createRestorePoint: async () => ({ ok: true, message: 'Punto de restauración creado.' }),
+      runPowerShell: async () => { psOk = true; return { ok: true }; },
+      runElevated: async () => { elevOk = true; return { ok: true }; },
+    }
+  );
+  assert.strictEqual(appliedRes.ok, true);
+  assert.strictEqual(appliedRes.restorePointCreated, true);
+  assert.strictEqual(psOk, true);
+  assert.strictEqual(elevOk, true);
+});
+

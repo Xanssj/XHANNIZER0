@@ -55,6 +55,8 @@
     emuReleases: new Map(), // repo -> { tag, publishedAt, asset }
     storeItems: [],
     presets: [],
+    presetTiers: {},
+    presetDisableVbs: false,
     wingetAvailable: false,
     disksData: null,
     recentBackup: null, // Respaldo verificado vigente (< 24h) en disco o sesión
@@ -1538,37 +1540,98 @@
     loadSavedProfiles();
   }
 
+  function activePresetTier(preset) {
+    if (!preset) return null;
+    const tiers = Array.isArray(preset.tiers) && preset.tiers.length ? preset.tiers : null;
+    if (!tiers) {
+      return {
+        id: preset.id,
+        name: preset.name,
+        label: preset.name,
+        badge: preset.badge,
+        experimental: false,
+        requiresRestorePoint: false,
+        supportsVbsOption: false,
+        warningNote: '',
+        appIds: preset.appIds || [],
+        optimizations: preset.optimizations || [],
+      };
+    }
+    const chosenId = state.presetTiers[preset.id] || preset.defaultTierId;
+    return tiers.find((t) => t.id === chosenId) || tiers[0];
+  }
+
   function renderPresets() {
     const grid = $('#preset-grid');
     if (!grid) return;
 
     grid.innerHTML = state.presets
       .map((preset) => {
-        const appNames = preset.appIds
+        const tier = activePresetTier(preset);
+        const appNames = (tier.appIds || [])
           .map((id) => state.catalog.find((c) => c.id === id)?.name || id);
-        const badgeClass =
-          preset.tone === 'purple'
-            ? 'is-purple'
-            : preset.tone === 'green'
-            ? 'is-ok'
-            : preset.tone === 'orange'
-            ? 'is-warn'
-            : 'is-recommended';
+        const badgeClass = tier.experimental
+          ? 'is-warn'
+          : preset.tone === 'purple'
+          ? 'is-purple'
+          : preset.tone === 'green'
+          ? 'is-ok'
+          : preset.tone === 'orange'
+          ? 'is-warn'
+          : 'is-recommended';
+
+        const tierSelector =
+          Array.isArray(preset.tiers) && preset.tiers.length > 1
+            ? `
+            <div class="preset-tier-bar" role="tablist" aria-label="Nivel de optimización">
+              ${preset.tiers
+                .map((t) => {
+                  const isActive = t.id === tier.id;
+                  return `<button type="button" class="preset-tier-btn ${isActive ? 'is-active' : ''} ${t.experimental ? 'is-exp' : ''}" data-preset-tier="${esc(preset.id)}|${esc(t.id)}" aria-selected="${isActive ? 'true' : 'false'}">${esc(t.name)}${t.experimental ? ' · Exp.' : ''}</button>`;
+                })
+                .join('')}
+            </div>`
+            : '';
+
+        const expWarn = tier.experimental
+          ? `
+            <div class="preset-exp-warn">
+              <strong>Nivel Experimental · Solo para jugar</strong>
+              <span>${esc(tier.warningNote || 'Crea un Punto de Restauración real de Windows obligatorio antes de aplicar.')}</span>
+            </div>`
+          : tier.requiresRestorePoint
+          ? `
+            <div class="preset-rp-note">
+              <strong>Protección extra:</strong> crea un Punto de Restauración real de Windows antes de aplicar cambios.
+            </div>`
+          : '';
+
+        const vbsOption = tier.supportsVbsOption
+          ? `
+            <label class="preset-vbs-opt">
+              <input type="checkbox" data-preset-vbs-opt="1" ${state.presetDisableVbs ? 'checked' : ''}>
+              <span><strong>Opcional:</strong> desactivar Integridad de memoria (VBS / HVCI) para ganar FPS extra (reduce el aislamiento de seguridad del núcleo y pide confirmación).</span>
+            </label>`
+          : '';
 
         return `
-          <article class="preset-card ${preset.id === 'preset-dev' ? 'is-highlighted' : ''}">
+          <article class="preset-card ${preset.id === 'preset-dev' ? 'is-highlighted' : ''} ${tier.experimental ? 'is-experimental' : ''}">
             <div class="preset-head">
               <div>
                 <h2>${esc(preset.name)}</h2>
                 <p>${esc(preset.summary)}</p>
               </div>
-              <span class="pill-badge ${badgeClass}">${esc(preset.badge)}</span>
+              <span class="pill-badge ${badgeClass}">${esc(tier.badge || preset.badge)}</span>
             </div>
+
+            ${tierSelector}
 
             <div class="preset-hw-box">
               <strong>Adaptado a tu hardware · ${esc(preset.hardwareProfile)}</strong>
               <span>${esc(preset.hardwareNote)}</span>
             </div>
+
+            ${expWarn}
 
             <div>
               <div class="preset-list-label">Apps incluidas (${appNames.length})</div>
@@ -1578,15 +1641,17 @@
             </div>
 
             <div>
-              <div class="preset-list-label">Optimizaciones seguras de Windows</div>
+              <div class="preset-list-label">Optimizaciones reales y reversibles (${esc(tier.name)})</div>
               <ul class="preset-opt-list">
-                ${preset.optimizations.map((opt) => `<li>${esc(opt)}</li>`).join('')}
+                ${(tier.optimizations || []).map((opt) => `<li>${esc(opt)}</li>`).join('')}
               </ul>
             </div>
 
+            ${vbsOption}
+
             <div class="preset-foot">
               <button type="button" class="btn-action-small" data-preset-select="${esc(preset.id)}">Cargar al lote</button>
-              <button type="button" class="btn-action-small is-primary" data-preset-apply="${esc(preset.id)}">Aplicar preset</button>
+              <button type="button" class="btn-action-small is-primary" data-preset-apply="${esc(preset.id)}">Aplicar ${esc(tier.name)}</button>
             </div>
           </article>`;
       })
@@ -2978,12 +3043,24 @@
         return;
       }
 
+      // Presets: cambiar nivel seleccionado dentro de la tarjeta
+      if (btn.dataset.presetTier) {
+        const [presetId, tierId] = btn.dataset.presetTier.split('|');
+        if (presetId && tierId) {
+          state.presetTiers[presetId] = tierId;
+          renderPresets();
+        }
+        return;
+      }
+
       // Presets: cargar apps al lote para revisión
       if (btn.dataset.presetSelect) {
         const preset = state.presets.find((p) => p.id === btn.dataset.presetSelect);
         if (!preset) return;
-        preset.appIds.forEach((appId) => toggleAppSelection(appId, true));
-        showToast(`Preset «${preset.name}» cargado al lote (${preset.appIds.length} apps).`);
+        const tier = activePresetTier(preset);
+        const ids = tier?.appIds || preset.appIds || [];
+        ids.forEach((appId) => toggleAppSelection(appId, true));
+        showToast(`Preset «${tier?.label || preset.name}» cargado al lote (${ids.length} apps).`);
         return;
       }
 
@@ -2991,19 +3068,33 @@
       if (btn.dataset.presetApply) {
         const preset = state.presets.find((p) => p.id === btn.dataset.presetApply);
         if (!preset) return;
-        const tasks = preset.appIds
+        const tier = activePresetTier(preset);
+        const ids = tier?.appIds || preset.appIds || [];
+        const tasks = ids
           .map((id) => state.catalog.find((c) => c.id === id))
           .filter(Boolean)
           .map((item) => ({ id: item.id, type: 'app', name: item.name, officialUrl: item.officialUrl }));
+        const disableVbs = Boolean(tier?.supportsVbsOption && state.presetDisableVbs);
 
         ensureVerifiedBackup({
           scope: 'preset',
-          label: `Preset Experimental: ${preset.name}`,
-          detail: `Se respaldará la configuración del sistema antes de aplicar las optimizaciones seguras e instalar ${tasks.length} aplicaciones.`,
-          items: [preset.name, ...tasks.map((t) => t.name)],
+          label: `Preset: ${tier?.label || preset.name}`,
+          detail: tier?.requiresRestorePoint
+            ? `Se creará un Punto de Restauración real de Windows${tier.experimental ? ' obligatorio (si falla, no se aplica nada)' : ''}, se aplicarán las optimizaciones reversibles y se instalarán ${tasks.length} aplicaciones.`
+            : `Se respaldará la configuración del sistema antes de aplicar las optimizaciones reversibles e instalar ${tasks.length} aplicaciones.`,
+          items: [tier?.label || preset.name, ...tasks.map((t) => t.name)],
           onConfirmed: async (backupRes) => {
-            const optRes = await api.applyPresetOpt({ presetId: preset.id, backupId: backupRes.id });
-            if (optRes?.ok) showToast(optRes.message);
+            const optRes = await api.applyPresetOpt({
+              presetId: preset.id,
+              tierId: tier?.id,
+              disableVbs,
+              backupId: backupRes.id,
+            });
+            if (!optRes?.ok) {
+              showToast(optRes?.error || 'No se pudieron aplicar las optimizaciones del preset.');
+              return;
+            }
+            showToast(optRes.message);
             await executeInstallTasks(tasks, backupRes.id);
           },
         });
@@ -3071,6 +3162,9 @@
       else if (input.dataset.toggleApp) toggleAppSelection(input.dataset.toggleApp, input.checked);
       else if (input.dataset.toggleStore) toggleStoreSelection(input.dataset.toggleStore, input.checked);
       else if (input.dataset.toggleEmu) toggleEmulatorSelection(input.dataset.toggleEmu, input.checked);
+      else if (input.dataset.presetVbsOpt) {
+        state.presetDisableVbs = Boolean(input.checked);
+      }
     });
   }
 

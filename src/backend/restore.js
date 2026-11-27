@@ -15,6 +15,7 @@ const {
 } = require('./safetyBackup');
 const { toggleStartupApp } = require('./startupManager');
 const { WIN11_TWEAKS } = require('./windowsAudit');
+const { getPresetUndoTarget } = require('./storeAndPresets');
 const { logAction } = require('./actionLog');
 
 // ---------- Valores de registro que toca cada acción
@@ -160,11 +161,15 @@ async function restoreHibernate(wasEnabled) {
 }
 
 async function captureSystemState(target) {
+  const workspaceDirs = Array.isArray(target.workspaceDirs)
+    ? target.workspaceDirs.filter((p) => !fs.existsSync(p))
+    : [];
   return {
     registry: await captureRegistry(target.reg || []),
     keys: await captureKeys(target.keys || []),
     powerScheme: target.power ? await capturePowerPlan() : null,
     hibernateEnabled: target.hibernate ? await captureHibernate() : null,
+    workspaceDirs,
   };
 }
 
@@ -186,6 +191,10 @@ async function restoreSystemState(data) {
   if (typeof data.hibernateEnabled === 'boolean') {
     const r = await restoreHibernate(data.hibernateEnabled);
     if (!r.ok) { ok = false; notes.push(r.note); }
+  }
+  if (data.workspaceDirs?.length) {
+    const r = restoreCleanStructure({ created: data.workspaceDirs });
+    if (r.note) notes.push(r.note);
   }
   return { ok, note: notes.join(' ') };
 }
@@ -356,8 +365,8 @@ async function prepareUndo(kind, payload) {
       return { type: 'system', label: `Ajuste de Windows: ${target.label}`, data: await captureSystemState(target) };
     }
     case 'preset': {
-      const target = PRESET_TARGETS[payload.presetId] || { reg: [], power: true };
-      return { type: 'system', label: `Optimización de preset (${payload.presetId || 'general'})`, data: await captureSystemState(target) };
+      const target = getPresetUndoTarget(payload, payload.system || null) || PRESET_TARGETS[payload.presetId] || { reg: [], power: true };
+      return { type: 'system', label: target.label || `Optimización de preset (${payload.presetId || 'general'})`, data: await captureSystemState(target) };
     }
     case 'startup':
       return { type: 'startup', label: `${payload.enable ? 'Reactivar' : 'Desactivar'} en inicio: ${payload.name}`, data: { name: String(payload.name || ''), enable: Boolean(payload.enable) } };

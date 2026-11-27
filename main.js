@@ -721,14 +721,42 @@ ipcMain.handle('xh:store-open', async (_event, storeId) => {
   return { ok: true };
 });
 
-// ---------- Presets Experimentales adaptados al hardware real
+// ---------- Presets profesionales por niveles adaptados al hardware real
 ipcMain.handle('xh:get-presets', async (_event, system) => {
-  return { presets: buildHardwarePresets(system) };
+  const board = motherboardInfo();
+  const sys = {
+    ...(system || getLastHardwareScan()?.system || {}),
+    motherboardVendor: board.manufacturer,
+    motherboardModel: board.product,
+  };
+  return { presets: buildHardwarePresets(sys) };
 });
 
-ipcMain.handle('xh:apply-preset-opt', withVerifiedBackup((payload) =>
-  withUndo(payload.backupId, 'preset', payload, () => applyPresetOptimizations(payload))
-));
+ipcMain.handle('xh:apply-preset-opt', withVerifiedBackup(async (payload) => {
+  const board = motherboardInfo();
+  const enriched = {
+    ...payload,
+    system: {
+      ...(payload.system || getLastHardwareScan()?.system || {}),
+      motherboardVendor: board.manufacturer,
+      motherboardModel: board.product,
+    },
+  };
+  if (enriched.disableVbs && enriched.tierId === 'gaming-competitive') {
+    const ok = await confirmOrFailClosed({
+      type: 'warning',
+      title: 'Confirmar desactivación de VBS / Integridad de memoria — XHANNIZER0',
+      message: '¿Seguro que deseas desactivar Integridad de memoria (VBS / HVCI)?',
+      detail:
+        'Trade-off de seguridad: desactivar VBS puede dar entre 3 % y 8 % extra de FPS en algunos juegos, pero reduce el aislamiento de seguridad del núcleo de Windows frente a controladores o malware avanzados.\n\nSolo recomendado en un PC dedicado exclusivamente a jugar. Se creará primero un Punto de Restauración real de Windows y podrás revertirlo con «Deshacer».',
+      confirmLabel: 'Sí, entiendo el riesgo y continuar',
+    });
+    if (!ok) {
+      return { ok: false, cancelled: true, error: 'Operación cancelada por el usuario.' };
+    }
+  }
+  return withUndo(enriched.backupId, 'preset', enriched, () => applyPresetOptimizations(enriched));
+}));
 
 // ---------- Auditoría de Configuraciones de Windows
 ipcMain.handle('xh:scan-windows-audit', async (_event, system) => {
