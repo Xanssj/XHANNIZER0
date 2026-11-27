@@ -7,6 +7,21 @@
   window.addEventListener('dragover', (e) => e.preventDefault());
   window.addEventListener('drop', (e) => e.preventDefault());
 
+  function loadOmittedUpgrades() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('xh_omitted_upgrades') || '[]');
+      return new Set(Array.isArray(raw) ? raw.filter((x) => typeof x === 'string' && x.trim()) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveOmittedUpgrades() {
+    try {
+      localStorage.setItem('xh_omitted_upgrades', JSON.stringify(Array.from(state.omittedUpgrades)));
+    } catch { /* almacenamiento no disponible */ }
+  }
+
   // =========================================================================
   // Estado global de la aplicación
   // =========================================================================
@@ -46,6 +61,7 @@
     winAudit: null,
     startupApps: [],
     upgrades: [],
+    upgradesNote: '',
     bloatware: [],
     networkInfo: null,
     pcCheck: null,
@@ -67,6 +83,7 @@
     auditDrawerOpen: false,
     selected: new Map(), // id -> { id, type: 'driver'|'app'|'msstore', name, ... }
     omittedDrivers: new Set(),
+    omittedUpgrades: loadOmittedUpgrades(),
     itemStatus: new Map(), // id -> { state, progress, detail }
     installing: false,
     pendingProtectedAction: null,
@@ -1694,18 +1711,35 @@
   // =========================================================================
   // Actualizador Global (winget upgrade)
   // =========================================================================
+  function updateUpgradesSummary() {
+    const total = state.upgrades.length;
+    const activeCount = state.upgrades.filter((u) => !state.omittedUpgrades.has(u.wingetId)).length;
+    const omittedCount = total - activeCount;
+    const badge = $('#badge-upgrades');
+    if (badge) {
+      badge.textContent = String(activeCount);
+      badge.hidden = activeCount === 0;
+    }
+    const meta = $('#upgrades-meta');
+    if (meta) {
+      if (!total) {
+        meta.textContent = state.upgradesNote || 'Todas tus aplicaciones están actualizadas.';
+      } else if (activeCount === 0) {
+        meta.textContent = `Todas las actualizaciones disponibles están omitidas (${omittedCount}).`;
+      } else if (omittedCount > 0) {
+        meta.textContent = `${activeCount} aplicaci${activeCount === 1 ? 'ón' : 'ones'} con actualización disponible (${omittedCount} omitida${omittedCount === 1 ? '' : 's'}).`;
+      } else {
+        meta.textContent = `${activeCount} aplicaci${activeCount === 1 ? 'ón' : 'ones'} con actualización disponible.`;
+      }
+    }
+  }
+
   async function loadUpgrades(notify = false) {
     $('#upgrades-meta').textContent = 'Buscando actualizaciones en todo tu PC vía WinGet…';
     const res = await api.scanUpgrades();
     state.upgrades = res?.items || [];
-    const badge = $('#badge-upgrades');
-    if (badge) {
-      badge.textContent = String(state.upgrades.length);
-      badge.hidden = state.upgrades.length === 0;
-    }
-    $('#upgrades-meta').textContent = state.upgrades.length
-      ? `${state.upgrades.length} aplicaci${state.upgrades.length === 1 ? 'ón' : 'ones'} con actualización disponible.`
-      : res?.note || 'Todas tus aplicaciones están actualizadas.';
+    state.upgradesNote = res?.note || '';
+    updateUpgradesSummary();
     renderUpgrades();
     if (notify) showToast('Escaneo global de actualizaciones completado.');
   }
@@ -1718,9 +1752,10 @@
       return;
     }
     list.innerHTML = state.upgrades
-      .map(
-        (u) => `
-      <article class="driver-card">
+      .map((u) => {
+        const isOmitted = state.omittedUpgrades.has(u.wingetId);
+        return `
+      <article class="driver-card ${isOmitted ? 'is-omitted' : ''}">
         <div class="driver-top">
           <div class="driver-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/></svg>
@@ -1728,7 +1763,7 @@
           <div class="driver-main" style="grid-column: span 2;">
             <div class="driver-title-row">
               <span class="driver-category">${esc(u.source)}</span>
-              <span class="pill-badge is-recommended">Actualización</span>
+              ${isOmitted ? '<span class="pill-badge is-muted">Omitido</span>' : '<span class="pill-badge is-recommended">Actualización</span>'}
             </div>
             <div class="driver-name">${esc(u.name)}</div>
             <div class="driver-meta">
@@ -1741,11 +1776,12 @@
             </div>
           </div>
           <div class="driver-actions">
-            <button type="button" class="btn-action-small is-primary" data-run-upgrade="${esc(u.wingetId)}">Actualizar</button>
+            ${isOmitted ? '' : `<button type="button" class="btn-action-small is-primary" data-run-upgrade="${esc(u.wingetId)}">Actualizar</button>`}
+            <button type="button" class="btn-action-small is-ghost" data-omit-upgrade="${esc(u.wingetId)}">${isOmitted ? 'Restaurar' : 'Omitir'}</button>
           </div>
         </div>
-      </article>`
-      )
+      </article>`;
+      })
       .join('');
   }
 
@@ -2578,10 +2614,51 @@
     // Actualizador Global y Limpieza/Red
     $('#btn-upgrades-scan').addEventListener('click', () => loadUpgrades(true));
     $('#btn-upgrades-all').addEventListener('click', async () => {
-      showToast('Iniciando actualización global vía WinGet…');
-      const res = await api.runUpgrade({ wingetId: '__ALL__' });
-      showToast(res?.message || 'Proceso finalizado.');
-      await loadUpgrades(false);
+      const btn = $('#btn-upgrades-all');
+      if (btn.disabled) return;
+      const origText = btn.textContent;
+      btn.disabled = true;
+      try {
+        if (!state.upgrades.length) {
+          await loadUpgrades(false);
+        }
+        if (!state.upgrades.length) {
+          showToast('Todas tus aplicaciones están actualizadas.');
+          return;
+        }
+        const active = state.upgrades.filter((u) => !state.omittedUpgrades.has(u.wingetId));
+        const omittedCount = state.upgrades.length - active.length;
+        if (!active.length) {
+          showToast('Todas las actualizaciones disponibles están omitidas. Restaura alguna para actualizar.');
+          return;
+        }
+        if (omittedCount === 0) {
+          btn.textContent = 'Actualizando todo…';
+          showToast('Iniciando actualización global vía WinGet…');
+          const res = await api.runUpgrade({ wingetId: '__ALL__' });
+          showToast(res?.message || 'Proceso finalizado.');
+        } else {
+          let okCount = 0;
+          let failCount = 0;
+          for (let i = 0; i < active.length; i += 1) {
+            const u = active[i];
+            btn.textContent = `Actualizando (${i + 1}/${active.length})…`;
+            showToast(`Actualizando ${u.name} (${i + 1}/${active.length})…`);
+            const res = await api.runUpgrade({ wingetId: u.wingetId });
+            if (res?.ok) okCount += 1;
+            else failCount += 1;
+          }
+          showToast(
+            failCount > 0
+              ? `Actualización completada: ${okCount} de ${active.length} actualizadas (${failCount} con aviso, ${omittedCount} omitida${omittedCount === 1 ? '' : 's'}).`
+              : `Actualización completada: ${okCount} de ${active.length} aplicaciones actualizadas (${omittedCount} omitida${omittedCount === 1 ? '' : 's'}).`
+          );
+        }
+        await loadUpgrades(false);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
     });
     $('#btn-cleanernet-refresh').addEventListener('click', () => loadCleanerAndNet(true));
     $('#btn-bloat-remove-all').addEventListener('click', () => {
@@ -2718,9 +2795,21 @@
         return;
       }
 
+      // Omitir / Restaurar una app en Actualizaciones (persistente)
+      if (btn.dataset.omitUpgrade) {
+        const wingetId = btn.dataset.omitUpgrade;
+        if (state.omittedUpgrades.has(wingetId)) state.omittedUpgrades.delete(wingetId);
+        else state.omittedUpgrades.add(wingetId);
+        saveOmittedUpgrades();
+        updateUpgradesSummary();
+        renderUpgrades();
+        return;
+      }
+
       // Actualizar una app desde el Actualizador Global
       if (btn.dataset.runUpgrade) {
         const wingetId = btn.dataset.runUpgrade;
+        if (state.omittedUpgrades.has(wingetId)) return;
         const origText = btn.textContent;
         btn.disabled = true;
         btn.textContent = 'Actualizando…';

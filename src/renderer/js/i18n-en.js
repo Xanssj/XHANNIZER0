@@ -204,6 +204,8 @@
     'No hay actualizaciones pendientes detectadas por WinGet.': 'WinGet found no pending updates.',
     'Actualización': 'Update',
     'Actualizar': 'Update',
+    'Actualizando todo…': 'Updating all…',
+    'Todas las actualizaciones disponibles están omitidas. Restaura alguna para actualizar.': 'All available updates are skipped. Restore one to update.',
     'Sin adaptador': 'No adapter',
     'Automático': 'Automatic',
     'Diagnóstico de red y bloatware actualizado.': 'Network and bloatware check updated.',
@@ -1592,6 +1594,17 @@
     ['{0} apagado(s) inesperado(s) Kernel-Power 41', '{0} unexpected Kernel-Power 41 shutdown(s)'],
     ['{0} volcado(s) en Minidump', '{0} Minidump file(s)'],
     ['Último evento: {0}.', 'Latest event: {0}.'],
+    ['Todas las actualizaciones disponibles están omitidas ({0}).', 'All available updates are skipped ({0}).'],
+    ['{0} aplicación con actualización disponible ({1} omitida).', '{0} app with update available ({1} skipped).'],
+    ['{0} aplicación con actualización disponible ({1} omitidas).', '{0} app with update available ({1} skipped).'],
+    ['{0} aplicaciones con actualización disponible ({1} omitida).', '{0} apps with update available ({1} skipped).'],
+    ['{0} aplicaciones con actualización disponible ({1} omitidas).', '{0} apps with update available ({1} skipped).'],
+    ['Actualizando ({0}/{1})…', 'Updating ({0}/{1})…'],
+    ['Actualizando {0} ({1}/{2})…', 'Updating {0} ({1}/{2})…'],
+    ['Actualización completada: {0} de {1} aplicaciones actualizadas ({2} omitida).', 'Update complete: {0} of {1} apps updated ({2} skipped).'],
+    ['Actualización completada: {0} de {1} aplicaciones actualizadas ({2} omitidas).', 'Update complete: {0} of {1} apps updated ({2} skipped).'],
+    ['Actualización completada: {0} de {1} actualizadas ({2} con aviso, {3} omitida).', 'Update complete: {0} of {1} updated ({2} with warnings, {3} skipped).'],
+    ['Actualización completada: {0} de {1} actualizadas ({2} con aviso, {3} omitidas).', 'Update complete: {0} of {1} updated ({2} with warnings, {3} skipped).'],
   ];
 
   // ---------- Motor
