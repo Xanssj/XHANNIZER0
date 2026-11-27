@@ -45,6 +45,7 @@ function saveAutopilot(raw) {
         note: String(s.note || '').slice(0, 300),
       })),
     appIds: (Array.isArray(raw.appIds) ? raw.appIds : []).map(String).filter((s) => /^[a-z0-9][a-z0-9._+-]{0,79}$/i.test(s)).slice(0, 400),
+    settingIds: (Array.isArray(raw.settingIds) ? raw.settingIds : []).map(String).filter((s) => /^[a-z0-9][a-z0-9._+-]{0,79}$/i.test(s)).slice(0, 80),
     cleanupIds: (Array.isArray(raw.cleanupIds) ? raw.cleanupIds : []).map(String).filter((s) => /^[a-z-]{3,30}$/.test(s)).slice(0, 10),
   };
   fs.mkdirSync(path.dirname(stateFile), { recursive: true });

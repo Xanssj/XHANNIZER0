@@ -531,3 +531,67 @@ test('seguridad: downloadFile aplica límite de tamaño, bloquea redirecciones i
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('estabilidad y catálogo: emulators no cuelga >400KB y evita win32; pcCheck evita Infinity y limpia GPU temp / virt ok', async () => {
+  const { EventEmitter } = require('events');
+  const { PassThrough } = require('stream');
+  const emu = backend('emulators')._internals;
+
+  // Promesa no colgada cuando GitHub supera 400 KB
+  const mockHuge = {
+    get: (_url, _opts, cb) => {
+      const req = new EventEmitter();
+      req.destroy = () => {};
+      const res = new PassThrough();
+      res.statusCode = 200;
+      setImmediate(() => {
+        cb(res);
+        res.write('x'.repeat(405000));
+        res.end();
+      });
+      return req;
+    },
+  };
+  const hugeRes = await emu.fetchGithubJson('/repos/test/huge/releases/latest', 3000, mockHuge);
+  assert.strictEqual(hugeRes, null);
+
+  // pickWindowsAsset descarta win32/x86 y prioriza win64/x64
+  const picked = emu.pickWindowsAsset([
+    { name: 'app-win32-setup.exe', browser_download_url: 'https://example.com/32.exe' },
+    { name: 'app-win64-qt.zip', browser_download_url: 'https://example.com/64.zip' },
+  ]);
+  assert.strictEqual(picked?.name, 'app-win64-qt.zip');
+
+  // pcCheck: RAM sin velocidad no produce Infinity MHz, no emite gpu-temp ni "Virtualización disponible", pero mantiene aviso cuando virt=false
+  const { analyze } = backend('pcCheck')._internals;
+  const resOk = analyze({
+    ram: [{ capacity: 16 * 1024 ** 3, speed: 0, configured: 0, type: 34, part: '', slot: 'A1', bank: 'BANK 0' }],
+    gpus: [], pci: [], secureBoot: 1, firmware: 'UEFI', tpm: '2.0',
+    gpuTemp: 'RTX 4070, 52, 4', virt: true, problems: [],
+  });
+  const ramCheck = resOk.checks.find((c) => c.id === 'ram-xmp');
+  assert.ok(ramCheck && !/Infinity/i.test(ramCheck.title));
+  assert.strictEqual(resOk.checks.some((c) => c.id.startsWith('gpu-temp-')), false);
+  assert.strictEqual(resOk.checks.some((c) => c.id === 'virt'), false);
+
+  const resVirtOff = analyze({
+    ram: [], gpus: [], pci: [], secureBoot: 1, firmware: 'UEFI', tpm: '2.0', virt: false, hyperv: false, problems: [],
+  });
+  const virtWarn = resVirtOff.checks.find((c) => c.id === 'virt');
+  assert.ok(virtWarn && /desactivada/i.test(virtWarn.title));
+
+  // autopilot persiste settingIds
+  const ap = backend('autopilot');
+  const tmpAp = fs.mkdtempSync(path.join(os.tmpdir(), 'xhz-ap-test-'));
+  try {
+    ap.initAutopilot(tmpAp);
+    const saved = ap.saveAutopilot({ status: 'running', appIds: ['steam'], settingIds: ['win-game-mode', 'bad id!'] });
+    assert.deepStrictEqual(saved.state.settingIds, ['win-game-mode']);
+  } finally {
+    fs.rmSync(tmpAp, { recursive: true, force: true });
+  }
+
+  // maintenance createRestorePoint restaura frecuencia en finally
+  const maintSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'backend', 'maintenance.js'), 'utf8');
+  assert.match(maintSrc, /finally\s*\{[\s\S]*SystemRestorePointCreationFrequency/i);
+});

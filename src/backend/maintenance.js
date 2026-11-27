@@ -158,9 +158,12 @@ try {
   # Windows limita a un punto cada 24 h salvo que se ajuste esta frecuencia (0 = sin límite)
   $key = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SystemRestore'
   $prev = (Get-ItemProperty $key -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue).SystemRestorePointCreationFrequency
-  Set-ItemProperty $key -Name SystemRestorePointCreationFrequency -Value 0 -Type DWord
-  Checkpoint-Computer -Description ${psData(String(description).slice(0, 60))} -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
-  if ($null -eq $prev) { Remove-ItemProperty $key -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue } else { Set-ItemProperty $key -Name SystemRestorePointCreationFrequency -Value $prev -Type DWord }
+  try {
+    Set-ItemProperty $key -Name SystemRestorePointCreationFrequency -Value 0 -Type DWord
+    Checkpoint-Computer -Description ${psData(String(description).slice(0, 60))} -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
+  } finally {
+    if ($null -eq $prev) { Remove-ItemProperty $key -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue } else { Set-ItemProperty $key -Name SystemRestorePointCreationFrequency -Value $prev -Type DWord }
+  }
   $after = @(Get-ComputerRestorePoint -ErrorAction SilentlyContinue).Count
   $res.ok = ($after -gt $before)
   if (-not $res.ok) { $res.reason = 'Windows no registró el punto nuevo.' }

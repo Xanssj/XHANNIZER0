@@ -629,14 +629,17 @@
     if (state.pcCheck) {
       const w = state.pcCheck.warnCount || 0;
       const d = state.pcCheck.devices?.length || 0;
-      $('#dash-kpi-pccheck').textContent = w > 0 || d > 0 ? `${w + d} por revisar` : 'Todo correcto';
+      // pcCheck.warnCount ya incluye los dispositivos con problemas (d): no sumarlos dos veces.
+      const checkWarns = Math.max(0, w - d);
+      const totalReview = Math.max(w, d);
+      $('#dash-kpi-pccheck').textContent = totalReview > 0 ? `${totalReview} por revisar` : 'Todo correcto';
       $('#dash-kpi-pccheck-sub').textContent = d > 0
-        ? `${w} avisos de BIOS/armado · ${d} dispositivo(s)`
+        ? `${checkWarns} avisos de BIOS/armado · ${d} dispositivo(s)`
         : `${state.pcCheck.checks?.length || 0} comprobaciones completadas`;
       const pcCard = $('#dash-card-pccheck');
       if (pcCard) {
-        pcCard.classList.toggle('tone-warn', w > 0 || d > 0);
-        pcCard.classList.toggle('tone-ok', w === 0 && d === 0);
+        pcCard.classList.toggle('tone-warn', totalReview > 0);
+        pcCard.classList.toggle('tone-ok', totalReview === 0);
       }
     }
 
@@ -1022,21 +1025,28 @@
   }
 
   // Pregunta a Windows Update por versiones más nuevas (tarda: corre después de mostrar el escaneo)
-  async function liveCheckDrivers() {
+  let liveDriversPromise = null;
+  function liveCheckDrivers() {
     const scanned = state.hardware;
-    try {
-      const res = await api.driversLiveCheck();
-      if (!res?.drivers || state.hardware !== scanned) return;
-      state.hardware.drivers = res.drivers;
-      state.hardware.updatesCount = res.updatesCount;
-      $('#m-updates').textContent = String(res.updatesCount);
-      renderDrivers();
-      renderDashboard();
-      renderPostFormatChecklist();
-      updateStatusPill();
-    } catch {
-      // Sin Windows Update: las tarjetas quedan con su enlace oficial
-    }
+    const p = (async () => {
+      try {
+        const res = await api.driversLiveCheck();
+        if (!res?.drivers || state.hardware !== scanned) return;
+        state.hardware.drivers = res.drivers;
+        state.hardware.updatesCount = res.updatesCount;
+        $('#m-updates').textContent = String(res.updatesCount);
+        renderDrivers();
+        renderDashboard();
+        renderPostFormatChecklist();
+        updateStatusPill();
+      } catch {
+        // Sin Windows Update: las tarjetas quedan con su enlace oficial
+      } finally {
+        if (liveDriversPromise === p) liveDriversPromise = null;
+      }
+    })();
+    liveDriversPromise = p;
+    return p;
   }
 
   function renderDrivers() {
@@ -2718,11 +2728,17 @@
       // Actualizar una app desde el Actualizador Global
       if (btn.dataset.runUpgrade) {
         const wingetId = btn.dataset.runUpgrade;
+        const origText = btn.textContent;
         btn.disabled = true;
         btn.textContent = 'Actualizando…';
-        const res = await api.runUpgrade({ wingetId });
-        showToast(res?.message || 'Actualización finalizada.');
-        await loadUpgrades(false);
+        try {
+          const res = await api.runUpgrade({ wingetId });
+          showToast(res?.message || 'Actualización finalizada.');
+          await loadUpgrades(false);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = origText;
+        }
         return;
       }
 
@@ -3191,7 +3207,12 @@
   function isAppBusy() {
     const busyStates = ['pending', 'downloading', 'installing'];
     return Array.from(state.itemStatus?.values?.() || []).some((s) => busyStates.includes(s?.state))
-      || !$('#xh-setup')?.hidden;
+      || !$('#xh-setup')?.hidden
+      || Boolean(pilotBusy)
+      || Boolean(state.backupRunning)
+      || Boolean($('#btn-cleanup-run')?.disabled)
+      || Boolean($('#btn-mig-restore')?.disabled)
+      || Boolean($('#btn-stab-run')?.disabled);
   }
 
   function openUpdateOverlay() {
@@ -3889,9 +3910,12 @@
         renderMigrationRestore();
       } else if (btn.id === 'btn-restart-explorer') {
         btn.disabled = true;
-        const res = await api.restartExplorer();
-        if (!res?.canceled) showToast(res?.message || 'Explorador reiniciado.');
-        btn.disabled = false;
+        try {
+          const res = await api.restartExplorer();
+          if (!res?.canceled) showToast(res?.message || 'Explorador reiniciado.');
+        } finally {
+          btn.disabled = false;
+        }
       }
     });
   }
@@ -4298,15 +4322,16 @@
       items: titles,
       forceNew: true,
       onConfirmed: async (backupRes) => {
+        state.pilotSettingIds = state.pilotCode?.settingIds || [];
         state.pilot = {
           status: 'running',
           startedAt: new Date().toISOString(),
           backupId: backupRes.id,
           steps: PILOT_STEPS.map((s) => ({ id: s.id, enabled: enabled[s.id], status: s.id === 'backup' ? 'done' : 'pending', note: s.id === 'backup' ? `Respaldo ${backupRes.id}` : '' })),
           appIds: pilotAppIds(),
+          settingIds: state.pilotSettingIds,
           cleanupIds: PILOT_CLEANUP,
         };
-        state.pilotSettingIds = state.pilotCode?.settingIds || [];
         await api.autopilotSave(state.pilot);
         await runPilotSteps();
       },
@@ -4315,8 +4340,9 @@
 
   async function continuePilot() {
     await refreshBackupCount();
-    if (state.recentBackup?.id) {
-      state.pilot.backupId = state.recentBackup.id;
+    const keepOriginal = state.pilot?.backupId && (state.backups || []).some((b) => b.id === state.pilot.backupId);
+    if (keepOriginal || state.recentBackup?.id) {
+      if (!keepOriginal) state.pilot.backupId = state.recentBackup.id;
       state.pilot.status = 'running';
       await runPilotSteps();
       return;
@@ -4348,6 +4374,7 @@
     }
     if (id === 'drivers') {
       if (!state.hardware) await scanHardware(false);
+      if (liveDriversPromise) await liveDriversPromise;
       const drivers = (state.hardware?.drivers || []).filter((d) => d.needsUpdate && !state.omittedDrivers.has(d.id));
       if (!drivers.length) return { status: 'skipped', note: 'Todos los drivers ya estaban al día.' };
       const tasks = drivers.map((d) => ({
@@ -4449,6 +4476,7 @@
     const saved = res?.state;
     if (!saved || !['running', 'awaiting-reboot'].includes(saved.status)) return;
     state.pilot = saved;
+    state.pilotSettingIds = Array.isArray(saved.settingIds) ? saved.settingIds : [];
     activateTab('piloto');
     renderPilot();
     if (res.resumed) {
@@ -4479,8 +4507,12 @@
       const ids = (state.cleanup || []).filter((c) => c.checked).map((c) => c.id);
       const btn = $('#btn-cleanup-run');
       btn.disabled = true;
-      const res = await runCleanupSelection(ids);
-      btn.disabled = false;
+      let res;
+      try {
+        res = await runCleanupSelection(ids);
+      } finally {
+        btn.disabled = false;
+      }
       if (res?.ok) {
         loadCleanup();
         loadActionLog();
@@ -4497,8 +4529,12 @@
     $('#btn-restore-point').addEventListener('click', async () => {
       const btn = $('#btn-restore-point');
       btn.disabled = true;
-      const res = await api.createRestorePoint();
-      btn.disabled = false;
+      let res;
+      try {
+        res = await api.createRestorePoint();
+      } finally {
+        btn.disabled = false;
+      }
       showToast(res?.ok ? res.message : res?.error || 'No se pudo crear el punto de restauración.');
       loadActionLog();
     });

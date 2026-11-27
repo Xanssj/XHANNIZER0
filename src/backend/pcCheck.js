@@ -54,8 +54,17 @@ $gpus = @(Get-CimInstance Win32_VideoController | ForEach-Object {
   [pscustomobject]@{ name = $_.Name; res = $_.CurrentHorizontalResolution; curHz = $_.CurrentRefreshRate; maxHz = $_.MaxRefreshRate; pnp = $_.PNPDeviceID }
 })
 $pci = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'PCI\\*' -and $_.Class -in @('Display','SCSIAdapter') } | ForEach-Object {
-  $k = Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_PciDevice_CurrentLinkSpeed','DEVPKEY_PciDevice_MaxLinkSpeed','DEVPKEY_PciDevice_CurrentLinkWidth','DEVPKEY_PciDevice_MaxLinkWidth'
-  [pscustomobject]@{ name = $_.FriendlyName; cls = $_.Class; id = $_.InstanceId; curSpeed = $k[0].Data; maxSpeed = $k[1].Data; curWidth = $k[2].Data; maxWidth = $k[3].Data }
+  $props = @{}
+  foreach ($p in @(Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_PciDevice_CurrentLinkSpeed','DEVPKEY_PciDevice_MaxLinkSpeed','DEVPKEY_PciDevice_CurrentLinkWidth','DEVPKEY_PciDevice_MaxLinkWidth')) {
+    if ($p -and $p.KeyName) { $props[$p.KeyName] = $p.Data }
+  }
+  [pscustomobject]@{
+    name = $_.FriendlyName; cls = $_.Class; id = $_.InstanceId
+    curSpeed = $props['DEVPKEY_PciDevice_CurrentLinkSpeed']
+    maxSpeed = $props['DEVPKEY_PciDevice_MaxLinkSpeed']
+    curWidth = $props['DEVPKEY_PciDevice_CurrentLinkWidth']
+    maxWidth = $props['DEVPKEY_PciDevice_MaxLinkWidth']
+  }
 })
 $sb = (Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecureBoot\\State').UEFISecureBootEnabled
 $tpm = (tpmtool getdeviceinformation 2>&1 | Out-String)
@@ -117,8 +126,9 @@ function analyze(d, ctx = {}) {
   const ram = arr(d.ram).filter((m) => m && m.capacity > 0);
   if (ram.length) {
     const type = ram[0].type === 34 ? 'DDR5' : ram[0].type === 26 ? 'DDR4' : 'RAM';
-    const configured = Math.min(...ram.map((m) => Number(m.configured || m.speed || 0)).filter(Boolean));
-    const rated = Math.max(...ram.map((m) => ratedSpeedFromPart(m.part) || 0));
+    const speeds = ram.map((m) => Number(m.configured || m.speed || 0)).filter(Boolean);
+    const configured = speeds.length ? Math.min(...speeds) : 0;
+    const rated = Math.max(0, ...ram.map((m) => ratedSpeedFromPart(m.part) || 0));
     const totalGb = Math.round(ram.reduce((s, m) => s + m.capacity, 0) / 1024 ** 3);
     const profile = 'XMP (Intel) o EXPO/DOCP (AMD)';
     if (laptop && rated && configured && rated - configured >= 200) {
@@ -144,7 +154,9 @@ function analyze(d, ctx = {}) {
     } else {
       push({
         id: 'ram-xmp', category: 'Memoria RAM', status: 'ok',
-        title: `RAM a ${configured} MHz${rated ? ` (nominal ${rated} MHz)` : ''}`,
+        title: configured
+          ? `RAM a ${configured} MHz${rated ? ` (nominal ${rated} MHz)` : ''}`
+          : `${type} · ${totalGb} GB detectados`,
         detail: `${type} · ${totalGb} GB en ${ram.length} módulo${ram.length > 1 ? 's' : ''}.`,
       });
     }

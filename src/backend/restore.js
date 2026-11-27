@@ -89,7 +89,11 @@ foreach ($x in @(${psData(values)})) {
     if ($x.name -eq '(default)') { Set-Item -LiteralPath $x.path -Value $val -ErrorAction Stop }
     else { Set-ItemProperty -LiteralPath $x.path -Name $x.name -Value $val -Type $x.kind -ErrorAction Stop }
   } else {
-    Remove-ItemProperty -LiteralPath $x.path -Name $x.name -ErrorAction SilentlyContinue
+    if ($x.name -eq '(default)') {
+      Clear-ItemProperty -LiteralPath $x.path -Name '(default)' -ErrorAction SilentlyContinue
+    } else {
+      Remove-ItemProperty -LiteralPath $x.path -Name $x.name -ErrorAction SilentlyContinue
+    }
   }
 }
 # Un Remove silencioso de un valor inexistente no debe contar como fallo
@@ -138,7 +142,7 @@ async function restoreKeys(keys) {
   const script = `foreach ($k in @(${psData(created)})) { if (Test-Path -LiteralPath $k) { Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction Stop } }`;
   const r = created.some(isHklm) ? await runElevated(script, 30000) : await runPowerShell(`$ErrorActionPreference = 'Stop'
 ${script}`, 8000);
-  return r.ok ? { ok: true } : { ok: false, note: 'No se pudieron quitar claves de registro creadas.' };
+  return r.ok ? { ok: true } : { ok: false, note: r.cancelled ? 'Elevación UAC cancelada.' : 'No se pudieron quitar claves de registro creadas.' };
 }
 
 async function captureHibernate() {
