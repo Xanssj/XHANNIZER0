@@ -54,13 +54,13 @@
     'Leer la política': 'Read the policy',
     'Abrir datos de la app': 'Open app data',
     'Código abierto': 'Open source',
-    'Licencia MIT. Revisa el código, propone ideas o mira qué cambió en cada versión.': 'MIT license. Read the code, suggest ideas or see what changed in each version.',
+    'Licencia GNU GPLv3. Revisa el código, propone ideas o mira qué cambió en cada versión.': 'GNU GPLv3 license. Read the code, suggest ideas or see what changed in each version.',
     'Novedades': "What's new",
     '¿Necesitas algo a medida?': 'Need something custom?',
     'xhanni también hace Allmighty, el bot que administra tu Discord, además de bots, sitios web y proyectos de ciberseguridad a medida.': 'xhanni also makes Allmighty, the bot that runs your Discord server, plus custom bots, websites and cybersecurity projects.',
     'Conocer al equipo': 'Meet the team',
-    'XHANNIZER0 se entrega sin garantías (licencia MIT): úsala bajo tu responsabilidad y mantén tus respaldos. Las marcas mencionadas pertenecen a sus dueños.':
-      'XHANNIZER0 comes with no warranty (MIT license): use it at your own risk and keep your backups. Trademarks belong to their owners.',
+    'XHANNIZER0 se entrega sin garantías (licencia GNU GPLv3): úsala bajo tu responsabilidad y mantén tus respaldos. Las marcas mencionadas pertenecen a sus dueños.':
+      'XHANNIZER0 comes with no warranty (GNU GPLv3 license): use it at your own risk and keep your backups. Trademarks belong to their owners.',
     'Exportar': 'Export',
     'Importar': 'Import',
     'Respaldo obligatorio activo': 'Mandatory backup on',

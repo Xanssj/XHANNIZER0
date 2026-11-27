@@ -31,6 +31,7 @@ XHANNIZER0 solo se conecta a internet para hacer lo que le pides:
 | **Windows Update** | Buscar e instalar drivers oficiales |
 | **MSI (`msi.com` / `download.msi.com`) y sitios oficiales de fabricantes** | Consultar/descargar BIOS verificadas por SHA-256 y drivers o programas que no están en WinGet |
 | **Servidores DNS públicos** (`1.1.1.1`, `8.8.8.8`, `9.9.9.9`, `94.140.14.14`, `208.67.222.222`) | Medir la latencia real (ping ICMP) en el comparador de Red / DNS |
+| **Google Favicons** (`www.google.com/s2/favicons`) | Cargar los íconos visuales de los programas y emuladores del catálogo (solo envía el dominio del software, sin datos tuyos ni del equipo) |
 
 Estas conexiones las hace tu PC directamente con cada servicio; xhanni no recibe esos datos. Cada servicio tiene su propia política de privacidad.
 
