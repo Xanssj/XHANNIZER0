@@ -299,17 +299,10 @@
       document.documentElement.dataset.theme = state.theme;
       localStorage.setItem('xh_theme', state.theme);
       api.setTheme(state.theme);
-      const icon = $('#xh-theme-icon');
-      if (icon) {
-        icon.innerHTML = state.theme === 'dark'
-          ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-17.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>'
-          : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
-      }
       syncSettingsUi();
     };
     state.applyTheme = applyTheme;
     applyTheme(state.theme);
-    $('#xh-theme-btn').addEventListener('click', () => applyTheme(state.theme === 'dark' ? 'light' : 'dark'));
 
     // Idioma ES / EN
     const I18N = {
@@ -370,7 +363,6 @@
       localStorage.setItem('xh_lang', state.lang);
       document.documentElement.lang = state.lang;
       const dict = I18N[state.lang];
-      $('#xh-lang-label').textContent = state.lang.toUpperCase();
       $$('[data-i18n]').forEach((el) => {
         const key = el.dataset.i18n;
         if (dict[key]) el.textContent = dict[key];
@@ -381,10 +373,6 @@
     };
     applyLanguage(state.lang);
     state.applyLanguage = applyLanguage;
-    $('#xh-lang-btn').addEventListener('click', () => {
-      applyLanguage(state.lang === 'es' ? 'en' : 'es');
-      showToast(state.lang === 'en' ? 'Language switched to English.' : 'Idioma cambiado a Español.');
-    });
 
     api.onWindowState((st) => {
       state.windowFocused = Boolean(st.focused);
@@ -1017,7 +1005,7 @@
       renderPostFormatChecklist();
       updateStatusPill();
       if (notify) showToast('Escaneo de hardware actualizado.');
-      liveCheckDrivers();
+      liveCheckDrivers(notify);
     } catch (err) {
       $('#hw-scan-meta').textContent = 'Error al escanear hardware.';
       showToast(`Error al detectar hardware: ${err.message}`);
@@ -1026,7 +1014,7 @@
 
   // Pregunta a Windows Update por versiones más nuevas (tarda: corre después de mostrar el escaneo)
   let liveDriversPromise = null;
-  function liveCheckDrivers() {
+  function liveCheckDrivers(_notify = false) {
     const scanned = state.hardware;
     const p = (async () => {
       try {
@@ -1039,6 +1027,9 @@
         renderDashboard();
         renderPostFormatChecklist();
         updateStatusPill();
+        if (res.updatesCount === 0) {
+          showToast('Todos tus drivers están al día.');
+        }
       } catch {
         // Sin Windows Update: las tarjetas quedan con su enlace oficial
       } finally {
@@ -1165,7 +1156,9 @@
                   : `${drv.advisory?.recommendation === 'safe'
                       ? `<button type="button" class="btn-action-small is-safe" data-install-driver="${esc(drv.id)}" data-branch="safe">Versión segura</button>`
                       : ''}
-                     <button type="button" class="btn-action-small is-primary" data-install-driver="${esc(drv.id)}" data-branch="latest">${drv.needsUpdate ? 'Instalar última' : 'Buscar actualización'}</button>`}
+                     ${drv.needsUpdate
+                      ? `<button type="button" class="btn-action-small is-primary" data-install-driver="${esc(drv.id)}" data-branch="latest">Instalar última</button>`
+                      : ''}`}
                 <button type="button" class="btn-action-small is-ghost" data-omit-driver="${esc(drv.id)}">${isOmitted ? 'Restaurar' : 'Omitir'}</button>
               </div>
             </div>
@@ -2822,6 +2815,10 @@
         const drv = state.hardware?.drivers?.find((d) => d.id === btn.dataset.installDriver);
         if (!drv) return;
         const branch = btn.dataset.branch || 'latest';
+        if (branch === 'latest' && drv.category !== 'motherboard' && !drv.needsUpdate) {
+          showToast('Este driver ya está en la última versión.');
+          return;
+        }
         openDriverConfirmModal(drv, branch, false);
         return;
       }

@@ -14,8 +14,8 @@
 
   const GLOW_SELECTOR = '.app-card, .driver-card, .owner-metric-card, .preset-card, .checklist-card';
   const TILT_SELECTOR = '.app-card, .preset-card, button.owner-metric-card.dash-metric-btn';
-  const MAGNETIC_SELECTOR = '.btn-primary, .btn-secondary, .xh-chrome-icon-btn, .xh-downloads-btn, .xh-svc-pill';
-  const RIPPLE_SELECTOR = '.btn-primary, .btn-secondary, .btn-action-small, .xh-chrome-icon-btn, .xh-downloads-btn, .xh-svc-pill';
+  const MAGNETIC_SELECTOR = '.btn-primary, .btn-secondary, .xh-downloads-btn, .xh-svc-pill';
+  const RIPPLE_SELECTOR = '.btn-primary, .btn-secondary, .btn-action-small, .xh-downloads-btn, .xh-svc-pill';
   const SLIDER_CONTAINERS = '.xh-subnav, .owner-filter-chips, .xh-segmented';
 
   // ---------- 1 & 2. Borde reactivo 1px + inclinación 3D física independiente de Hz

@@ -303,7 +303,6 @@ html.xh-theme-switching #xh-toast {
 .btn-primary,
 .btn-secondary,
 .btn-action-small,
-.xh-chrome-icon-btn,
 .xh-downloads-btn,
 .xh-svc-pill {
   position: relative;
@@ -380,7 +379,6 @@ html.xh-theme-switching #xh-toast {
 
 :root[data-theme="light"] .btn-secondary .xh-ripple,
 :root[data-theme="light"] .btn-action-small:not(.is-primary) .xh-ripple,
-:root[data-theme="light"] .xh-chrome-icon-btn .xh-ripple,
 :root[data-theme="light"] .xh-downloads-btn .xh-ripple,
 :root[data-theme="light"] .xh-svc-pill .xh-ripple {
   background: rgba(0, 113, 227, 0.18);

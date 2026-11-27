@@ -106,8 +106,7 @@
 }
 
 .xh-update-btn,
-.xh-downloads-btn,
-.xh-chrome-icon-btn {
+.xh-downloads-btn {
   all: unset;
   box-sizing: border-box;
   position: relative;
@@ -130,13 +129,10 @@
 }
 
 .xh-update-btn:hover,
-.xh-downloads-btn:hover,
-.xh-chrome-icon-btn:hover { background: var(--card-hover); }
-.xh-downloads-btn:active,
-.xh-chrome-icon-btn:active { transform: scale(0.97); }
+.xh-downloads-btn:hover { background: var(--card-hover); }
+.xh-downloads-btn:active { transform: scale(0.97); }
 .xh-update-btn svg,
-.xh-downloads-btn svg,
-.xh-chrome-icon-btn svg { width: 14px; height: 14px; color: var(--link); }
+.xh-downloads-btn svg { width: 14px; height: 14px; color: var(--link); }
 
 /* Actualización automática: discreto mientras descarga, destacado cuando está lista */
 .xh-update-btn[hidden] { display: none; }

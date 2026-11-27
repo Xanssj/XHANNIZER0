@@ -172,6 +172,8 @@
     'Busca en Windows Update los drivers de chipset de la placa': 'Searches Windows Update for the motherboard chipset drivers',
     'Versión segura': 'Safe version',
     'Instalar última': 'Install latest',
+    'Este driver ya está en la última versión.': 'This driver is already on the latest version.',
+    'Todos tus drivers están al día.': 'All your drivers are up to date.',
     'Buscar actualización': 'Check for update',
     'Restaurar': 'Restore',
     'Omitir': 'Skip',
