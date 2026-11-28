@@ -1743,6 +1743,207 @@ const CATALOG = [
   },
 ];
 
+// =========================================================================
+// Política de instalación del catálogo.
+// El tipo de instalador NO se deduce del texto de la URL: cada entrada tiene
+// una estrategia declarada y el instalador la consume sin tocar la interfaz.
+// Las URLs directas se toman de los manifiestos oficiales de WinGet/fabricante;
+// las páginas de descarga nunca se tratan como instaladores.
+// =========================================================================
+const INSTALLER_KINDS = new Set([
+  'silent-exe',
+  'msi',
+  'launcher-installer',
+  'portable-zip',
+  'store',
+  'manual-only',
+]);
+const INSTALLER_SCOPES = new Set(['user', 'machine']);
+
+const WINGET_LINKS_DIR = path.join(LOCAL_APPDATA, 'Microsoft', 'WinGet', 'Links');
+const WINGET_PACKAGES_DIR = path.join(LOCAL_APPDATA, 'Microsoft', 'WinGet', 'Packages');
+const PORTABLE_APPS_DIR = path.join(LOCAL_APPDATA, 'XHANNIZER0', 'apps');
+
+// Portables reales: WinGet no puede instalarlos desde un contexto elevado
+// (0x8a15007d). Se descarga el ZIP oficial con SHA-256 del manifiesto y se
+// extrae siempre dentro de %LOCALAPPDATA%\XHANNIZER0\apps\<id>.
+const PORTABLE_ZIP_APPS = {
+  'geek-uninstaller': {
+    zipUrl: 'https://geekuninstaller.com/geek.zip',
+    sha256: 'b4eed5dfc430ecf74a7b2ab98ede605d32d51fcf79bb2a0878021ea88671cdc9',
+    executable: 'geek.exe',
+  },
+};
+
+function portableInstallDir(item) {
+  return path.join(PORTABLE_APPS_DIR, String(item.id).replace(/[^a-z0-9-]/g, '_'));
+}
+
+// Correcciones y metadatos que no conviene mezclar dentro de los objetos
+// literales del catálogo (son comunes a varias entradas o dependen del ID).
+const INSTALL_POLICY = {
+  'geek-uninstaller': {
+    installerKind: 'portable-zip',
+    extraPaths: [path.join(WINGET_PACKAGES_DIR, 'GeekUninstaller.GeekUninstaller_Winget.Source_8wekyb3d8bbwe', 'geek.exe')],
+  },
+  furmark2: {
+    installerKind: 'launcher-installer',
+    directInstallUrl: 'https://geeks3d.com/downloads/2025/fm2/2_10_dbc69dd0a08da5ff09169a4fc759ddaa/FurMark_2.10.2_Win64_Setup.exe',
+    extraPaths: [path.join(WINGET_PACKAGES_DIR, 'Geeks3D.FurMark.2_Winget.Source_8wekyb3d8bbwe', 'FurMark_win64', 'FurMark_GUI.exe')],
+  },
+  'msi-afterburner': { installerKind: 'portable-zip', installerScope: 'machine' },
+  occt: { installerKind: 'portable-zip', installerScope: 'machine', extraPaths: [path.join(WINGET_LINKS_DIR, 'occt.exe')] },
+  'fan-control': { installerKind: 'launcher-installer' },
+  monitorian: { installerKind: 'portable-zip', installerScope: 'machine', extraPaths: [path.join(WINGET_LINKS_DIR, 'Monitorian.exe')] },
+  'itch-app': { installerKind: 'portable-zip', installerScope: 'machine' },
+  bun: { installerKind: 'manual-only', extraPaths: [path.join(WINGET_LINKS_DIR, 'bun.exe')] },
+  rufus: { installerKind: 'launcher-installer' },
+  discord: { installerKind: 'launcher-installer' },
+  ollama: { installerKind: 'launcher-installer' },
+  playnite: { installerKind: 'launcher-installer' },
+  'flow-launcher': { installerKind: 'launcher-installer' },
+  zed: { installerKind: 'launcher-installer' },
+  'tor-browser': { installerKind: 'launcher-installer' },
+  notepadpp: { installerKind: 'launcher-installer' },
+  sumatrapdf: { installerKind: 'launcher-installer' },
+  everything: { installerKind: 'launcher-installer' },
+};
+
+// URLs directas y firmadas publicadas por los manifiestos oficiales. Se rellenan
+// desde la auditoría del catálogo; una landing page jamás entra aquí.
+const DIRECT_INSTALL_URLS = {
+  '7zip': 'https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.msi',
+  'android-studio': 'https://edgedl.me.gvt1.com/android/studio/install/2026.2.2.10/android-studio-rabbit2-patch2-windows.exe',
+  audacity: 'https://github.com/audacity/audacity/releases/download/Audacity-4.0.2/audacity-win-4.0.2-x86_64.msi',
+  bandizip: 'https://bandisoft.app/bandizip/BANDIZIP-SETUP-STD-X64.EXE',
+  battlenet: 'https://downloader.battle.net/download/getInstaller?os=win&installer=Battle.net-Setup.exe',
+  blender: 'https://download.blender.org/release/Blender5.3/blender-5.3.0-windows-x64.msi',
+  brave: 'https://github.com/brave/brave-browser/releases/download/v1.100.58/BraveBrowserStandaloneSilentSetup.exe',
+  bruno: 'https://github.com/usebruno/bruno/releases/download/v4.4.0/bruno_4.4.0_x64_win.exe',
+  'chrome': 'https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi',
+  'claude-desktop': 'https://downloads.claude.ai/releases/win32/x64/6.28899.6/Claude-2f5fc59b2d1c672dd9dced86720c50f48cca0cf9.exe',
+  'cpu-z': 'https://download.cpuid.com/cpu-z/cpu-z_3.02-en.exe',
+  'crystaldiskinfo': 'https://sourceforge.net/projects/crystaldiskinfo/files/9.9.5/CrystalDiskInfo9_9_5.exe',
+  'crystaldiskmark': 'https://sourceforge.net/projects/crystaldiskmark/files/9.0.3/CrystalDiskMark9_0_3.exe',
+  curseforge: 'https://curseforge.overwolf.com/downloads/curseforge-latest-win64.exe',
+  ddu: 'https://www.wagnardsoft.com/DDU/download/DDU%20v18.1.5.3_setup.exe',
+  discord: 'https://stable.dl2.discordapp.net/distro/app/stable/win/x64/1.0.9270/DiscordSetup.exe',
+  'docker-desktop': 'https://desktop.docker.com/win/main/amd64/247138/Docker%20Desktop%20Installer.exe',
+  'dotnet-desktop-8': 'https://download.microsoft.com/download/f5126c7f-c450-4883-a6ac-db5a8625bd16/3a6bc153-80ae-4859-80d1-3f251d2485e0/windowsdesktop-runtime-8.0.34-win-x64.exe',
+  'dotnet-desktop-9': 'https://download.microsoft.com/download/257e5b34-a28e-4b26-90a7-b20332ca8015/caddd012-8bc6-4f3e-b17c-3b6d3c4c895a/windowsdesktop-runtime-9.0.23-win-x64.exe',
+  'ea-app': 'https://origin-a.akamaihd.net/EA-Desktop-Client-Download/installer-releases/EAappInstaller-13.836.0.6349-16817646.exe',
+  edge: 'https://download.microsoft.com/download/6a05dff7-d4e0-4e1f-a773-efe3f9c17341/MicrosoftEdgeEnterpriseX64.msi',
+  'epic-games': 'https://epicgames-download1.akamaized.net/Builds/UnrealEngineLauncher/Installers/Windows/EpicInstaller-20.3.3.msi?launcherfilename=EpicInstaller-20.3.3.msi',
+  everything: 'https://www.voidtools.com/Everything-1.4.1.1032.x64.msi',
+  'fan-control': 'https://github.com/Rem0o/FanControl.Releases/releases/download/V287/FanControl_287_net_10_0_Installer.exe',
+  figma: 'https://desktop.figma.com/win/build/Figma-126.12.8.exe',
+  firefox: 'https://download-installer.cdn.mozilla.net/pub/firefox/releases/160.0.1/win64/en-US/Firefox%20Setup%20160.0.1.exe',
+  'flow-launcher': 'https://github.com/Flow-Launcher/Flow.Launcher/releases/download/v2.1.4/Flow-Launcher-Setup.exe',
+  floorp: 'https://github.com/Floorp-Projects/Floorp/releases/download/v12.21.0/floorp-windows-x86_64.installer.exe',
+  git: 'https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/Git-2.56.1-64-bit.exe',
+  'github-cli': 'https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_windows_amd64.msi',
+  'github-desktop': 'https://desktop.githubusercontent.com/releases/3.7.1-534cde99/GitHubDesktopSetup-x64.exe',
+  'gog-galaxy': 'https://content-system.gog.com/open_link/download?path=/open/galaxy/client/setup_galaxy_2.1.10.56.exe',
+  golang: 'https://go.dev/dl/go1.27.4.windows-amd64.msi',
+  'gpu-z': 'https://us1-dl.techpowerup.com/files/GPU-Z.2.72.0.exe',
+  handbrake: 'https://github.com/HandBrake/HandBrake/releases/download/1.11.2/HandBrake-1.11.2-x86_64-Win_GUI.exe',
+  'heroic-launcher': 'https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/download/v2.22.4/Heroic-2.22.4-Setup-x64.exe',
+  'hwinfo64': 'https://www.sac.sk/download/utildiag/hwi_860x.exe',
+  hwmonitor: 'https://download.cpuid.com/hwmonitor/hwmonitor_1.68.exe',
+  'jan-ai': 'https://github.com/janhq/jan/releases/download/v0.8.8/Jan_0.8.8_x64-setup.exe',
+  'java-temurin-21': 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1+2/OpenJDK21U-jre_x64_windows_hotspot_21.0.13.1_2.msi',
+  'jetbrains-toolbox': 'https://download.jetbrains.com/toolbox/jetbrains-toolbox-3.9.2.89815.exe',
+  keepassxc: 'https://github.com/keepassxreboot/keepassxc/releases/download/2.8.0/KeePassXC-2.8.0-x64.msi',
+  'librewolf': 'https://dl.librewolf.net/librewolf/161.0-1/librewolf-161.0-1-windows-x86_64-setup.exe',
+  'lm-studio': 'https://installers.lmstudio.ai/win32/x64/0.4.29-2/LM-Studio-0.4.29-2-x64.exe',
+  localsend: 'https://github.com/localsend/localsend/releases/download/v1.19.0/LocalSend-1.19.0-windows-x86-64.exe',
+  'minecraft-launcher': 'https://launcher.mojang.com/download/MinecraftInstaller.msi',
+  modrinth: 'https://launcher-files.modrinth.com/versions/0.23.5/windows/Modrinth%20App_0.23.5_x64-setup.exe',
+  moonlight: 'https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.2.0/MoonlightSetup-6.2.0.exe',
+  neovim: 'https://github.com/neovim/neovim/releases/download/v0.12.6/nvim-win64.msi',
+  'nodejs-lts': 'https://nodejs.org/dist/v26.13.1/node-v26.13.1-x64.msi',
+  notepadpp: 'https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.9.1/npp.8.9.9.1.Installer.x64.msi',
+  notion: 'https://desktop-release.notion-static.com/Notion%20Setup%207.44.1.exe',
+  nvcleanstall: 'https://closest-dl.techpowerup.com/files/NVCleanstall_1.19.0.exe',
+  'obs-studio': 'https://github.com/obsproject/obs-studio/releases/download/33.0.3/OBS-Studio-33.0.3-Windows-x64-Installer.exe',
+  obsidian: 'https://github.com/obsidianmd/obsidian-releases/releases/download/v1.15.1/Obsidian-1.15.1.exe',
+  ollama: 'https://github.com/ollama/ollama/releases/download/v0.40.19/OllamaSetup.exe',
+  opera: 'https://get.geo.opera.com/pub/opera/desktop/141.0.6089.33/win/Opera_141.0.6089.33_Setup_x64.exe',
+  'opera-gx': 'https://get.geo.opera.com/pub/opera_gx/140.0.6074.73/win/Opera_GX_140.0.6074.73_Setup_x64.exe',
+  peazip: 'https://github.com/peazip/PeaZip/releases/download/11.4.0/peazip-11.4.0.WIN64.exe',
+  playnite: 'https://github.com/JosefNemec/Playnite/releases/download/10.65/Playnite1065.exe',
+  powertoys: 'https://github.com/microsoft/PowerToys/releases/download/v0.102.3101/PowerToysUserSetup-0.102.3101.0-x64.exe',
+  python3: 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe',
+  qbittorrent: 'https://sourceforge.net/projects/qbittorrent/files/qbittorrent-win32/qbittorrent-5.3.1/qbittorrent_5.3.1_x64_setup.exe',
+  'riot-client': 'https://valorant.secure.dyn.riotcdn.net/channels/public/x/installer/current/live.live.latam.exe',
+  'rockstar-launcher': 'https://gamedownloads.rockstargames.com/public/installer/Rockstar-Games-Launcher.exe',
+  rustup: 'https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-pc-windows-msvc/rustup-init.exe',
+  rufus: 'https://github.com/pbatard/rufus/releases/download/v4.16/rufus-4.16.exe',
+  sharex: 'https://github.com/ShareX/ShareX/releases/download/v22.5.0/ShareX-22.5.0-setup-x64.exe',
+  'steam': 'https://cdn.akamai.steamstatic.com/client/installer/SteamSetup.exe',
+  'sublime-text': 'https://download.sublimetext.com/sublime_text_build_4215_x64_setup.exe',
+  sumatrapdf: 'https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1-64-install.exe',
+  'system-informer': 'https://github.com/winsiderss/si-builds/releases/download/v4.0.26241.138/systeminformer-build-release-setup.exe',
+  'tor-browser': 'https://archive.torproject.org/tor-package-archive/torbrowser/16.0.3/tor-browser-windows-x86_64-portable-16.0.3.exe',
+  'ubisoft-connect': 'https://static3.cdn.ubi.com/orbit/launcher_installer/UbisoftConnectInstaller.exe',
+  'vcredist-2013': 'https://download.visualstudio.microsoft.com/download/pr/10912041/cee5d6bca2ddbcd039da727bf4acb48a/vcredist_x64.exe',
+  vivaldi: 'https://downloads.vivaldi.com/stable/Vivaldi.8.3.4191.47.x64.exe',
+  vlc: 'https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.msi',
+  waterfox: 'https://cdn.waterfox.com/waterfox/releases/6.7.9/WINNT_x86_64/Waterfox%20Setup%206.7.9.exe',
+  windsurf: 'https://windsurf-stable.codeiumdata.com/win32-x64-user/stable/c46c49e94b4d3f41181204d59809d8f1b2c48d68/WindsurfUserSetup-x64-2.3.15.exe',
+  winrar: 'https://www.rarlab.com/rar/winrar-x64-723.exe',
+  vscode: 'https://vscode.download.prss.microsoft.com/dbazure/download/stable/661626d0e72f97806550790a98fb87116c9db825/VSCodeUserSetup-x64-1.148.0.exe',
+  'visual-studio-community': 'https://download.visualstudio.microsoft.com/download/pr/95995f57-8355-4ff5-8d90-a7e1669fb3b3/b21b79a605c527c2a4e7d93676e0ec4aab84e51bc16229092d1626b6d47926c4/vs_Community.exe',
+  'xna-redist': 'https://download.microsoft.com/download/5/3/A/53A804C8-EC78-43CD-A0F0-2FB4D45603D3/xnafx40_redist.msi',
+  zed: 'https://github.com/zed-industries/zed/releases/download/v1.30.2/Zed-x86_64.exe',
+};
+
+function isDirectInstallerUrl(url) {
+  return /^https:\/\//i.test(String(url || '')) && /\.(exe|msi)(?:\?|$)/i.test(String(url || ''));
+}
+
+function applyInstallPolicy(item) {
+  const explicit = INSTALL_POLICY[item.id] || {};
+  const portable = PORTABLE_ZIP_APPS[item.id] || null;
+  const declaredKind = INSTALLER_KINDS.has(item.installerKind) ? item.installerKind : null;
+  const declaredScope = INSTALLER_SCOPES.has(item.installerScope) ? item.installerScope : null;
+  const directInstallUrl = item.directInstallUrl || explicit.directInstallUrl || DIRECT_INSTALL_URLS[item.id]
+    || (portable ? portable.zipUrl : null)
+    || (isDirectInstallerUrl(item.downloadUrl) ? item.downloadUrl : null);
+  const fallbackKind = item.wingetSource === 'msstore'
+    ? 'store'
+    : !item.wingetId
+      ? 'manual-only'
+      : isDirectInstallerUrl(directInstallUrl)
+        ? 'launcher-installer'
+        : 'manual-only';
+  const installerKind = declaredKind || explicit.installerKind || (portable ? 'portable-zip' : fallbackKind);
+  const installerScope = declaredScope || explicit.installerScope || null;
+  const portablePath = portable ? path.join(portableInstallDir(item), portable.executable) : null;
+  const checkPaths = [...new Set([
+    ...(item.checkPaths || []),
+    ...(Array.isArray(explicit.extraPaths) ? explicit.extraPaths : []),
+    ...(portablePath ? [portablePath] : []),
+  ])];
+  return {
+    ...item,
+    ...(directInstallUrl ? { directInstallUrl } : {}),
+    ...(installerScope ? { installerScope } : {}),
+    installerKind,
+    ...((item.silentArgs || explicit.silentArgs) ? { silentArgs: item.silentArgs || explicit.silentArgs } : {}),
+    ...((item.manualOnly === true || explicit.manualOnly === true) ? { manualOnly: true } : {}),
+    ...(checkPaths.length ? { checkPaths } : {}),
+    ...(portable ? {
+      portableZip: {
+        url: portable.zipUrl,
+        sha256: portable.sha256,
+        executable: portable.executable,
+        installDir: portableInstallDir(item),
+      },
+    } : {}),
+  };
+}
+
 // Escaneo real de programas instalados en Windows (Registro Uninstall + AppX + PATH)
 function scanWindowsInstalledApps() {
   const psScript = `
@@ -1805,6 +2006,46 @@ function detectInstalledPath(item) {
   return null;
 }
 
+// Misma verificación usada por el catálogo y por el instalador: rutas, Registro,
+// AppX y PATH. Así ningún `done` puede emitirse solo porque WinGet devolvió 0.
+function matchInstalledSnapshot(item, installedPath, snapshot) {
+  let pathFound = installedPath;
+  let installed = Boolean(pathFound);
+  let installedVersion = null;
+
+  if (item.registryMatch) {
+    const regHit = (snapshot.reg || []).find((r) => item.registryMatch.test(String(r.DisplayName || '')));
+    if (regHit) {
+      installed = true;
+      installedVersion = regHit.DisplayVersion || null;
+      if (!pathFound) pathFound = cleanIconExePath(regHit.DisplayIcon);
+    }
+  }
+  if (!installed && item.appxMatch) {
+    const appxHit = (snapshot.appx || []).find((a) => item.appxMatch.test(String(a.Name || '')));
+    if (appxHit) {
+      installed = true;
+      installedVersion = appxHit.Version || null;
+    }
+  }
+  if (item.cliCommand && (snapshot.cli || {})[item.cliCommand]) {
+    installed = true;
+    if (!pathFound) pathFound = snapshot.cli[item.cliCommand];
+  }
+  return { installed, installedPath: pathFound, installedVersion };
+}
+
+async function isCatalogItemInstalled(item) {
+  const directPath = detectInstalledPath(item);
+  if (directPath) return { installed: true, installedPath: directPath };
+  if (process.platform !== 'win32' || (!item.registryMatch && !item.appxMatch && !item.cliCommand)) {
+    return { installed: false, installedPath: null };
+  }
+  const snapshot = await scanWindowsInstalledApps();
+  const result = matchInstalledSnapshot(item, directPath, snapshot);
+  return { installed: result.installed, installedPath: result.installedPath };
+}
+
 // =========================================================================
 // Catálogo remoto: correcciones y altas publicadas en catalog-overrides.json del repositorio.
 // Se valida todo: solo HTTPS, IDs de WinGet bien formados y, para un enlace de descarga
@@ -1830,6 +2071,24 @@ const hostOf = (u) => {
 };
 const shortText = (v, max) => (typeof v === 'string' && v.trim() && v.length <= max ? v.trim() : null);
 
+// Solo se aceptan URLs directas de hosts ya usados por el catálogo oficial.
+const TRUSTED_INSTALL_HOSTS = new Set(
+  [
+    ...CATALOG.map((c) => c.downloadUrl),
+    ...Object.values(DIRECT_INSTALL_URLS),
+    ...Object.values(INSTALL_POLICY).map((p) => p.directInstallUrl),
+  ].map(hostOf).filter(Boolean)
+);
+const isTrustedDirectUrl = (url, base) => {
+  if (!isHttps(url) || !isDirectInstallerUrl(url)) return false;
+  const host = hostOf(url);
+  return Boolean(host) && (
+    host === hostOf(base.officialUrl) ||
+    host === hostOf(base.downloadUrl) ||
+    TRUSTED_INSTALL_HOSTS.has(host)
+  );
+};
+
 function validateOverrides(raw) {
   const clean = { items: {}, added: [] };
   if (!raw || raw.format !== 1) return clean;
@@ -1840,6 +2099,11 @@ function validateOverrides(raw) {
     if (WINGET_ID_RE.test(String(o.wingetId || ''))) patch.wingetId = o.wingetId;
     if (isHttps(o.officialUrl)) patch.officialUrl = o.officialUrl;
     if (isHttps(o.downloadUrl) && base.downloadUrl && hostOf(o.downloadUrl) === hostOf(base.downloadUrl)) patch.downloadUrl = o.downloadUrl;
+    if (isTrustedDirectUrl(o.directInstallUrl, base)) patch.directInstallUrl = o.directInstallUrl;
+    if (INSTALLER_KINDS.has(String(o.installerKind || ''))) patch.installerKind = o.installerKind;
+    if (INSTALLER_SCOPES.has(String(o.installerScope || ''))) patch.installerScope = o.installerScope;
+    if (shortText(o.silentArgs, 120)) patch.silentArgs = o.silentArgs.trim();
+    if (o.manualOnly === true) patch.manualOnly = true;
     if (shortText(o.description, 300)) patch.description = o.description.trim();
     if (o.hidden === true) patch.hidden = true;
     if (Object.keys(patch).length) clean.items[id] = patch;
@@ -1875,49 +2139,19 @@ function effectiveCatalog() {
   return [
     ...CATALOG.map((item) => (overrides.items[item.id] ? { ...item, ...overrides.items[item.id] } : item)),
     ...overrides.added,
-  ].filter((item) => !item.hidden);
+  ].filter((item) => !item.hidden).map(applyInstallPolicy);
 }
 
 async function getCatalogWithStatusAsync() {
   const snapshot = await scanWindowsInstalledApps();
 
   return effectiveCatalog().map((item) => {
-    let installedPath = detectInstalledPath(item);
-    let installed = Boolean(installedPath);
-    let installedVersion = null;
-
-    // 1. Buscar en Registro de Windows (detecta apps en D:, E:, rutas personalizadas y versión exacta)
-    if (item.registryMatch) {
-      const regHit = snapshot.reg.find((r) => item.registryMatch.test(String(r.DisplayName || '')));
-      if (regHit) {
-        installed = true;
-        installedVersion = regHit.DisplayVersion || null;
-        if (!installedPath) {
-          installedPath = cleanIconExePath(regHit.DisplayIcon);
-        }
-      }
-    }
-
-    // 2. Buscar en paquetes AppX / Microsoft Store
-    if (!installed && item.appxMatch) {
-      const appxHit = snapshot.appx.find((a) => item.appxMatch.test(String(a.Name || '')));
-      if (appxHit) {
-        installed = true;
-        installedVersion = appxHit.Version || null;
-      }
-    }
-
-    // 3. Buscar en PATH para runtimes y herramientas CLI (git, node, python, docker, code, etc.)
-    if (item.cliCommand && snapshot.cli[item.cliCommand]) {
-      installed = true;
-      if (!installedPath) installedPath = snapshot.cli[item.cliCommand];
-    }
-
+    const status = matchInstalledSnapshot(item, detectInstalledPath(item), snapshot);
     return {
       ...item,
-      installed,
-      installedPath,
-      installedVersion,
+      installed: status.installed,
+      installedPath: status.installedPath,
+      installedVersion: status.installedVersion,
     };
   });
 }
@@ -1940,6 +2174,10 @@ function getCatalogItem(id) {
 
 module.exports = {
   CATALOG,
+  INSTALLER_KINDS,
+  INSTALLER_SCOPES,
+  PORTABLE_APPS_DIR,
+  effectiveCatalog,
   iconFromDomain,
   setCatalogOverrides,
   validateOverrides,
@@ -1947,4 +2185,5 @@ module.exports = {
   getCatalogWithStatusAsync,
   getCatalogItem,
   detectInstalledPath,
+  isCatalogItemInstalled,
 };

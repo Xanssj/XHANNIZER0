@@ -83,6 +83,86 @@ test('catálogo remoto: solo acepta cambios seguros', () => {
   assert.deepStrictEqual(validateOverrides({ format: 2, items: {} }), { items: {}, added: [] });
 });
 
+test('catálogo: toda entrada declara una estrategia de instalación', () => {
+  const { CATALOG, effectiveCatalog, INSTALLER_KINDS } = backend('catalog');
+  const items = effectiveCatalog();
+  assert.strictEqual(items.length, CATALOG.length);
+  for (const item of items) {
+    assert.ok(INSTALLER_KINDS.has(item.installerKind), `${item.id}: installerKind inválido`);
+  }
+  const geek = items.find((i) => i.id === 'geek-uninstaller');
+  assert.strictEqual(geek.installerKind, 'portable-zip');
+  assert.ok(geek.portableZip);
+  assert.strictEqual(geek.portableZip.sha256, 'b4eed5dfc430ecf74a7b2ab98ede605d32d51fcf79bb2a0878021ea88671cdc9');
+  assert.match(geek.portableZip.url, /^https:\/\/geekuninstaller\.com\/geek\.zip$/);
+  assert.ok(geek.checkPaths.some((p) => /geek\.exe$/i.test(p)));
+  const furmark = items.find((i) => i.id === 'furmark2');
+  assert.strictEqual(furmark.installerKind, 'launcher-installer');
+  assert.match(furmark.directInstallUrl, /FurMark_2\.10\.2_Win64_Setup\.exe$/);
+  assert.ok(!items.some((i) => i.installerKind === 'launcher-installer' && !i.directInstallUrl));
+
+  // Grupo que antes cerraba con done/100% sin verificar: ahora tiene estrategia declarada.
+  const revisados = [
+    'steam', 'epic-games', 'ea-app', 'riot-client', 'battlenet', 'rockstar-launcher',
+    'brave', 'chrome', 'vcredist', 'vcredist-x86', 'vscode', 'ollama', 'docker-desktop',
+  ];
+  for (const id of revisados) {
+    const item = items.find((i) => i.id === id);
+    assert.ok(item, `${id}: falta en el catálogo`);
+    assert.ok(['silent-exe', 'msi', 'launcher-installer', 'store', 'manual-only'].includes(item.installerKind), `${id}: kind inválido`);
+    assert.ok(!item.installerKind.includes('done'), `${id}: estado de finalización falso`);
+  }
+});
+
+test('catálogo remoto: metadatos de instalación se validan', () => {
+  const { validateOverrides, CATALOG } = backend('catalog');
+  const withDownload = CATALOG.find((c) => c.id === 'furmark2');
+  const clean = validateOverrides({
+    format: 1,
+    items: {
+      [CATALOG[1].id]: { installerKind: 'portable-zip', installerScope: 'machine', manualOnly: true },
+      [withDownload.id]: {
+        installerKind: 'malicioso',
+        installerScope: 'domain',
+        directInstallUrl: 'https://otro-host.example/malware.exe',
+        downloadUrl: 'https://otro-host.example/malware.exe',
+      },
+      'geek-uninstaller': { directInstallUrl: 'https://geekuninstaller.com/descargas' },
+    },
+  });
+  assert.deepStrictEqual(clean.items[CATALOG[1].id], {
+    installerKind: 'portable-zip',
+    installerScope: 'machine',
+    manualOnly: true,
+  });
+  assert.strictEqual(clean.items[withDownload.id], undefined);
+  assert.strictEqual(clean.items['geek-uninstaller'], undefined);
+});
+
+test('WinGet: el ámbito del catálogo se convierte en argumento seguro', () => {
+  const { buildWingetArgs, isDirectInstallerUrl } = backend('installer')._internals;
+  assert.deepStrictEqual(buildWingetArgs('Foo.Bar', null, 'machine').slice(-3), ['--scope', 'machine', '--silent']);
+  assert.deepStrictEqual(buildWingetArgs('Foo.Bar', 'msstore', 'user').slice(-4), ['--scope', 'user', '--source', 'msstore']);
+  assert.ok(!buildWingetArgs('Foo.Bar', null, 'dominio').includes('--scope'));
+  assert.strictEqual(isDirectInstallerUrl('https://ejemplo.com/setup.exe?x=1'), true);
+  assert.strictEqual(isDirectInstallerUrl('https://ejemplo.com/descargas'), false);
+  assert.strictEqual(isDirectInstallerUrl('https://ejemplo.com/app.zip'), false);
+});
+
+test('verificación de instalación: solo confirma rutas existentes', async () => {
+  const { isCatalogItemInstalled } = backend('catalog');
+  const tmp = path.join(os.tmpdir(), `xhannizer0-check-${process.pid}.exe`);
+  fs.writeFileSync(tmp, 'x');
+  try {
+    const found = await isCatalogItemInstalled({ id: 'prueba', checkPaths: [tmp] });
+    assert.deepStrictEqual(found, { installed: true, installedPath: tmp });
+    const missing = await isCatalogItemInstalled({ id: 'prueba', checkPaths: [tmp + '.no-existe'] });
+    assert.strictEqual(missing.installed, false);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+});
+
 test('asistente de BIOS: marca y temas según el chequeo', () => {
   const { getBiosGuide, brandFromManufacturer } = backend('bios');
   assert.strictEqual(brandFromManufacturer('ASUSTeK COMPUTER INC.'), 'asus');
