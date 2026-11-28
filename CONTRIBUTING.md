@@ -41,7 +41,7 @@ Esta guía vale para todos: personas, agentes de IA (OpenCode, Antigravity, Clau
 | :--- | :--- |
 | Proceso principal e IPC | `main.js`, `preload.js` |
 | Lógica de Windows | `src/backend/*.js` |
-| Interfaz | `src/renderer/**` (textos en `i18n.js` en español y en `i18n-en.js` en inglés: **siempre los dos**) |
+| Interfaz | `src/renderer/**` (textos en `src/renderer/js/i18n.js` en español y en `src/renderer/js/i18n-en.js` en inglés: **siempre los dos**) |
 | Catálogo de programas | `catalog-overrides.json`, `src/backend/catalog.js` |
 | Pruebas | `tests/**` |
 | Manual (GitBook) | `docs/manual/**` |
