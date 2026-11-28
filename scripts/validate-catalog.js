@@ -9,7 +9,7 @@ const path = require('path');
 const https = require('https');
 
 const root = path.join(__dirname, '..');
-const { CATALOG, validateOverrides } = require(path.join(root, 'src/backend/catalog.js'));
+const { CATALOG, INSTALLER_KINDS, effectiveCatalog, validateOverrides } = require(path.join(root, 'src/backend/catalog.js'));
 const { getEmulatorsCatalog } = require(path.join(root, 'src/backend/emulators.js'));
 
 const limitArg = process.argv.indexOf('--limit');
@@ -55,6 +55,42 @@ if (fs.existsSync(overridesFile)) {
   }
   for (const [id, o] of Object.entries(clean.items)) if (o.wingetId) ids.set(o.wingetId, `override: ${id}`);
   for (const a of clean.added) ids.set(a.wingetId, `override añadido: ${a.id}`);
+}
+
+// Integridad de la estrategia de instalación: evita volver a caer en el
+// fallback que mostraba 100% sin instalar nada.
+const isDirect = (u) => /^https:\/\//i.test(String(u || '')) && /\.(exe|msi)(?:\?|$)/i.test(String(u || ''));
+for (const item of effectiveCatalog()) {
+  if (!INSTALLER_KINDS.has(item.installerKind)) {
+    console.error(`catálogo: ${item.id} no declara un installerKind válido.`);
+    process.exitCode = 1;
+  }
+  if (['silent-exe', 'msi', 'launcher-installer'].includes(item.installerKind) && !isDirect(item.directInstallUrl)) {
+    console.error(`catálogo: ${item.id} declara ${item.installerKind} sin directInstallUrl directa.`);
+    process.exitCode = 1;
+  }
+  if (item.directInstallUrl && !isDirect(item.directInstallUrl) && !item.portableZip) {
+    console.error(`catálogo: ${item.id} usa una página de descarga como directInstallUrl.`);
+    process.exitCode = 1;
+  }
+  if (item.installerKind === 'portable-zip' && (!item.checkPaths || !item.checkPaths.length)) {
+    console.error(`catálogo: ${item.id} es portable-zip sin checkPaths para detectar la instalación.`);
+    process.exitCode = 1;
+  }
+  if (item.portableZip) {
+    const spec = item.portableZip;
+    const expected = item.checkPaths || [];
+    if (!/^https:\/\//i.test(String(spec.url || '')) || !/^[a-f0-9]{64}$/i.test(String(spec.sha256 || ''))
+      || !/^[A-Za-z0-9._-]+\.exe$/i.test(String(spec.executable || ''))
+      || !expected.some((p) => new RegExp(`\\\\${spec.executable}$`, 'i').test(String(p)))) {
+      console.error(`catálogo: ${item.id} portableZip incompleto o sin ruta de verificación.`);
+      process.exitCode = 1;
+    }
+  }
+  if (item.installerKind === 'manual-only' && !item.officialUrl) {
+    console.error(`catálogo: ${item.id} es manual-only sin officialUrl.`);
+    process.exitCode = 1;
+  }
 }
 
 function repoExists(repo) {

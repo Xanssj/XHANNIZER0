@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const https = require('https');
 const { spawn, execFile } = require('child_process');
 const { shell } = require('electron');
-const { getCatalogItem, detectInstalledPath } = require('./catalog');
+const { getCatalogItem, detectInstalledPath, isCatalogItemInstalled, PORTABLE_APPS_DIR } = require('./catalog');
 const { getEmulatorById, resolveGithubLatestRelease } = require('./emulators');
 const { runPowerShell, runElevated, psData } = require('./powershell');
 
@@ -69,6 +69,103 @@ async function verifyDownloadedFile(filePath) {
 
 const DOWNLOAD_DIR = path.join(os.tmpdir(), 'XHANNIZER0_downloads');
 const EMULATOR_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads', 'XHANNIZER0_Emuladores');
+
+const isDirectInstallerUrl = (url) => /^https:\/\//i.test(String(url || '')) && /\.(exe|msi)(?:\?|$)/i.test(String(url || ''));
+
+function findExecutable(rootDir, exeName) {
+  const stack = [rootDir];
+  const wanted = String(exeName || '').toLowerCase();
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile() && entry.name.toLowerCase() === wanted) return full;
+    }
+  }
+  return null;
+}
+
+// Instala portables reales dentro de %LOCALAPPDATA%\XHANNIZER0\apps, sin WinGet
+// (que falla con 0x8a15007d si se ejecuta elevado). El ZIP se valida por SHA-256
+// del manifiesto oficial y el ejecutable extraído debe tener firma válida.
+async function installPortableZip(item, emitAudit) {
+  const spec = item.portableZip;
+  const sourceType = 'CDN Oficial del Fabricante';
+  const sourceOrigin = spec && spec.url ? spec.url : item.officialUrl;
+  const warn = (detail) => {
+    emitAudit({ state: 'warning', progress: 0, detail, sourceType, sourceOrigin });
+    return { id: item.id, ok: false };
+  };
+  if (!spec || !/^https:\/\//i.test(String(spec.url || ''))
+    || !/^[a-f0-9]{64}$/i.test(String(spec.sha256 || ''))
+    || !/^[A-Za-z0-9._-]+\.exe$/i.test(String(spec.executable || ''))) {
+    return warn('El catálogo no define una descarga portable segura para esta aplicación.');
+  }
+  const root = path.resolve(PORTABLE_APPS_DIR) + path.sep;
+  const destDir = path.resolve(spec.installDir);
+  if (!destDir.startsWith(root)) return warn('Ruta de instalación portable fuera de la carpeta permitida.');
+
+  const zipPath = path.join(DOWNLOAD_DIR, `${item.id}-portable.zip`);
+  const cleanupZip = () => {
+    try { fs.rmSync(zipPath, { force: true }); } catch { /* ignorar */ }
+  };
+  try {
+    emitAudit({ state: 'downloading', progress: 10, detail: 'Descargando paquete portable oficial…', sourceType, sourceOrigin });
+    await downloadFile(spec.url, zipPath, (pct) => {
+      emitAudit({ state: 'downloading', progress: Math.min(85, pct), detail: `Descargando ${pct}%`, sourceType, sourceOrigin });
+    }, { allowedHosts: [new URL(spec.url).hostname] });
+
+    emitAudit({ state: 'installing', progress: 88, detail: 'Verificando SHA-256 del manifiesto oficial…', sourceType, sourceOrigin });
+    const sha256 = await computeSha256(zipPath);
+    if (!sha256 || sha256.toLowerCase() !== String(spec.sha256).toLowerCase()) {
+      cleanupZip();
+      return warn('El archivo descargado no coincide con el SHA-256 publicado. No se extrajo nada.');
+    }
+
+    emitAudit({ state: 'installing', progress: 92, detail: 'Descomprimiendo en la carpeta de aplicaciones…', sourceType, sourceOrigin });
+    fs.rmSync(destDir, { recursive: true, force: true });
+    fs.mkdirSync(destDir, { recursive: true });
+    const extracted = await runPowerShell(
+      `$d = ${psData({ zip: zipPath, out: destDir })}; Expand-Archive -LiteralPath $d.zip -DestinationPath $d.out -Force`,
+      60000
+    );
+    if (!extracted.ok) return warn('No se pudo descomprimir el paquete portable oficial.');
+
+    const exePath = findExecutable(destDir, spec.executable);
+    if (!exePath) return warn('El paquete descargado no contiene el ejecutable esperado.');
+    const signature = await checkAuthenticodeSignature(exePath);
+    if (signature.status !== 'Firma válida') {
+      try { fs.rmSync(destDir, { recursive: true, force: true }); } catch { /* ignorar */ }
+      return warn('El ejecutable portable no tiene firma Authenticode válida. No se instaló.');
+    }
+    const installedPath = detectInstalledPath(item);
+    cleanupZip();
+    if (!installedPath) return warn('La extracción terminó pero no se pudo verificar la instalación.');
+    emitAudit({
+      state: 'done',
+      progress: 100,
+      detail: 'Portable oficial verificado e instalado',
+      installed: true,
+      installedPath,
+      sourceType,
+      sourceOrigin,
+      sha256Full: sha256,
+      signatureStatus: signature.status,
+      signatureSigner: signature.signer,
+    });
+    return { id: item.id, ok: true };
+  } catch {
+    cleanupZip();
+    return warn('No se pudo instalar el portable oficial; usa el botón «Web oficial».');
+  }
+}
 
 let wingetCached = null;
 
@@ -228,22 +325,30 @@ function downloadFile(url, destPath, onProgress = () => {}, opts = {}) {
   });
 }
 
-function runWingetInstall(wingetId, onProgress, source = null) {
+function buildWingetArgs(wingetId, source = null, scope = null) {
+  const args = [
+    'install',
+    '--id',
+    wingetId,
+    '--exact',
+    '--accept-package-agreements',
+    '--accept-source-agreements',
+    '--disable-interactivity',
+  ];
+  if (scope === 'user' || scope === 'machine') {
+    args.push('--scope', scope);
+  }
+  if (source) {
+    args.push('--source', source);
+  } else {
+    args.push('--silent');
+  }
+  return args;
+}
+
+function runWingetInstall(wingetId, onProgress, source = null, scope = null) {
   return new Promise((resolve) => {
-    const args = [
-      'install',
-      '--id',
-      wingetId,
-      '--exact',
-      '--accept-package-agreements',
-      '--accept-source-agreements',
-      '--disable-interactivity',
-    ];
-    if (source) {
-      args.push('--source', source);
-    } else {
-      args.push('--silent');
-    }
+    const args = buildWingetArgs(wingetId, source, scope);
 
     const child = spawn('winget.exe', args, { windowsHide: true });
     let phase = 'downloading';
@@ -689,6 +794,11 @@ async function installSingleItem(task, emit) {
     return { id, ok: false };
   }
 
+  // Portables con metadatos explícitos: WinGet no los instala desde un contexto elevado.
+  if (item.installerKind === 'portable-zip' && item.portableZip) {
+    return installPortableZip(item, emitAudit);
+  }
+
   const wingetAvailable = await hasWinget();
   if (wingetAvailable && item.wingetId) {
     const origin = `winget: ${item.wingetId}`;
@@ -703,27 +813,42 @@ async function installSingleItem(task, emit) {
     const res = await runWingetInstall(
       item.wingetId,
       (upd) => emitAudit({ ...upd, sourceType: srcLabel, sourceOrigin: origin }),
-      item.wingetSource || null
+      item.wingetSource || null,
+      item.installerScope || null
     );
     if (res.ok) {
-      const installedPath = detectInstalledPath(item);
+      const verification = await isCatalogItemInstalled(item);
+      if (verification.installed) {
+        emitAudit({
+          state: 'done',
+          progress: 100,
+          detail: res.alreadyLatest ? 'Ya actualizado' : 'Instalado correctamente',
+          installed: true,
+          installedPath: verification.installedPath,
+          sourceType: srcLabel,
+          sourceOrigin: origin,
+        });
+        return { id, ok: true };
+      }
+      // WinGet terminó sin error, pero el catálogo no puede confirmar la instalación.
       emitAudit({
-        state: 'done',
-        progress: 100,
-        detail: res.alreadyLatest ? 'Ya actualizado' : 'Instalado correctamente',
-        installed: true,
-        installedPath,
+        state: 'warning',
+        progress: 96,
+        detail: 'WinGet terminó, pero no se pudo verificar la instalación; no se marca como instalada.',
         sourceType: srcLabel,
         sourceOrigin: origin,
       });
-      return { id, ok: true };
+      return { id, ok: false };
     }
   }
 
-  // Fallback limpio: descarga directa HTTPS del instalador oficial dentro de la app (sin abrir navegador)
-  const directBinary = /\.(exe|msi)$/i.test(item.downloadUrl || '') || /winx64|vc_redist|win32-x64/i.test(item.downloadUrl || '');
-  if (directBinary) {
-    const ext = /\.msi$/i.test(item.downloadUrl) ? '.msi' : '.exe';
+  // Fallback del catálogo: solo se descarga una URL declarada como instalador directo.
+  // Las páginas de descarga, ZIP y entradas sin URL no simulan finalización.
+  const kind = item.installerKind || 'manual-only';
+  const directInstallUrl = item.directInstallUrl || null;
+  const canLaunchInstaller = !item.manualOnly && ['silent-exe', 'msi', 'launcher-installer'].includes(kind) && isDirectInstallerUrl(directInstallUrl);
+  if (canLaunchInstaller) {
+    const ext = /\.msi(?:\?|$)/i.test(directInstallUrl) ? '.msi' : '.exe';
     const dest = path.join(DOWNLOAD_DIR, `${item.id}-setup${ext}`);
     try {
       emitAudit({
@@ -731,15 +856,15 @@ async function installSingleItem(task, emit) {
         progress: 10,
         detail: 'Descargando instalador oficial directamente…',
         sourceType: 'CDN Oficial del Fabricante',
-        sourceOrigin: item.downloadUrl,
+        sourceOrigin: directInstallUrl,
       });
-      await downloadFile(item.downloadUrl, dest, (pct) => {
+      await downloadFile(directInstallUrl, dest, (pct) => {
         emitAudit({
           state: 'downloading',
-          progress: pct,
+          progress: Math.min(92, pct),
           detail: `Descargando ${pct}%`,
           sourceType: 'CDN Oficial del Fabricante',
-          sourceOrigin: item.downloadUrl,
+          sourceOrigin: directInstallUrl,
         });
       });
       emitAudit({
@@ -747,7 +872,7 @@ async function installSingleItem(task, emit) {
         progress: 96,
         detail: 'Verificando SHA-256 y firma Authenticode…',
         sourceType: 'CDN Oficial del Fabricante',
-        sourceOrigin: item.downloadUrl,
+        sourceOrigin: directInstallUrl,
       });
       const cryptoInfo = await verifyDownloadedFile(dest);
       if (cryptoInfo.signatureStatus !== 'Firma válida') {
@@ -759,34 +884,38 @@ async function installSingleItem(task, emit) {
         }
         emitAudit({
           state: 'warning',
-          progress: 100,
+          progress: 96,
           detail: `Instalación bloqueada: el instalador no tiene una firma digital válida (${cryptoInfo.signatureStatus}). Descárgalo manualmente desde la web oficial.`,
           sourceType: 'CDN Oficial del Fabricante',
-          sourceOrigin: item.downloadUrl,
+          sourceOrigin: directInstallUrl,
           ...cryptoInfo,
         });
         return { id, ok: false };
       }
       const openErr = await shell.openPath(dest);
       if (openErr) throw new Error(openErr);
+      // El asistente externo aún no ha terminado: no se marca como instalado ni se lleva el progreso a 100%.
       emitAudit({
-        state: 'done',
-        progress: 100,
-        detail: 'Instalador oficial verificado e iniciado',
+        state: 'warning',
+        progress: 96,
+        detail: 'Instalador oficial verificado e iniciado. Completa el asistente para que el catálogo lo detecte como instalado.',
         sourceType: 'CDN Oficial del Fabricante',
-        sourceOrigin: item.downloadUrl,
+        sourceOrigin: directInstallUrl,
         ...cryptoInfo,
       });
-      return { id, ok: true };
+      return { id, ok: false };
     } catch {
-      // Si falla descarga directa
+      // Si falla la descarga o la apertura, se informa con el estado manual de abajo.
     }
   }
 
+  const manualDetail = kind === 'portable-zip' || kind === 'manual-only'
+    ? 'Instalación manual requerida; usa el botón «Web oficial» para descargarla e instalarla.'
+    : 'No se pudo instalar automáticamente; usa el botón «Web oficial» para descarga manual';
   emitAudit({
     state: 'warning',
-    progress: 100,
-    detail: 'No se pudo instalar automáticamente; usa el botón «Web oficial» para descarga manual',
+    progress: 0,
+    detail: manualDetail,
     sourceType: 'Fuente Oficial',
     sourceOrigin: item.officialUrl,
   });
@@ -815,7 +944,7 @@ async function runBatchInstall(tasks, emit) {
 }
 
 module.exports = {
-  _internals: { resolveHardwareIds, searchDriverUpdates, downloadFile },
+  _internals: { buildWingetArgs, isDirectInstallerUrl, resolveHardwareIds, searchDriverUpdates, downloadFile },
   DOWNLOAD_DIR,
   EMULATOR_DOWNLOAD_DIR,
   hasWinget,
